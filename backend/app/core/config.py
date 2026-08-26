@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     razorpay_webhook_secret: str = ""
     groq_api_key: str = ""
     groq_model: str = ""
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174"
 
     model_config = SettingsConfigDict(env_file=PROJECT_ROOT / ".env", extra="ignore")
 
