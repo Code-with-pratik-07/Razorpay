@@ -6,6 +6,9 @@ from app.api.audit import router as audit_router
 from app.api.model import router as model_router
 from app.api.payments import router as payments_router
 from app.api.webhooks import router as webhooks_router
+from app.api.cases import router as cases_router
+from app.api.dashboard import router as dashboard_router
+from app.api.demo import router as demo_router
 from app.core.config import get_settings
 from app.db.database import init_db
 
@@ -23,6 +26,9 @@ app.include_router(audit_router)
 app.include_router(model_router)
 app.include_router(payments_router)
 app.include_router(webhooks_router)
+app.include_router(cases_router)
+app.include_router(dashboard_router)
+app.include_router(demo_router)
 
 
 @app.on_event("startup")

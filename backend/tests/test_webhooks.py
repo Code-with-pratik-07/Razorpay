@@ -19,6 +19,7 @@ SECRET = "local-webhook-secret-for-tests"
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("RAZORPAY_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("GROQ_API_KEY", "")
     get_settings.cache_clear()
     init_db()
     with TestClient(app) as test_client:
@@ -55,7 +56,7 @@ def test_valid_signature_and_payment_failed_create_case_and_audit(client: TestCl
         events = list(db.scalars(select(AuditEvent).where(AuditEvent.case_id == case.id)))
         log = db.scalar(select(WebhookLog).where(WebhookLog.event_id == f"evt_{suffix}"))
     assert case is not None and case.status == CaseStatus.FAILED
-    assert {event.event_type for event in events} == {"failure_detected", "case_created"}
+    assert {"failure_detected", "case_created", "ml_prediction", "policy_check", "ai_analysis", "ai_unavailable"}.issubset({event.event_type for event in events})
     assert log.processed
 
 

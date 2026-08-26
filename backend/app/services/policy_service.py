@@ -15,7 +15,10 @@ class PolicyCheckResult:
     retry_after: datetime | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+        result = asdict(self)
+        if self.retry_after is not None:
+            result["retry_after"] = self.retry_after.isoformat()
+        return result
 
 
 def check_recovery_policy(case: PaymentCase, policy: RecoveryPolicy, *, now: datetime | None = None) -> PolicyCheckResult:

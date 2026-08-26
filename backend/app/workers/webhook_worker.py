@@ -12,6 +12,7 @@ from app.models.customer import Customer
 from app.models.payment_case import CaseStatus, PaymentCase
 from app.models.webhook_log import WebhookLog
 from app.services.audit_service import log_audit_event
+from app.services.recovery_service import analyze_case
 
 
 def _entity(payload: dict[str, Any], name: str) -> dict[str, Any]:
@@ -67,6 +68,7 @@ def _process_failed(db: Session, payload: dict[str, Any]) -> None:
         db.refresh(case)
         log_audit_event(db, case.id, "failure_detected", {"payment_id": payment_id, "order_id": order_id})
         log_audit_event(db, case.id, "case_created", {"source": "razorpay_webhook"})
+        analyze_case(db, case)
         return
     case.razorpay_payment_id = payment_id or case.razorpay_payment_id
     case.razorpay_order_id = order_id or case.razorpay_order_id
