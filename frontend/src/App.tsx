@@ -1,104 +1,833 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
-type RazorpayResponse = { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string };
-type RazorpayCheckout = new (options: Record<string, unknown>) => { open: () => void };
-declare global { interface Window { Razorpay?: RazorpayCheckout; } }
-type Order = { id: string; amount: number; currency: string };
-type RecoveryCase = { id: string; case_number: string; customer_email: string | null; amount: number; status: string; failure_reason: string | null; recovery_probability: number | null; recovery_action: string; policy_reason: string | null };
-type AuditEvent = { id: string; event_type: string; timestamp: string; event_data: Record<string, unknown> };
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+type Status =
+  | "failed"
+  | "abandoned"
+  | "analyzing"
+  | "recovering"
+  | "recovered"
+  | "closed"
+  | "human_review";
+
+type AI = {
+  recommended_action: string;
+  reasoning: string;
+  customer_message: string;
+  confidence: number;
+  source: "groq" | "fallback";
+};
+
+type RecoveryCase = {
+  id: string;
+  case_number: string;
+  customer_email: string | null;
+  amount: number;
+  currency: string;
+  status: Status;
+  failure_reason: string | null;
+  payment_method: string | null;
+  recovery_probability: number | null;
+  recovery_action: string;
+  retry_count: number;
+  max_retries: number;
+  policy_check_passed: boolean | null;
+  policy_reason: string | null;
+  created_at: string;
+};
+
+type Explanation = RecoveryCase & {
+  ml: {
+    recovery_probability: number | null;
+    features: Record<string, unknown>;
+  };
+  policy: {
+    allowed: boolean;
+    reason: string;
+    requires_human_approval: boolean;
+    retry_after: string | null;
+  };
+  ai: AI | null;
+  customer_history: {
+    lifetime_value: number;
+    successful_payments: number;
+    failed_payments: number;
+  };
+};
+
+type AuditEvent = {
+  id: string;
+  event_type: string;
+  event_data: Record<string, unknown>;
+  timestamp: string;
+};
+
+type Execution = {
+  action: string;
+  status: string;
+  message: string;
+  payment_link_url: string | null;
+};
+
+type TrainingResult = {
+  samples_trained: number;
+  model_path: string;
+};
+
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, init);
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.detail ?? "The backend request failed.");
+
+  if (!response.ok) {
+    throw new Error(body.detail ?? "Unable to complete the request.");
+  }
+
   return body as T;
 }
 
-function loadRazorpaySdk(): Promise<void> {
-  if (window.Razorpay) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[data-razorpay-checkout="true"]');
-    if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("Unable to load Razorpay Checkout.")), { once: true });
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.async = true;
-    script.dataset.razorpayCheckout = "true";
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Unable to load Razorpay Checkout."));
-    document.body.appendChild(script);
-  });
+const formatINR = (paise: number) =>
+  `₹${(paise / 100).toLocaleString("en-IN", {
+    maximumFractionDigits: 0,
+  })}`;
+
+const title = (value: string | null) =>
+  value
+    ? value
+        .replaceAll("_", " ")
+        .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : "—";
+
+function Badge({
+  value,
+  kind = "status",
+}: {
+  value: string;
+  kind?: "status" | "policy" | "action";
+}) {
+  return (
+    <span className={`badge ${kind} ${value.replaceAll("_", "-")}`}>
+      {title(value)}
+    </span>
+  );
 }
 
 function App() {
-  const [order, setOrder] = useState<Order | null>(null);
-  const [paymentId, setPaymentId] = useState("—");
-  const [checkoutResult, setCheckoutResult] = useState("Not started");
-  const [verificationResult, setVerificationResult] = useState("Not requested");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [cases, setCases] = useState<RecoveryCase[]>([]);
-  const [stats, setStats] = useState<{ revenue_at_risk: number; revenue_recovered: number; recovery_rate: number; cases_processed: number } | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<RecoveryCase | null>(null);
+  const [explanation, setExplanation] = useState<Explanation | null>(null);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
-  const [view, setView] = useState<"queue" | "checkout">("queue");
+  const [execution, setExecution] = useState<Execution | null>(null);
 
-  const refreshQueue = async () => {
+  const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const [actionLoading, setActionLoading] = useState<
+    "analyze" | "execute" | "train" | "audit" | null
+  >(null);
+
+  const [trainingResult, setTrainingResult] =
+    useState<TrainingResult | null>(null);
+
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const refreshCases = useCallback(
+    async (preserveSelection = true) => {
+      setLoading(true);
+
+      try {
+        const next = await api<RecoveryCase[]>("/api/cases");
+
+        setCases(next);
+
+        const nextId =
+          preserveSelection &&
+          selectedId &&
+          next.some((item) => item.id === selectedId)
+            ? selectedId
+            : next[0]?.id ?? null;
+
+        setSelectedId(nextId);
+        setError(null);
+      } catch (requestError) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Could not load recovery cases."
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [selectedId]
+  );
+
+  const loadDetails = useCallback(async (id: string) => {
+    setDetailLoading(true);
+    setExecution(null);
+
     try {
-      const [nextCases, nextStats] = await Promise.all([requestJson<RecoveryCase[]>("/api/cases"), requestJson<typeof stats>("/api/dashboard/stats")]);
-      setCases(nextCases); setStats(nextStats); if (!selected && nextCases[0]) setSelected(nextCases[0]);
-    } catch { /* The empty state remains useful before the first failed webhook. */ }
-  };
-  useEffect(() => { void refreshQueue(); }, []);
-  useEffect(() => { if (selected) void requestJson<AuditEvent[]>(`/api/cases/${selected.id}/audit`).then(setAudit).catch(() => setAudit([])); }, [selected]);
+      const [caseData, explanationData, auditData] = await Promise.all([
+        api<RecoveryCase>(`/api/cases/${id}`),
+        api<Explanation>(`/api/cases/${id}/explanation`),
+        api<AuditEvent[]>(`/api/cases/${id}/audit`),
+      ]);
 
-  const executeSelected = async () => {
+      setSelected(caseData);
+      setExplanation(explanationData);
+      setAudit(auditData);
+      setError(null);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not load case details."
+      );
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshCases(false);
+  }, []);
+
+  useEffect(() => {
+    if (selectedId) {
+      void loadDetails(selectedId);
+    } else {
+      setSelected(null);
+      setExplanation(null);
+      setAudit([]);
+    }
+  }, [selectedId, loadDetails]);
+
+  const analyze = async () => {
     if (!selected) return;
-    setLoading(true);
-    try { const result = await requestJson<{ message: string }>(`/api/cases/${selected.id}/execute`, { method: "POST" }); setVerificationResult(result.message); await refreshQueue(); }
-    catch (executeError) { setError(executeError instanceof Error ? executeError.message : "Recovery could not be executed."); }
-    finally { setLoading(false); }
-  };
 
-  const verifyPayment = async (payment: RazorpayResponse) => {
-    setPaymentId(payment.razorpay_payment_id);
-    setCheckoutResult("Checkout returned a signed payment response");
-    setVerificationResult("Verifying with server…");
+    setActionLoading("analyze");
+    setError(null);
+    setNotice(null);
+
     try {
-      const verified = await requestJson<{ verified: boolean }>("/api/payments/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payment) });
-      setVerificationResult(verified.verified ? "Server signature verification passed" : "Server verification did not pass");
-    } catch (verificationError) {
-      setVerificationResult(`Server verification failed: ${verificationError instanceof Error ? verificationError.message : "Unknown error"}`);
+      const data = await api<Explanation>(
+        `/api/cases/${selected.id}/analyze`,
+        {
+          method: "POST",
+        }
+      );
+
+      setExplanation(data);
+      setSelected(data);
+
+      setNotice(
+        "Analysis completed using ML, policy, and advisory AI."
+      );
+
+      await refreshCases();
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Analysis could not be completed."
+      );
+    } finally {
+      setActionLoading(null);
     }
   };
 
-  const openTestCheckout = async () => {
-    setLoading(true); setError(null); setPaymentId("—"); setCheckoutResult("Creating ₹100 Test Mode order…"); setVerificationResult("Not requested");
+  const execute = async () => {
+    if (!selected || explanation?.policy.allowed === false) return;
+
+    setActionLoading("execute");
+    setError(null);
+    setNotice(null);
+
     try {
-      await loadRazorpaySdk();
-      const [config, createdOrder] = await Promise.all([
-        requestJson<{ key_id: string }>("/api/payments/checkout-config"),
-        requestJson<Order>("/api/payments/create-order", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: 10000, currency: "INR", receipt: `recoverai-test-${Date.now()}`, notes: { source: "recoverai_temporary_test_checkout" } }) }),
-      ]);
-      setOrder(createdOrder); setCheckoutResult("Order created; Razorpay Checkout opened");
-      if (!window.Razorpay) throw new Error("Razorpay Checkout did not initialise.");
-      new window.Razorpay({
-        key: config.key_id, amount: createdOrder.amount, currency: createdOrder.currency,
-        name: "Razorpay RecoverAI", description: "Development / Test Mode payment", order_id: createdOrder.id,
-        handler: (payment: RazorpayResponse) => { void verifyPayment(payment); },
-        modal: { ondismiss: () => setCheckoutResult("Checkout closed without a completed payment") }, theme: { color: "#276cff" },
-      }).open();
-    } catch (checkoutError) {
-      const message = checkoutError instanceof Error ? checkoutError.message : "Unable to start test checkout.";
-      setCheckoutResult("Checkout could not start"); setError(message);
-    } finally { setLoading(false); }
+      const result = await api<Execution>(
+        `/api/cases/${selected.id}/execute`,
+        {
+          method: "POST",
+        }
+      );
+
+      setExecution(result);
+      setNotice(result.message);
+
+      await refreshCases();
+      await loadDetails(selected.id);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Recovery execution could not be completed."
+      );
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  return <main className="app-shell"><section className="brand"><span>R</span><div>RAZORPAY<br /><strong>RECOVERAI</strong></div><nav><button onClick={() => setView("queue")}>Recovery Queue</button><button onClick={() => setView("checkout")}>Test Checkout</button></nav></section>{view === "checkout" ? <section className="checkout-card"><p className="eyebrow">DEVELOPMENT / TEST PAGE</p><h1>Razorpay Test Checkout</h1><p className="intro">Creates a ₹100 Razorpay Test Mode order and verifies the signed response server-side.</p><button className="checkout-button" onClick={() => void openTestCheckout()} disabled={loading}>{loading ? "Preparing checkout…" : "Pay ₹100 in Test Mode"}</button>{error && <p className="error" role="alert">{error}</p>}<dl className="checkout-results"><div><dt>Order ID</dt><dd>{order?.id ?? "—"}</dd></div><div><dt>Payment ID</dt><dd>{paymentId}</dd></div><div><dt>Checkout result</dt><dd>{checkoutResult}</dd></div><div><dt>Server verification</dt><dd>{verificationResult}</dd></div></dl></section> : <section className="recovery-ui"><p className="eyebrow">AI RECOVERY QUEUE</p><h1>Protect revenue with policy in control.</h1><div className="stat-grid">{[["Revenue at risk", stats?.revenue_at_risk], ["Revenue recovered", stats?.revenue_recovered], ["Recovery rate", stats ? `${Math.round(stats.recovery_rate * 100)}%` : "—"], ["Cases processed", stats?.cases_processed]].map(([label, value]) => <article key={String(label)}><small>{label}</small><strong>{typeof value === "number" ? `₹${(value / 100).toLocaleString("en-IN")}` : value ?? "—"}</strong></article>)}</div><div className="queue-layout"><section><button className="checkout-button" onClick={() => void refreshQueue()}>Refresh queue</button>{cases.length ? cases.map((item) => <button className={`case-row ${selected?.id === item.id ? "selected" : ""}`} key={item.id} onClick={() => setSelected(item)}><b>{item.case_number}</b><span>{item.customer_email ?? "Unknown customer"} · ₹{(item.amount / 100).toLocaleString("en-IN")}</span><span>{item.recovery_probability === null ? "Awaiting analysis" : `${Math.round(item.recovery_probability * 100)}% recovery potential`} · {item.status}</span></button>) : <p className="intro">No recovery cases yet. A verified <code>payment.failed</code> webhook will appear here.</p>}</section><aside>{selected ? <><p className="eyebrow">AI EXPLANATION</p><h2>{selected.case_number}</h2><p>{selected.policy_reason ?? "Policy will be checked before execution."}</p><p>Recommended action: <b>{selected.recovery_action}</b></p><button className="checkout-button" onClick={() => void executeSelected()} disabled={loading}>Execute permitted recovery</button><h3>Audit timeline</h3>{audit.map((event) => <p className="audit" key={event.id}><b>{event.event_type}</b><br />{new Date(event.timestamp).toLocaleString()}</p>)}</> : <p>Select a case to view its policy, AI explanation, and audit trail.</p>}</aside></div></section>}</main>;
+  const trainModel = async () => {
+    setActionLoading("train");
+    setError(null);
+    setNotice(null);
+
+    try {
+      const result = await api<TrainingResult>("/api/model/train", {
+        method: "POST",
+      });
+
+      setTrainingResult(result);
+
+      setNotice(
+        `Model trained successfully using ${result.samples_trained.toLocaleString()} samples.`
+      );
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Model training could not be completed."
+      );
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const refreshAudit = async () => {
+    if (!selected) return;
+
+    setActionLoading("audit");
+    setError(null);
+    setNotice(null);
+
+    try {
+      const auditData = await api<AuditEvent[]>(
+        `/api/cases/${selected.id}/audit`
+      );
+
+      setAudit(auditData);
+
+      setNotice(
+        `Audit trail refreshed — ${auditData.length} events found.`
+      );
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Audit trail could not be loaded."
+      );
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const totals = useMemo(
+    () => ({
+      total: cases.length,
+      failed: cases.filter((item) => item.status === "failed").length,
+      recovering: cases.filter((item) => item.status === "recovering").length,
+      recovered: cases.filter((item) => item.status === "recovered").length,
+      review: cases.filter((item) => item.status === "human_review").length,
+    }),
+    [cases]
+  );
+
+  const stats = [
+    ["Total cases", totals.total, "all"],
+    ["Failed", totals.failed, "failed"],
+    ["Recovering", totals.recovering, "recovering"],
+    ["Recovered", totals.recovered, "recovered"],
+    ["Human review", totals.review, "human_review"],
+  ];
+
+  const policyAllowed =
+    explanation?.policy.allowed ??
+    selected?.policy_check_passed ??
+    false;
+
+  const existingPaymentLink = audit.find(
+    (event) => event.event_type === "payment_link_created"
+  )?.event_data.url;
+
+  return (
+    <div className="product-shell">
+      <aside className="sidebar">
+        <div className="logo">
+          <span>R</span>
+          <div>
+            RAZORPAY
+            <br />
+            <b>RECOVERAI</b>
+          </div>
+        </div>
+
+        <nav>
+  <a
+    className="active"
+    href="#overview"
+    onClick={(event) => {
+      event.preventDefault();
+      document
+        .getElementById("overview")
+        ?.scrollIntoView({ behavior: "smooth" });
+    }}
+  >
+    Overview
+  </a>
+
+  <a
+    href="#recovery-queue"
+    onClick={(event) => {
+      event.preventDefault();
+      document
+        .getElementById("recovery-queue")
+        ?.scrollIntoView({ behavior: "smooth" });
+    }}
+  >
+    Recovery Queue
+  </a>
+
+  <a
+    href="#audit-trail"
+    onClick={(event) => {
+      event.preventDefault();
+      document
+        .getElementById("audit-trail")
+        ?.scrollIntoView({ behavior: "smooth" });
+    }}
+  >
+    Audit Trail
+  </a>
+</nav>
+
+        <div className="sidebar-foot">
+          <i /> Policy engine active
+        </div>
+      </aside>
+
+      <main className="content" id="overview">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">RECOVERY OPERATIONS</p>
+            <h1>Revenue recovery, with guardrails.</h1>
+          </div>
+
+          <div className="top-actions">
+            <button
+              className="button ghost"
+              onClick={() => void trainModel()}
+              disabled={actionLoading !== null}
+            >
+              {actionLoading === "train"
+                ? "Training…"
+                : "↻ Train Recovery Model"}
+            </button>
+
+            <button
+              className="button ghost"
+              onClick={() => void refreshCases()}
+              disabled={loading || actionLoading !== null}
+            >
+              ↻ Refresh data
+            </button>
+          </div>
+        </header>
+
+        {error && (
+          <div className="alert error" role="alert">
+            {error}
+          </div>
+        )}
+
+        {notice && <div className="alert success">{notice}</div>}
+
+        {trainingResult && (
+          <div className="training-result">
+            <strong>Recovery model trained successfully</strong>
+
+            <span>
+              {trainingResult.samples_trained.toLocaleString()} samples trained
+            </span>
+          </div>
+        )}
+
+        <section className="metric-grid">
+          {stats.map(([label, value, tone]) => (
+            <article
+              className={`metric ${tone}`}
+              key={String(label)}
+            >
+              <small>{label}</small>
+              <strong>{value}</strong>
+              <span>Live database</span>
+            </article>
+          ))}
+        </section>
+
+        <section className="workspace">
+          <div className="queue-panel" id="recovery-queue">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">LIVE QUEUE</p>
+                <h2>Recovery cases</h2>
+              </div>
+
+              <span>{cases.length} cases</span>
+            </div>
+
+            {loading ? (
+              <div className="empty">Loading recovery cases…</div>
+            ) : cases.length === 0 ? (
+              <div className="empty">
+                No recovery cases yet. Verified failed-payment webhooks will
+                appear here.
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Case</th>
+                      <th>Customer</th>
+                      <th>Amount</th>
+                      <th>Failure</th>
+                      <th>Potential</th>
+                      <th>Policy</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {cases.map((item) => (
+                      <tr
+                        className={
+                          item.id === selectedId ? "selected" : ""
+                        }
+                        key={item.id}
+                        onClick={() => setSelectedId(item.id)}
+                      >
+                        <td>
+                          <b>{item.case_number}</b>
+                          <small>{title(item.payment_method)}</small>
+                        </td>
+
+                        <td>
+                          {item.customer_email ?? "Unknown"}
+                        </td>
+
+                        <td>{formatINR(item.amount)}</td>
+
+                        <td>{title(item.failure_reason)}</td>
+
+                        <td>
+                          {item.recovery_probability === null
+                            ? "—"
+                            : `${Math.round(
+                                item.recovery_probability * 100
+                              )}%`}
+                        </td>
+
+                        <td>
+                          <Badge
+                            kind="policy"
+                            value={
+                              item.policy_check_passed
+                                ? "allowed"
+                                : "blocked"
+                            }
+                          />
+                        </td>
+
+                        <td>
+                          <Badge value={item.status} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <aside className="details-panel">
+            {detailLoading ? (
+              <div className="empty">Loading case…</div>
+            ) : !selected ? (
+              <div className="empty">
+                Select a case to view recovery details.
+              </div>
+            ) : (
+              <>
+                <div className="detail-title">
+                  <div>
+                    <p className="eyebrow">CASE DETAILS</p>
+                    <h2>{selected.case_number}</h2>
+                    <span>
+                      Internal ID is used securely for API actions.
+                    </span>
+                  </div>
+
+                  <Badge value={selected.status} />
+                </div>
+
+                <div className="detail-grid">
+                  <div>
+                    <small>Customer</small>
+                    <b>
+                      {selected.customer_email ?? "Unknown customer"}
+                    </b>
+                  </div>
+
+                  <div>
+                    <small>Payment</small>
+                    <b>
+                      {formatINR(selected.amount)} ·{" "}
+                      {title(selected.payment_method)}
+                    </b>
+                  </div>
+
+                  <div>
+                    <small>Failure reason</small>
+                    <b>{title(selected.failure_reason)}</b>
+                  </div>
+
+                  <div>
+                    <small>Retries</small>
+                    <b>
+                      {selected.retry_count} / {selected.max_retries}
+                    </b>
+                  </div>
+                </div>
+
+                <section className="decision-card policy-card">
+                  <p className="eyebrow">
+                    POLICY DECISION · AUTHORITATIVE
+                  </p>
+
+                  <div>
+                    <Badge
+                      kind="policy"
+                      value={
+                        policyAllowed ? "allowed" : "blocked"
+                      }
+                    />
+
+                    <b>
+                      {explanation?.policy.reason ??
+                        selected.policy_reason ??
+                        "Awaiting policy check"}
+                    </b>
+                  </div>
+
+                  {explanation?.policy.retry_after && (
+                    <small>
+                      Retry available after{" "}
+                      {new Date(
+                        explanation.policy.retry_after
+                      ).toLocaleString()}
+                    </small>
+                  )}
+                </section>
+
+                <section className="decision-card ai-card">
+                  <p className="eyebrow">
+                    AI RECOMMENDATION · ADVISORY
+                  </p>
+
+                  {explanation?.ai ? (
+                    <>
+                      <div>
+                        <Badge
+                          kind="action"
+                          value={explanation.ai.recommended_action}
+                        />
+
+                        <b>
+                          {Math.round(
+                            explanation.ai.confidence * 100
+                          )}
+                          % confidence ·{" "}
+                          {explanation.ai.source === "groq"
+                            ? "Groq"
+                            : "Deterministic fallback"}
+                        </b>
+                      </div>
+
+                      <p>{explanation.ai.reasoning}</p>
+
+                      <blockquote>
+                        {explanation.ai.customer_message}
+                      </blockquote>
+                    </>
+                  ) : (
+                    <p>Run analysis to generate an explanation.</p>
+                  )}
+                </section>
+
+                <section className="decision-card">
+                  <p className="eyebrow">CUSTOMER HISTORY</p>
+
+                  <div className="history">
+                    <span>
+                      Lifetime value
+                      <b>
+                        {formatINR(
+                          explanation?.customer_history
+                            .lifetime_value ?? 0
+                        )}
+                      </b>
+                    </span>
+
+                    <span>
+                      Successful payments
+                      <b>
+                        {explanation?.customer_history
+                          .successful_payments ?? 0}
+                      </b>
+                    </span>
+
+                    <span>
+                      Failed payments
+                      <b>
+                        {explanation?.customer_history
+                          .failed_payments ?? 0}
+                      </b>
+                    </span>
+                  </div>
+                </section>
+
+                <div className="actions">
+                  <button
+                    className="button secondary"
+                    onClick={() => void analyze()}
+                    disabled={actionLoading !== null}
+                  >
+                    {actionLoading === "analyze"
+                      ? "Analyzing…"
+                      : "Analyze"}
+                  </button>
+
+                  {selected.status === "recovering" ? (
+                    <div className="in-progress">
+                      Payment Link recovery is already in progress. A new
+                      automatic action is not offered.
+                    </div>
+                  ) : policyAllowed ? (
+                    <button
+                      className="button"
+                      onClick={() => void execute()}
+                      disabled={actionLoading !== null}
+                    >
+                      {actionLoading === "execute"
+                        ? "Executing…"
+                        : `Execute ${title(
+                            explanation?.ai?.recommended_action ??
+                              selected.recovery_action
+                          )}`}
+                    </button>
+                  ) : (
+                    <div className="human-review">
+                      Human Review required — automatic recovery is
+                      unavailable.
+                    </div>
+                  )}
+                </div>
+
+                {(execution || existingPaymentLink) && (
+                  <section className="execution-result">
+                    <p className="eyebrow">
+                      FINAL EXECUTED ACTION
+                    </p>
+
+                    <b>
+                      {execution
+                        ? `${title(execution.action)} · ${title(
+                            execution.status
+                          )}`
+                        : `Payment Link · ${title(
+                            selected.status
+                          )}`}
+                    </b>
+
+                    <p>
+                      {execution?.message ??
+                        "Payment Link created previously; recovery is in progress."}
+                    </p>
+
+                    {(execution?.payment_link_url ||
+                      typeof existingPaymentLink === "string") && (
+                      <div className="link-actions">
+                        <a
+                          href={
+                            (execution?.payment_link_url ||
+                              existingPaymentLink) as string
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open payment link ↗
+                        </a>
+
+                        <button
+                          onClick={() =>
+                            void navigator.clipboard.writeText(
+                              (execution?.payment_link_url ||
+                                existingPaymentLink) as string
+                            )
+                          }
+                        >
+                          Copy link
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                <section className="audit-section" id="audit-trail">
+                  <div className="audit-heading">
+                    <p className="eyebrow">AUDIT TIMELINE</p>
+
+                    <button
+                      className="button ghost"
+                      onClick={() => void refreshAudit()}
+                      disabled={actionLoading !== null}
+                    >
+                      {actionLoading === "audit"
+                        ? "Refreshing…"
+                        : "↻ Refresh Audit"}
+                    </button>
+                  </div>
+
+                  {audit.length ? (
+                    audit.map((event) => (
+                      <div className="audit-item" key={event.id}>
+                        <i />
+
+                        <div>
+                          <b>{title(event.event_type)}</b>
+
+                          <small>
+                            {new Date(
+                              event.timestamp
+                            ).toLocaleString()}
+                          </small>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p>No audit events available.</p>
+                  )}
+                </section>
+              </>
+            )}
+          </aside>
+        </section>
+      </main>
+    </div>
+  );
 }
 
 export default App;
