@@ -1,6 +1,7 @@
 """Advisory Groq integration. All external failure modes fall back safely."""
 
 import json
+import warnings
 from typing import Any
 
 from app.ai.prompts import SYSTEM_PROMPT
@@ -50,7 +51,7 @@ def fallback_decision(context: dict[str, Any], permitted_actions: set[str], reas
 class GroqRecoveryAdvisor:
     def __init__(self, client: Any | None = None) -> None:
         settings = get_settings()
-        self.model = settings.groq_model or "openai/gpt-oss-20b"
+        self.model = settings.groq_model or "llama-3.3-70b-versatile"
         if client is not None:
             self.client = client
             return
@@ -77,6 +78,13 @@ class GroqRecoveryAdvisor:
             content = response.choices[0].message.content or "{}"
             decision = AIDecision.model_validate_json(content)
         except Exception as exc:
+            # Emit a visible warning in development so the fallback is not silent.
+            # No provider details or credentials are included in the message.
+            warnings.warn(
+                f"Groq advisory call failed (model={self.model!r}); using deterministic fallback.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             # No provider exception details are surfaced to the API or audit log.
             raise GroqUnavailableError("Groq response was unavailable or invalid.") from exc
         if decision.recommended_action not in permitted_actions:

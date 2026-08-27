@@ -95,15 +95,15 @@ def execute_recovery(db: Session, case: PaymentCase) -> dict[str, Any]:
         action = requested
     else:
         action = "escalate"
-    log_audit_event(
-        db,
-        case.id,
-        "error",
-        {
-            "operation": "recovery_action_validation",
-            "safe_message": "Invalid recovery action; escalated.",
-        },
-    )
+        log_audit_event(
+            db,
+            case.id,
+            "error",
+            {
+                "operation": "recovery_action_validation",
+                "safe_message": "Invalid recovery action; escalated.",
+            },
+        )
     log_audit_event(db, case.id, "recovery_started", {"advisory_action": requested, "executed_action": action})
     if action == "escalate":
         case.status, case.recovery_action = CaseStatus.HUMAN_REVIEW, RecoveryAction.ESCALATE
