@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
-type Status =
-  | "failed"
-  | "abandoned"
-  | "analyzing"
-  | "recovering"
-  | "recovered"
-  | "closed"
-  | "human_review";
+type Status = "failed" | "abandoned" | "analyzing" | "recovering" | "recovered" | "closed" | "human_review";
 
 type AI = {
   recommended_action: string;
@@ -96,32 +88,28 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const formatINR = (paise: number) =>
-  `₹${(paise / 100).toLocaleString("en-IN", {
-    maximumFractionDigits: 0,
-  })}`;
+  `₹${(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
 const title = (value: string | null) =>
-  value
-    ? value
-        .replaceAll("_", " ")
-        .replace(/\b\w/g, (letter) => letter.toUpperCase())
-    : "—";
+  value ? value.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()) : "—";
 
-function Badge({
-  value,
-  kind = "status",
-}: {
-  value: string;
-  kind?: "status" | "policy" | "action";
-}) {
-  return (
-    <span className={`badge ${kind} ${value.replaceAll("_", "-")}`}>
-      {title(value)}
-    </span>
-  );
+function Badge({ value, kind = "status" }: { value: string; kind?: "status" | "policy" | "action" }) {
+  return <span className={`badge ${kind} ${value.replaceAll("_", "-")}`}>{title(value)}</span>;
 }
 
-function App() {
+const CustomTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="custom-tooltip">
+        <div className="label">{payload[0].name}</div>
+        <div className="desc">{typeof payload[0].value === 'number' && payload[0].value > 1000 ? formatINR(payload[0].value) : payload[0].value}</div>
+      </div>
+    );
+  }
+  return null;
+};
+
+export default function App() {
   const [cases, setCases] = useState<RecoveryCase[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<RecoveryCase | null>(null);
@@ -131,77 +119,49 @@ function App() {
 
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
-
-  const [actionLoading, setActionLoading] = useState<
-    "analyze" | "execute" | "train" | "audit" | null
-  >(null);
-
-  const [trainingResult, setTrainingResult] =
-    useState<TrainingResult | null>(null);
-
+  const [actionLoading, setActionLoading] = useState<"analyze" | "execute" | "train" | "audit" | null>(null);
+  const [trainingResult, setTrainingResult] = useState<TrainingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
-
   const [demoMode, setDemoMode] = useState(false);
   const [resettingDemo, setResettingDemo] = useState(false);
 
-  const refreshCases = useCallback(
-    async (preserveSelection = true) => {
-      setLoading(true);
-
-      try {
-        const [next, stats] = await Promise.all([
-          api<RecoveryCase[]>("/api/cases?limit=1000"),
-          api<DashboardStats>("/api/dashboard/stats").catch(() => null),
-        ]);
-
-        setCases(next);
-        if (stats) setDashboardStats(stats);
-
-        setSelectedId((currentSelectedId) => {
-          return preserveSelection &&
-            currentSelectedId &&
-            next.some((item) => item.id === currentSelectedId)
-              ? currentSelectedId
-              : next[0]?.id ?? null;
-        });
-
-        setError(null);
-      } catch (requestError) {
-        setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Could not load recovery cases."
-        );
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
+  const refreshCases = useCallback(async (preserveSelection = true) => {
+    setLoading(true);
+    try {
+      const [next, stats] = await Promise.all([
+        api<RecoveryCase[]>("/api/cases?limit=1000"),
+        api<DashboardStats>("/api/dashboard/stats").catch(() => null),
+      ]);
+      setCases(next);
+      if (stats) setDashboardStats(stats);
+      setSelectedId((currentSelectedId) => {
+        return preserveSelection && currentSelectedId && next.some((item) => item.id === currentSelectedId)
+          ? currentSelectedId : next[0]?.id ?? null;
+      });
+      setError(null);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not load recovery cases.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const loadDetails = useCallback(async (id: string) => {
     setDetailLoading(true);
-    setExecution(null);
-
     try {
       const [caseData, explanationData, auditData] = await Promise.all([
         api<RecoveryCase>(`/api/cases/${id}`),
         api<Explanation>(`/api/cases/${id}/explanation`),
         api<AuditEvent[]>(`/api/cases/${id}/audit`),
       ]);
-
       setSelected(caseData);
       setExplanation(explanationData);
       setAudit(auditData);
       setError(null);
     } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Could not load case details."
-      );
+      setError(requestError instanceof Error ? requestError.message : "Could not load case details.");
     } finally {
       setDetailLoading(false);
     }
@@ -216,7 +176,6 @@ function App() {
 
   const resetDemoData = async () => {
     if (!window.confirm("This will permanently delete all current data and regenerate a fresh demo dataset. Continue?")) return;
-
     setResettingDemo(true);
     setError(null);
     setNotice(null);
@@ -233,6 +192,7 @@ function App() {
   };
 
   useEffect(() => {
+    setExecution(null); // Fix: Clear execution only when changing cases
     if (selectedId) {
       void loadDetails(selectedId);
     } else {
@@ -244,33 +204,18 @@ function App() {
 
   const analyze = async () => {
     if (!selected) return;
-
     setActionLoading("analyze");
     setError(null);
     setNotice(null);
-
     try {
-      const data = await api<Explanation>(
-        `/api/cases/${selected.id}/analyze`,
-        {
-          method: "POST",
-        }
-      );
-
+      const data = await api<Explanation>(`/api/cases/${selected.id}/analyze`, { method: "POST" });
       setExplanation(data);
       setSelected(data);
-
-      setNotice(
-        "Analysis completed using ML, policy, and advisory AI."
-      );
-
+      setNotice("Analysis completed using ML, policy, and advisory AI.");
       await refreshCases();
+      await loadDetails(selected.id); // Fix: Update audit log
     } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Analysis could not be completed."
-      );
+      setError(requestError instanceof Error ? requestError.message : "Analysis could not be completed.");
     } finally {
       setActionLoading(null);
     }
@@ -278,30 +223,17 @@ function App() {
 
   const execute = async () => {
     if (!selected || explanation?.policy.allowed === false) return;
-
     setActionLoading("execute");
     setError(null);
     setNotice(null);
-
     try {
-      const result = await api<Execution>(
-        `/api/cases/${selected.id}/execute`,
-        {
-          method: "POST",
-        }
-      );
-
+      const result = await api<Execution>(`/api/cases/${selected.id}/execute`, { method: "POST" });
       setExecution(result);
       setNotice(result.message);
-
       await refreshCases();
       await loadDetails(selected.id);
     } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Recovery execution could not be completed."
-      );
+      setError(requestError instanceof Error ? requestError.message : "Recovery execution could not be completed.");
     } finally {
       setActionLoading(null);
     }
@@ -311,51 +243,12 @@ function App() {
     setActionLoading("train");
     setError(null);
     setNotice(null);
-
     try {
-      const result = await api<TrainingResult>("/api/model/train", {
-        method: "POST",
-      });
-
+      const result = await api<TrainingResult>("/api/model/train", { method: "POST" });
       setTrainingResult(result);
-
-      setNotice(
-        `Model trained successfully using ${result.samples_trained.toLocaleString()} samples.`
-      );
+      setNotice(`Model trained successfully using ${result.samples_trained.toLocaleString()} samples.`);
     } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Model training could not be completed."
-      );
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const refreshAudit = async () => {
-    if (!selected) return;
-
-    setActionLoading("audit");
-    setError(null);
-    setNotice(null);
-
-    try {
-      const auditData = await api<AuditEvent[]>(
-        `/api/cases/${selected.id}/audit`
-      );
-
-      setAudit(auditData);
-
-      setNotice(
-        `Audit trail refreshed — ${auditData.length} events found.`
-      );
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Audit trail could not be loaded."
-      );
+      setError(requestError instanceof Error ? requestError.message : "Model training could not be completed.");
     } finally {
       setActionLoading(null);
     }
@@ -374,9 +267,7 @@ function App() {
       acc[curr.status] = (acc[curr.status] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-    return Object.entries(counts)
-      .map(([name, value]) => ({ name: title(name), value }))
-      .sort((a, b) => b.value - a.value);
+    return Object.entries(counts).map(([name, value]) => ({ name: title(name), value })).sort((a, b) => b.value - a.value);
   }, [cases]);
 
   const failureData = useMemo(() => {
@@ -385,598 +276,338 @@ function App() {
       acc[reason] = (acc[reason] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-    return Object.entries(counts)
-      .map(([name, value]) => ({ name: title(name), value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5); // top 5
+    return Object.entries(counts).map(([name, value]) => ({ name: title(name), value })).sort((a, b) => b.value - a.value).slice(0, 5);
   }, [cases]);
 
-  const COLORS = ['#10B981', '#EF4444', '#F59E0B', '#3B82F6', '#8B5CF6', '#64748B'];
+  const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#EF4444', '#64748B'];
 
-  const policyAllowed =
-    explanation?.policy.allowed ??
-    selected?.policy_check_passed ??
-    false;
-
-  const existingPaymentLink = audit.find(
-    (event) => event.event_type === "payment_link_created"
-  )?.event_data.url;
+  const policyAllowed = explanation?.policy.allowed ?? selected?.policy_check_passed ?? false;
+  const existingPaymentLink = audit.find((event) => event.event_type === "payment_link_created")?.event_data.url as string | undefined;
+  const currentLink = execution?.payment_link_url || existingPaymentLink;
 
   return (
     <div className="product-shell">
       <aside className="sidebar">
         <div className="logo">
-          <span>R</span>
+          <div className="logo-icon">R</div>
           <div>
-            RAZORPAY
-            <br />
-            <b>RECOVERAI</b>
+            <b>RecoverAI</b>
+            <small>Payment Recovery Intelligence</small>
           </div>
         </div>
 
         <nav>
-  <a
-    className="active"
-    href="#overview"
-    onClick={(event) => {
-      event.preventDefault();
-      document
-        .getElementById("overview")
-        ?.scrollIntoView({ behavior: "smooth" });
-    }}
-  >
-    Overview
-  </a>
-
-  <a
-    href="#recovery-queue"
-    onClick={(event) => {
-      event.preventDefault();
-      document
-        .getElementById("recovery-queue")
-        ?.scrollIntoView({ behavior: "smooth" });
-    }}
-  >
-    Recovery Queue
-  </a>
-
-  <a
-    href="#audit-trail"
-    onClick={(event) => {
-      event.preventDefault();
-      document
-        .getElementById("audit-trail")
-        ?.scrollIntoView({ behavior: "smooth" });
-    }}
-  >
-    Audit Trail
-  </a>
-</nav>
+          <a className="active" href="#overview">Overview</a>
+          <a href="#recovery-queue">Recovery Queue</a>
+        </nav>
 
         <div className="sidebar-foot">
-          <i /> Policy engine active
+          <span className="status-dot" /> System Operational
         </div>
       </aside>
 
       <main className="content" id="overview">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">RECOVERY OPERATIONS</p>
-            <h1>Revenue recovery, with guardrails.</h1>
-          </div>
-
-          <div className="top-actions">
-            <button
-              className="button ghost"
-              onClick={() => void trainModel()}
-              disabled={actionLoading !== null}
-            >
-              {actionLoading === "train"
-                ? "Training…"
-                : "↻ Train Recovery Model"}
-            </button>
-
-            <button
-              className="button ghost"
-              onClick={() => void refreshCases()}
-              disabled={loading || actionLoading !== null}
-            >
-              ↻ Refresh data
-            </button>
-          </div>
-        </header>
-
         {demoMode && (
           <div className="demo-banner">
             <div>
-              <h3>Demo Environment Active</h3>
-              <p>This is a safe sandbox. Data is synthetic and no real Razorpay or Groq API calls are made.</p>
+              <h3>DEMO ENVIRONMENT</h3>
+              <p>Presentation data enabled. Sandbox environment active.</p>
             </div>
-            <button
-              className="button"
-              onClick={() => void resetDemoData()}
-              disabled={resettingDemo || loading}
-            >
-              {resettingDemo ? "Resetting Database..." : "Reset Demo Data"}
+            <button className="button danger" onClick={() => void resetDemoData()} disabled={resettingDemo || loading}>
+              {resettingDemo ? "Resetting..." : "Reset Demo Data"}
             </button>
           </div>
         )}
 
-        {error && (
-          <div className="alert error" role="alert">
-            {error}
-          </div>
-        )}
+        <header className="dashboard-hero">
+          <h1>Payment Recovery Intelligence</h1>
+          <p className="dashboard-story">
+            Turn failed payments into recovered revenue.
+            <span>ML predicts. Policy decides. AI recommends. Recovery executes.</span>
+          </p>
+        </header>
 
+        {error && <div className="alert error">{error}</div>}
         {notice && <div className="alert success">{notice}</div>}
 
-        {trainingResult && (
-          <div className="training-result">
-            <strong>Recovery model trained successfully</strong>
-
-            <span>
-              {trainingResult.samples_trained.toLocaleString()} samples trained
-            </span>
+        <div className="metric-grid">
+          <div className="metric">
+            <span className="metric-label">Revenue at Risk</span>
+            <div className="metric-value">{formatINR(dashboardStats?.revenue_at_risk ?? 0)}</div>
+            <div className="metric-sub">From failed attempts</div>
           </div>
-        )}
+          <div className="metric">
+            <span className="metric-label">Revenue Recovered</span>
+            <div className="metric-value" style={{ color: 'var(--color-success)' }}>{formatINR(dashboardStats?.revenue_recovered ?? 0)}</div>
+            <div className="metric-sub">Via automated links</div>
+          </div>
+          <div className="metric">
+            <span className="metric-label">Recovery Rate</span>
+            <div className="metric-value">{(dashboardStats?.recovery_rate ?? 0).toFixed(1)}%</div>
+            <div className="metric-sub">Conversion of at-risk</div>
+          </div>
+          <div className="metric">
+            <span className="metric-label">Active Cases</span>
+            <div className="metric-value">{dashboardStats?.cases_processed ?? 0}</div>
+            <div className="metric-sub">In decision pipeline</div>
+          </div>
+        </div>
 
-        {dashboardStats && (
-          <>
-            <section className="metric-grid">
-              <article className="metric failed">
-                <small>Revenue At Risk</small>
-                <strong>{formatINR(dashboardStats.revenue_at_risk)}</strong>
-                <span>Actionable failed payments</span>
-              </article>
-              <article className="metric recovered">
-                <small>Revenue Recovered</small>
-                <strong>{formatINR(dashboardStats.revenue_recovered)}</strong>
-                <span>Successfully captured</span>
-              </article>
-              <article className="metric all">
-                <small>Recovery Rate</small>
-                <strong>{(dashboardStats.recovery_rate * 100).toFixed(1)}%</strong>
-                <span>Of total failed volume</span>
-              </article>
-              <article className="metric all">
-                <small>Cases Processed</small>
-                <strong>{dashboardStats.cases_processed.toLocaleString()}</strong>
-                <span>Analyzed & executed</span>
-              </article>
-            </section>
+        <div className="charts-grid">
+          <div className="chart-card">
+            <div className="chart-header">
+              <p className="eyebrow">Financial Impact</p>
+              <h3>Revenue Recovered vs At Risk</h3>
+            </div>
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={revenueData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                    {revenueData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                  </Pie>
+                  <RechartsTooltip content={<CustomTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
 
-            <section className="charts-grid">
-              <div className="chart-card">
-                <p className="eyebrow">RECOVERY PERFORMANCE</p>
-                <h3>Revenue Recovered vs At Risk</h3>
-                <div className="chart-container">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={revenueData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={65}
-                        outerRadius={85}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {revenueData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip formatter={(value) => formatINR(value as number)} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+          <div className="chart-card">
+            <div className="chart-header">
+              <p className="eyebrow">Case Volume</p>
+              <h3>Case Status Breakdown</h3>
+            </div>
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={statusData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E4E4E7" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} />
+                  <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F4F4F5' }} />
+                  <Bar dataKey="value" fill="var(--color-accent)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
 
-              <div className="chart-card">
-                <p className="eyebrow">OPERATIONAL DISTRIBUTION</p>
-                <h3>Case Status Breakdown</h3>
-                <div className="chart-container">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={statusData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} vertical={true} stroke="#E2E8F0" />
-                      <XAxis type="number" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                      <YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 11, fill: '#475569' }} axisLine={false} tickLine={false} />
-                      <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                      <Bar dataKey="value" fill="#3B82F6" radius={[0, 4, 4, 0]} barSize={24} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+          <div className="chart-card">
+            <div className="chart-header">
+              <p className="eyebrow">Failure Analysis</p>
+              <h3>Top Failure Reasons</h3>
+            </div>
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={failureData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E4E4E7" />
+                  <XAxis type="number" tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: '#71717A' }} axisLine={false} tickLine={false} />
+                  <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F4F4F5' }} />
+                  <Bar dataKey="value" fill="#8B5CF6" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
 
-              <div className="chart-card">
-                <p className="eyebrow">FAILURE ANALYSIS</p>
-                <h3>Top Failure Reasons</h3>
-                <div className="chart-container">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={failureData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} horizontal={true} stroke="#E2E8F0" />
-                      <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                      <RechartsTooltip cursor={{fill: '#F1F5F9'}} contentStyle={{ borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                      <Bar dataKey="value" fill="#8B5CF6" radius={[4, 4, 0, 0]} barSize={32} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </section>
-          </>
-        )}
-
-        <section className="workspace">
-          <div className="queue-panel" id="recovery-queue">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">LIVE QUEUE</p>
-                <h2>Recovery cases</h2>
-              </div>
-
+        <div className="workspace" id="recovery-queue">
+          <section className="queue-panel">
+            <div className="list-header">
+              <h2>Recovery Queue</h2>
               <span>{cases.length} cases</span>
             </div>
-
-            {loading ? (
-              <div className="empty">Loading recovery cases…</div>
-            ) : cases.length === 0 ? (
-              <div className="empty">
-                No recovery cases yet. Verified failed-payment webhooks will
-                appear here.
-              </div>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Case</th>
-                      <th>Customer</th>
-                      <th>Amount</th>
-                      <th>Failure</th>
-                      <th>Potential</th>
-                      <th>Policy</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {cases.map((item) => (
-                      <tr
-                        className={
-                          item.id === selectedId ? "selected" : ""
-                        }
-                        key={item.id}
-                        onClick={() => setSelectedId(item.id)}
-                      >
-                        <td>
-                          <b>{item.case_number}</b>
-                          <small>{title(item.payment_method)}</small>
-                        </td>
-
-                        <td>
-                          {item.customer_email ?? "Unknown"}
-                        </td>
-
-                        <td>{formatINR(item.amount)}</td>
-
-                        <td>{title(item.failure_reason)}</td>
-
-                        <td>
-                          {item.recovery_probability === null
-                            ? "—"
-                            : `${Math.round(
-                                item.recovery_probability * 100
-                              )}%`}
-                        </td>
-
-                        <td>
-                          <Badge
-                            kind="policy"
-                            value={
-                              item.policy_check_passed
-                                ? "allowed"
-                                : "blocked"
-                            }
-                          />
-                        </td>
-
-                        <td>
-                          <Badge value={item.status} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <aside className="details-panel">
-            {detailLoading ? (
-              <div className="empty">Loading case…</div>
-            ) : !selected ? (
-              <div className="empty">
-                Select a case to view recovery details.
-              </div>
-            ) : (
-              <>
-                <div className="detail-title">
-                  <div>
-                    <p className="eyebrow">CASE DETAILS</p>
-                    <h2>{selected.case_number}</h2>
-                    <span>
-                      Internal ID is used securely for API actions.
-                    </span>
-                  </div>
-
-                  <Badge value={selected.status} />
-                </div>
-
-                <div className="detail-grid">
-                  <div>
-                    <small>Customer</small>
-                    <b>
-                      {selected.customer_email ?? "Unknown customer"}
-                    </b>
-                  </div>
-
-                  <div>
-                    <small>Payment</small>
-                    <b>
-                      {formatINR(selected.amount)} ·{" "}
-                      {title(selected.payment_method)}
-                    </b>
-                  </div>
-
-                  <div>
-                    <small>Failure reason</small>
-                    <b>{title(selected.failure_reason)}</b>
-                  </div>
-
-                  <div>
-                    <small>Retries</small>
-                    <b>
-                      {selected.retry_count} / {selected.max_retries}
-                    </b>
-                  </div>
-                </div>
-
-                <div className="triad-container">
-                  <section className="decision-card policy-card">
-                    <p className="eyebrow">
-                      POLICY DECISION · AUTHORITATIVE
-                    </p>
-
-                    <div>
-                      <Badge
-                        kind="policy"
-                        value={
-                          policyAllowed ? "allowed" : "blocked"
-                        }
-                      />
-
-                      <b>
-                        {explanation?.policy.reason ??
-                          selected.policy_reason ??
-                          "Awaiting policy check"}
-                      </b>
-                    </div>
-
-                    {explanation?.policy.retry_after && (
-                      <small>
-                        Retry available after{" "}
-                        {new Date(
-                          explanation.policy.retry_after
-                        ).toLocaleString()}
-                      </small>
-                    )}
-                  </section>
-
-                  <section className="decision-card ai-card">
-                    <p className="eyebrow">
-                      AI RECOMMENDATION · ADVISORY
-                    </p>
-
-                    {explanation?.ai ? (
-                      <>
-                        <div>
-                          <Badge
-                            kind="action"
-                            value={explanation.ai.recommended_action}
-                          />
-
-                          <b>
-                            {Math.round(
-                              explanation.ai.confidence * 100
-                            )}
-                            % confidence ·{" "}
-                            {explanation.ai.source === "groq"
-                              ? "Groq"
-                              : "Deterministic fallback"}
-                          </b>
-                        </div>
-
-                        <p>{explanation.ai.reasoning}</p>
-
-                        <blockquote>
-                          {explanation.ai.customer_message}
-                        </blockquote>
-                      </>
-                    ) : (
-                      <p>Run analysis to generate an explanation.</p>
-                    )}
-                  </section>
-
-                  <section className="decision-card history-card">
-                    <p className="eyebrow">CUSTOMER HISTORY</p>
-
-                    <div className="history">
-                      <span>
-                        Lifetime value
-                        <b>
-                          {formatINR(
-                            explanation?.customer_history
-                              .lifetime_value ?? 0
-                          )}
-                        </b>
-                      </span>
-
-                      <span>
-                        Successful payments
-                        <b>
-                          {explanation?.customer_history
-                            .successful_payments ?? 0}
-                        </b>
-                      </span>
-
-                      <span>
-                        Failed payments
-                        <b>
-                          {explanation?.customer_history
-                            .failed_payments ?? 0}
-                        </b>
-                      </span>
-                    </div>
-
-                    {explanation?.policy.allowed === false && (
-                      <div className="policy-reason">
-                        Policy Block: {explanation.policy.reason}
-                      </div>
-                    )}
-                  </section>
-                </div>
-
-                <div className="actions">
-                  <button
-                    className="button secondary"
-                    onClick={() => void analyze()}
-                    disabled={actionLoading !== null}
+            <div className="case-list">
+              {loading && cases.length === 0 ? (
+                <div className="empty-state">Loading cases...</div>
+              ) : (
+                cases.map(item => (
+                  <div
+                    key={item.id}
+                    className={`case-item ${selectedId === item.id ? 'active' : ''}`}
+                    onClick={() => setSelectedId(item.id)}
                   >
-                    {actionLoading === "analyze"
-                      ? "Analyzing…"
-                      : "Analyze"}
-                  </button>
-
-                  {selected.status === "recovering" ? (
-                    <div className="in-progress">
-                      Payment Link recovery is already in progress. A new
-                      automatic action is not offered.
-                    </div>
-                  ) : policyAllowed ? (
-                    <button
-                      className="button"
-                      onClick={() => void execute()}
-                      disabled={actionLoading !== null}
-                    >
-                      {actionLoading === "execute"
-                        ? "Executing…"
-                        : `Execute ${title(
-                            explanation?.ai?.recommended_action ??
-                              selected.recovery_action
-                          )}`}
-                    </button>
-                  ) : (
-                    <div className="human-review">
-                      Human Review required — automatic recovery is
-                      unavailable.
-                    </div>
-                  )}
-                </div>
-
-                {(execution || existingPaymentLink) && (
-                  <section className="execution-result">
-                    <p className="eyebrow">
-                      FINAL EXECUTED ACTION
-                    </p>
-
-                    <b>
-                      {execution
-                        ? `${title(execution.action)} · ${title(
-                            execution.status
-                          )}`
-                        : `Payment Link · ${title(
-                            selected.status
-                          )}`}
-                    </b>
-
-                    <p>
-                      {execution?.message ??
-                        "Payment Link created previously; recovery is in progress."}
-                    </p>
-
-                    {(execution?.payment_link_url ||
-                      typeof existingPaymentLink === "string") && (
-                      <div className="link-actions">
-                        <a
-                          href={
-                            (execution?.payment_link_url ||
-                              existingPaymentLink) as string
-                          }
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open payment link ↗
-                        </a>
-
-                        <button
-                          onClick={() =>
-                            void navigator.clipboard.writeText(
-                              (execution?.payment_link_url ||
-                                existingPaymentLink) as string
-                            )
-                          }
-                        >
-                          Copy link
-                        </button>
+                    <div className="case-item-main">
+                      <div className="case-item-title">
+                        {item.case_number}
+                        <Badge value={item.status} />
                       </div>
-                    )}
-                  </section>
-                )}
+                      <div className="case-item-meta">
+                        {item.customer_email ?? "Unknown"} • {title(item.failure_reason)}
+                      </div>
+                    </div>
+                    <div className="case-item-amount">
+                       {formatINR(item.amount)}
+                       {item.recovery_probability != null && (
+                         <span style={{ fontSize: 11, color: 'var(--color-accent)' }}>
+                           {(item.recovery_probability * 100).toFixed(0)}% score
+                         </span>
+                       )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
 
-                <section className="audit-section" id="audit-trail">
-                  <div className="audit-heading">
-                    <p className="eyebrow">AUDIT TIMELINE</p>
+          <section className="details-panel">
+            {detailLoading && !selected ? (
+              <div className="empty-state">Loading case details...</div>
+            ) : selected ? (
+              <>
+                <header className="details-header">
+                  <div className="details-title">
+                    <h2>{selected.case_number}</h2>
+                    <div className="details-meta">{selected.customer_email} • {title(selected.payment_method)}</div>
+                  </div>
+                  <div className="details-amount">
+                    {formatINR(selected.amount)}
+                    <div style={{ marginTop: 8 }}><Badge value={selected.status} /></div>
+                  </div>
+                </header>
 
-                    <button
-                      className="button ghost"
-                      onClick={() => void refreshAudit()}
-                      disabled={actionLoading !== null}
-                    >
-                      {actionLoading === "audit"
-                        ? "Refreshing…"
-                        : "↻ Refresh Audit"}
-                    </button>
+                <div className="details-body">
+                  <div className="decision-pipeline">
+                     <div className="pipeline-track" />
+
+                     <div className="pipeline-step completed">
+                       <div className="step-icon">1</div>
+                       <div className="step-title">Failed</div>
+                       <div className="step-meta">{title(selected.failure_reason)}</div>
+                     </div>
+
+                     <div className={`pipeline-step ${explanation?.ml ? 'completed' : 'active'}`}>
+                       <div className="step-icon">2</div>
+                       <div className="step-title">ML Model</div>
+                       <div className="step-meta">{explanation?.ml?.recovery_probability != null ? `${(explanation.ml.recovery_probability * 100).toFixed(0)}% prob` : 'Pending'}</div>
+                     </div>
+
+                     <div className={`pipeline-step ${explanation?.policy ? (explanation.policy.allowed ? 'completed' : 'active') : ''}`}>
+                       <div className="step-icon">3</div>
+                       <div className="step-title">Policy</div>
+                       <div className="step-meta">{explanation?.policy ? (explanation.policy.allowed ? 'Allowed' : 'Blocked') : 'Pending'}</div>
+                     </div>
+
+                     <div className={`pipeline-step ${explanation?.ai ? 'completed' : ''}`}>
+                       <div className="step-icon">4</div>
+                       <div className="step-title">AI Advisor</div>
+                       <div className="step-meta">{explanation?.ai ? title(explanation.ai.recommended_action) : 'Pending'}</div>
+                     </div>
+
+                     <div className={`pipeline-step ${selected.status === 'recovered' || selected.status === 'recovering' ? 'completed' : ''}`}>
+                       <div className="step-icon">5</div>
+                       <div className="step-title">Recovery</div>
+                       <div className="step-meta">{title(selected.recovery_action)}</div>
+                     </div>
                   </div>
 
-                  {audit.length ? (
-                    <div className="audit-timeline">
-                      {audit.map((event) => (
-                        <div className="audit-item" key={event.id}>
-                          <i />
-
-                          <div>
-                            <b>{title(event.event_type)}</b>
-
-                            <small>
-                              {new Date(
-                                event.timestamp
-                              ).toLocaleString()}
-                            </small>
-                          </div>
-                        </div>
-                      ))}
+                  {explanation && (
+                    <div className="intelligence-panel">
+                       <div className="intelligence-card">
+                         <h4><i/> Case Metrics</h4>
+                         <div className="stat-row"><span>Probability</span> <b>{explanation.ml.recovery_probability != null ? (explanation.ml.recovery_probability * 100).toFixed(1) + "%" : "—"}</b></div>
+                         <div className="stat-row"><span>Lifetime Value</span> <b>{formatINR(explanation.customer_history.lifetime_value)}</b></div>
+                         <div className="stat-row"><span>Success Rate</span> <b>{explanation.customer_history.successful_payments} / {explanation.customer_history.successful_payments + explanation.customer_history.failed_payments}</b></div>
+                       </div>
+                       <div className="intelligence-card">
+                         <h4><i/> Policy Enforcement</h4>
+                         <div className="stat-row"><span>Decision</span> <b>{explanation.policy.allowed ? "APPROVED" : "BLOCKED"}</b></div>
+                         <div className="stat-row"><span>Reason</span> <b>{title(explanation.policy.reason)}</b></div>
+                         <div className="stat-row"><span>Human Review</span> <b>{explanation.policy.requires_human_approval ? "Required" : "Not Required"}</b></div>
+                       </div>
                     </div>
-                  ) : (
-                    <p className="empty">No audit events available.</p>
                   )}
-                </section>
+
+                  {explanation?.ai && (
+                    <div className="ai-block">
+                      <div className="ai-header">
+                        <div className="ai-title">✦ AI ADVISOR</div>
+                        <Badge value={explanation.ai.recommended_action} />
+                      </div>
+                      <div className="ai-reasoning">
+                        {explanation.ai.reasoning}
+                      </div>
+                      {explanation.ai.customer_message && (
+                        <blockquote>"{explanation.ai.customer_message}"</blockquote>
+                      )}
+                    </div>
+                  )}
+
+                  {(execution || currentLink) && (
+                    <div className="success-panel">
+                      <h3>{selected.status === 'recovered' ? '✓ PAYMENT SUCCESSFUL' : '✓ RECOVERY ACTION EXECUTED'}</h3>
+                      <p>{selected.status === 'recovered' ? 'Revenue successfully recovered via Razorpay.' : (execution?.message || "Payment Link recovery is in progress.")}</p>
+                      {currentLink && currentLink !== "mock_demo_link" && (
+                        <>
+                          <div className="success-link">{currentLink}</div>
+                          <button
+                            className="button secondary"
+                            onClick={() => {
+                              void navigator.clipboard.writeText(String(currentLink));
+                              setNotice("Link copied to clipboard!");
+                            }}
+                          >
+                            Copy Payment Link
+                          </button>
+                        </>
+                      )}
+                      {currentLink === "mock_demo_link" && !execution && (
+                         <div className="success-link" style={{color: 'var(--color-text-light)', fontStyle: 'italic', background: 'transparent', padding: 0}}>
+                            [Seeded mock link. Execute Recovery to generate a real Razorpay payment link.]
+                         </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="action-panel">
+                     <div className="action-info">
+                       <b>Execute Action</b>
+                       {selected.status === 'recovered' ? 'Revenue successfully recovered.' : selected.status === 'recovering' ? 'Payment link is active.' : policyAllowed ? 'Ready to execute recommendation.' : 'Policy blocked execution.'}
+                     </div>
+
+                     <div style={{ display: 'flex', gap: 12 }}>
+                       <button className="button secondary" onClick={() => void analyze()} disabled={actionLoading !== null}>
+                         {actionLoading === 'analyze' ? <span className="spinner"/> : null}
+                         Analyze
+                       </button>
+
+                       {policyAllowed && selected.status !== 'recovered' && (selected.status !== 'recovering' || currentLink === 'mock_demo_link') && (
+                         <button className="button" onClick={() => void execute()} disabled={actionLoading !== null}>
+                           {actionLoading === 'execute' ? <span className="spinner"/> : null}
+                           Execute
+                         </button>
+                       )}
+                     </div>
+                  </div>
+
+                  <div className="audit-journey">
+                     <h3>Recovery Journey</h3>
+                     {audit.length === 0 ? (
+                       <div className="empty-state">No events recorded.</div>
+                     ) : (
+                       <div className="timeline">
+                         {audit.map((event) => {
+                           const type = event.event_type.toLowerCase();
+                           const kind = type.includes('fail') || type.includes('block') || type.includes('escalat') ? 'warning' : type.includes('success') || type.includes('recover') ? 'success' : 'info';
+                           return (
+                             <div key={event.id} className={`timeline-event ${kind}`}>
+                                <div className="timeline-dot" />
+                                <div className="timeline-time">{new Date(event.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}</div>
+                                <div className="timeline-content">
+                                   <b>{title(event.event_type)}</b>
+                                   <pre>{JSON.stringify(event.event_data, null, 2)}</pre>
+                                </div>
+                             </div>
+                           )
+                         })}
+                       </div>
+                     )}
+                  </div>
+                </div>
               </>
+            ) : (
+              <div className="empty-state">Select a case to view details</div>
             )}
-          </aside>
-        </section>
+          </section>
+        </div>
       </main>
     </div>
   );
 }
-
-export default App;

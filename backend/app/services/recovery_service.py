@@ -81,13 +81,21 @@ def execute_recovery(db: Session, case: PaymentCase) -> dict[str, Any]:
     # Guard: if recovery is already in progress, return immediately without any DB
     # writes, audit events, retry-count increments, or new payment link creation.
     # This makes the backend independently safe regardless of the calling client.
-    if case.status == CaseStatus.RECOVERING:
-        return {
-            "action": "no_action",
-            "status": case.status.value,
-            "message": "Recovery is already in progress for this case. No new action was taken.",
-            "payment_link_url": None,
-        }
+    if case.status in {CaseStatus.RECOVERING, CaseStatus.RECOVERED}:
+        events = list_audit_events(db, case.id)
+        last_link_event = next((e for e in reversed(events) if e.event_type == "payment_link_created"), None)
+        is_mock = last_link_event and last_link_event.event_data.get("url") == "mock_demo_link"
+
+        if not is_mock or case.status == CaseStatus.RECOVERED:
+            return {
+                "action": "no_action",
+                "status": case.status.value,
+                "message": f"Recovery is already {'complete' if case.status == CaseStatus.RECOVERED else 'in progress'} for this case. No new action was taken.",
+                "payment_link_url": None,
+            }
+
+        # It's a mock demo link. Treat as FAILED for policy evaluation so we can generate a real link.
+        case.status = CaseStatus.FAILED
     policy_result = check_recovery_policy(case, _policy(db))
     case.policy_check_passed, case.policy_reason = policy_result.allowed, policy_result.reason
     db.commit(); log_audit_event(db, case.id, "policy_check", policy_result.to_dict())
@@ -121,7 +129,7 @@ def execute_recovery(db: Session, case: PaymentCase) -> dict[str, Any]:
         case.status, case.recovery_action = CaseStatus.HUMAN_REVIEW, RecoveryAction.ESCALATE
         db.commit(); log_audit_event(db, case.id, "human_escalation", {"reason": "Advisory escalation"})
         return {"action": action, "status": case.status.value, "message": "Escalated to human review.", "payment_link_url": None}
-   
+
     try:
         link = RazorpayService().create_payment_link({"amount": case.amount, "currency": case.currency, "reference_id": case.case_number, "description": "Secure payment recovery link"})
     except RazorpayServiceError:

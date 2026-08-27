@@ -114,3 +114,61 @@ def test_analyze_case_state_guard(monkeypatch) -> None:
             result = analyze_case(db, case)
             assert "error" in result
             assert case.status == status # Assert state was not corrupted
+
+def test_execute_recovery_mock_demo_link_allows_execution(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_123")
+    monkeypatch.setenv("RAZORPAY_KEY_SECRET", "secret")
+    case_id = _case(status=CaseStatus.RECOVERING, recovery_probability=0.9)
+    with SessionLocal() as db:
+        from app.services.audit_service import log_audit_event
+        log_audit_event(db, case_id, "payment_link_created", {"url": "mock_demo_link"})
+        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+        # Mock RazorpayService to avoid real network call in test
+        class DummyRazorpayService:
+            def create_payment_link(self, data): return {"id": "plink_123", "short_url": "https://rzp.io/rzp/123"}
+        monkeypatch.setattr("app.services.recovery_service.RazorpayService", lambda *args, **kwargs: DummyRazorpayService())
+
+        result = execute_recovery(db, case)
+        assert result["action"] == "payment_link"
+        assert result["payment_link_url"] == "https://rzp.io/rzp/123"
+
+def test_execute_recovery_real_link_recovering_returns_no_action(monkeypatch) -> None:
+    case_id = _case(status=CaseStatus.RECOVERING)
+    with SessionLocal() as db:
+        from app.services.audit_service import log_audit_event
+        log_audit_event(db, case_id, "payment_link_created", {"url": "https://rzp.io/rzp/real"})
+        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+        result = execute_recovery(db, case)
+        assert result["action"] == "no_action"
+        assert result["payment_link_url"] is None
+
+def test_execute_recovery_failed_allowed_executes(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_123")
+    monkeypatch.setenv("RAZORPAY_KEY_SECRET", "secret")
+    case_id = _case(status=CaseStatus.FAILED, amount=1000, recovery_probability=0.9)
+    with SessionLocal() as db:
+        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+        class DummyRazorpayService:
+            def create_payment_link(self, data): return {"id": "plink_123", "short_url": "https://rzp.io/rzp/123"}
+        monkeypatch.setattr("app.services.recovery_service.RazorpayService", lambda *args, **kwargs: DummyRazorpayService())
+
+        result = execute_recovery(db, case)
+        assert result["action"] == "payment_link"
+
+def test_execute_recovery_recovered_returns_no_action(monkeypatch) -> None:
+    case_id = _case(status=CaseStatus.RECOVERED)
+    with SessionLocal() as db:
+        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+        result = execute_recovery(db, case)
+        assert result["action"] == "no_action"
+        assert result["payment_link_url"] is None
+        assert "complete" in result["message"]
+
+def test_execute_recovery_policy_blocked_returns_escalate(monkeypatch) -> None:
+    case_id = _case(status=CaseStatus.FAILED, amount=600000) # Policy limit is 500k
+    with SessionLocal() as db:
+        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+        result = execute_recovery(db, case)
+        assert result["action"] == "escalate"

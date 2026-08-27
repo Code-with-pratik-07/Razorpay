@@ -83,7 +83,7 @@ def seed_demo_data(reset: bool = False):
             log_audit_event(db, case.id, "policy_check", {"allowed": case.policy_check_passed, "reason": case.policy_reason})
 
             if status in {CaseStatus.RECOVERING, CaseStatus.RECOVERED}:
-                log_audit_event(db, case.id, "payment_link_created", {"url": "https://rzp.io/i/demo"})
+                log_audit_event(db, case.id, "payment_link_created", {"url": "mock_demo_link"})
 
             if status == CaseStatus.RECOVERED:
                 case.recovered_at = created_at + timedelta(hours=1)
