@@ -1,13 +1,35 @@
 import pandas as pd
 import numpy as np
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
 
 from app.ml.predict import load_model
 from app.ml.train import MODEL_PATH
 from app.schemas.recovery import ExperimentResult
+from app.core.config import get_settings
+from app.services.demo_service import seed_demo_data
 
 router = APIRouter(prefix="/api/demo", tags=["demo"])
+
+class DemoStatus(BaseModel):
+    demo_mode_enabled: bool
+
+@router.get("/status", response_model=DemoStatus)
+def get_demo_status():
+    settings = get_settings()
+    return DemoStatus(demo_mode_enabled=settings.demo_mode)
+
+@router.post("/reset")
+def reset_demo_data():
+    settings = get_settings()
+    if not settings.demo_mode:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo mode is disabled. Destructive actions are forbidden."
+        )
+    seed_demo_data(reset=True)
+    return {"message": "Demo database successfully reset and seeded."}
 
 
 @router.post("/run-experiment", response_model=ExperimentResult)
