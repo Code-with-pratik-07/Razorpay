@@ -76,6 +76,13 @@ type TrainingResult = {
   model_path: string;
 };
 
+type DashboardStats = {
+  revenue_at_risk: number;
+  revenue_recovered: number;
+  recovery_rate: number;
+  cases_processed: number;
+};
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, init);
   const body = await response.json().catch(() => ({}));
@@ -133,15 +140,20 @@ function App() {
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
 
   const refreshCases = useCallback(
     async (preserveSelection = true) => {
       setLoading(true);
 
       try {
-        const next = await api<RecoveryCase[]>("/api/cases");
+        const [next, stats] = await Promise.all([
+          api<RecoveryCase[]>("/api/cases"),
+          api<DashboardStats>("/api/dashboard/stats").catch(() => null),
+        ]);
 
         setCases(next);
+        if (stats) setDashboardStats(stats);
 
         const nextId =
           preserveSelection &&
@@ -466,6 +478,31 @@ function App() {
             </article>
           ))}
         </section>
+
+        {dashboardStats && (
+          <section className="metric-grid">
+            <article className="metric recovered">
+              <small>Revenue At Risk</small>
+              <strong>{formatINR(dashboardStats.revenue_at_risk)}</strong>
+              <span>From backend stats</span>
+            </article>
+            <article className="metric recovering">
+              <small>Revenue Recovered</small>
+              <strong>{formatINR(dashboardStats.revenue_recovered)}</strong>
+              <span>From backend stats</span>
+            </article>
+            <article className="metric all">
+              <small>Recovery Rate</small>
+              <strong>{(dashboardStats.recovery_rate * 100).toFixed(1)}%</strong>
+              <span>From backend stats</span>
+            </article>
+            <article className="metric all">
+              <small>Cases Processed</small>
+              <strong>{dashboardStats.cases_processed.toLocaleString()}</strong>
+              <span>From backend stats</span>
+            </article>
+          </section>
+        )}
 
         <section className="workspace">
           <div className="queue-panel" id="recovery-queue">
