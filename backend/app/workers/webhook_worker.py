@@ -1,7 +1,7 @@
 """Fast, idempotent processing of already verified and durably stored webhooks."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import or_, select
@@ -97,7 +97,7 @@ def _process_recovered(db: Session, payload: dict[str, Any], event_type: str) ->
     case.razorpay_payment_id = payment_id or case.razorpay_payment_id
     case.razorpay_order_id = order_id or case.razorpay_order_id
     case.status = CaseStatus.RECOVERED
-    case.recovered_at = datetime.utcnow()
+    case.recovered_at = datetime.now(timezone.utc).replace(tzinfo=None)
     # Update customer lifetime stats now that a payment has been confirmed.
     # The guard above (case.status == CaseStatus.RECOVERED) ensures this only
     # runs once per case — the second call for an already-recovered case returns
@@ -124,12 +124,12 @@ def process_webhook_event(webhook_log_id: str) -> None:
             else:
                 log.error_message = "Unsupported event ignored."
             log.processed = True
-            log.processed_at = datetime.utcnow()
+            log.processed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
         except Exception as exc:
             db.rollback()
             log = db.get(WebhookLog, webhook_log_id)
             if log:
                 log.error_message = str(exc)[:1000]
-                log.processed_at = datetime.utcnow()
+                log.processed_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 db.commit()

@@ -1,6 +1,6 @@
 """Policy-controlled recovery orchestration; Groq is advisory only."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -32,11 +32,11 @@ def _features(case: PaymentCase) -> dict[str, Any]:
         "amount": case.amount, "customer_lifetime_value": customer.lifetime_value,
         "customer_successful_payments": customer.successful_payments,
         "customer_failed_payments": customer.failed_payments,
-        "time_since_failure": max(0, (datetime.utcnow() - case.created_at).total_seconds() / 3600),
+        "time_since_failure": max(0, (datetime.now(timezone.utc).replace(tzinfo=None) - case.created_at).total_seconds() / 3600),
         "payment_method": case.payment_method if case.payment_method in {"card", "upi", "netbanking"} else "card",
         "failure_count": customer.failed_payments,
         "failure_reason": case.failure_reason if case.failure_reason in {"insufficient_funds", "card_expired", "network_timeout", "fraud_suspicion", "bank_declined"} else "bank_declined",
-        "customer_age_days": max(1, (datetime.utcnow() - customer.created_at).days),
+        "customer_age_days": max(1, (datetime.now(timezone.utc).replace(tzinfo=None) - customer.created_at).days),
     }
 
 
@@ -49,6 +49,8 @@ def _last_ai_decision(db: Session, case_id: str) -> AIDecision | None:
 
 
 def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | None = None) -> dict[str, Any]:
+    if case.status not in {CaseStatus.FAILED, CaseStatus.ABANDONED}:
+        return {"error": f"Case is in '{case.status.value}' state and cannot be analyzed."}
     case.status = CaseStatus.ANALYZING
     db.commit()
     features = _features(case)
@@ -127,7 +129,7 @@ def execute_recovery(db: Session, case: PaymentCase) -> dict[str, Any]:
         db.commit(); log_audit_event(db, case.id, "error", {"operation": "payment_link", "safe_message": "Payment Link creation failed."})
         return {"action": "escalate", "status": case.status.value, "message": "Payment Link could not be created; escalated.", "payment_link_url": None}
     case.status, case.recovery_action = CaseStatus.RECOVERING, RecoveryAction.PAYMENT_LINK
-    case.retry_count += 1; case.last_retry_at = datetime.utcnow()
+    case.retry_count += 1; case.last_retry_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit(); log_audit_event(db, case.id, "payment_link_created", {"payment_link_id": link.get("id"), "url": link.get("short_url")})
     send_mock_recovery_message(db, case.id, decision.customer_message)
     return {"action": "payment_link", "status": case.status.value, "message": "Payment Link created.", "payment_link_url": link.get("short_url")}

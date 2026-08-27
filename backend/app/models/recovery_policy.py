@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -15,5 +15,5 @@ class RecoveryPolicy(Base):
     max_recovery_window_days: Mapped[int] = mapped_column(Integer, default=7, nullable=False)
     max_auto_recovery_amount: Mapped[int] = mapped_column(Integer, default=500000, nullable=False, comment="Paise; ₹5,000")
     min_time_between_retries_hours: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(timezone.utc).replace(tzinfo=None), onupdate=datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)

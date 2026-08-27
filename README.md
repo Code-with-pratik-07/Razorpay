@@ -167,6 +167,17 @@ cd frontend
 npm run build
 ```
 
+## Demo Data Seeder
+
+To quickly populate the database with realistic demo cases for presentations or testing:
+
+```bash
+cd backend
+source .venv/bin/activate
+PYTHONPATH=. python scripts/seed_demo.py
+```
+*(Use `--reset` to wipe all existing data and start fresh).*
+
 ---
 
 ## API Reference (Summary)

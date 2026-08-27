@@ -22,8 +22,8 @@ def _summary(case: PaymentCase) -> dict:
 
 
 @router.get("", response_model=list[CaseSummary])
-def list_cases(db: Session = Depends(get_db)) -> list[CaseSummary]:
-    cases = list(db.scalars(select(PaymentCase).options(joinedload(PaymentCase.customer)).order_by(PaymentCase.created_at.desc())))
+def list_cases(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)) -> list[CaseSummary]:
+    cases = list(db.scalars(select(PaymentCase).options(joinedload(PaymentCase.customer)).order_by(PaymentCase.created_at.desc()).offset(skip).limit(limit)))
     return [CaseSummary(**_summary(case)) for case in cases]
 
 

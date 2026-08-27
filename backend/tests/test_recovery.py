@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -99,8 +99,18 @@ def test_execution_is_blocked_by_policy(monkeypatch) -> None:
 
 def test_retry_timing_and_window_remain_blocked(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "")
-    for values in ({"retry_count": 3}, {"last_retry_at": datetime.utcnow() - timedelta(hours=4)}, {"created_at": datetime.utcnow() - timedelta(days=8)}):
+    for values in ({"retry_count": 3}, {"last_retry_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=4)}, {"created_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=8)}):
         case_id = _case(**values)
         with SessionLocal() as db:
             case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
             assert execute_recovery(db, case)["action"] == "escalate"
+
+def test_analyze_case_state_guard(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    for status in [CaseStatus.RECOVERING, CaseStatus.RECOVERED, CaseStatus.CLOSED, CaseStatus.HUMAN_REVIEW]:
+        case_id = _case(status=status)
+        with SessionLocal() as db:
+            case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+            result = analyze_case(db, case)
+            assert "error" in result
+            assert case.status == status # Assert state was not corrupted

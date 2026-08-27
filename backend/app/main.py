@@ -12,8 +12,15 @@ from app.api.demo import router as demo_router
 from app.core.config import get_settings
 from app.db.database import init_db
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.1.0")
+app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -29,8 +36,3 @@ app.include_router(webhooks_router)
 app.include_router(cases_router)
 app.include_router(dashboard_router)
 app.include_router(demo_router)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    init_db()

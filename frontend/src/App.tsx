@@ -148,7 +148,7 @@ function App() {
 
       try {
         const [next, stats] = await Promise.all([
-          api<RecoveryCase[]>("/api/cases"),
+          api<RecoveryCase[]>("/api/cases?limit=1000"),
           api<DashboardStats>("/api/dashboard/stats").catch(() => null),
         ]);
 
@@ -734,6 +734,12 @@ function App() {
                       </b>
                     </span>
                   </div>
+
+                  {explanation?.policy.allowed === false && (
+                    <div className="policy-reason">
+                      Policy Block: {explanation.policy.reason}
+                    </div>
+                  )}
                 </section>
 
                 <div className="actions">

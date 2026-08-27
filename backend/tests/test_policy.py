@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -23,7 +23,7 @@ def _check(policy: RecoveryPolicy, **overrides: object):
     init_db()
     with SessionLocal() as db:
         case = create_case(db, **overrides)
-        return check_recovery_policy(case, policy, now=datetime.utcnow())
+        return check_recovery_policy(case, policy, now=datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 def test_inr_amounts_at_or_below_limit_are_allowed(policy: RecoveryPolicy) -> None:
@@ -40,12 +40,12 @@ def test_amount_above_inr_limit_requires_human_approval(policy: RecoveryPolicy) 
 def test_retry_limit_and_cooldown_are_enforced(policy: RecoveryPolicy) -> None:
     assert _check(policy, retry_count=0).allowed
     assert not _check(policy, retry_count=3).allowed
-    cooldown = _check(policy, last_retry_at=datetime.utcnow() - timedelta(hours=12))
+    cooldown = _check(policy, last_retry_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=12))
     assert not cooldown.allowed
     assert cooldown.retry_after is not None
 
 
 def test_expired_and_terminal_cases_are_blocked(policy: RecoveryPolicy) -> None:
-    assert not _check(policy, created_at=datetime.utcnow() - timedelta(days=8)).allowed
+    assert not _check(policy, created_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=8)).allowed
     assert not _check(policy, status=CaseStatus.RECOVERED).allowed
     assert not _check(policy, status=CaseStatus.CLOSED).allowed

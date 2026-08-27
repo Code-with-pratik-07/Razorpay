@@ -1,7 +1,7 @@
 """Deterministic recovery guardrails used by every future recovery action."""
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.models.payment_case import CaseStatus, PaymentCase
 from app.models.recovery_policy import RecoveryPolicy
@@ -28,7 +28,7 @@ def check_recovery_policy(case: PaymentCase, policy: RecoveryPolicy, *, now: dat
     The ordering is intentional: terminal states and invalid payment data are never
     made eligible by a lower amount or a strong ML score.
     """
-    current_time = now or datetime.utcnow()
+    current_time = now or datetime.now(timezone.utc).replace(tzinfo=None)
     if case.status == CaseStatus.RECOVERED:
         return PolicyCheckResult(False, "Case is already recovered.", False)
     if case.status == CaseStatus.CLOSED:
