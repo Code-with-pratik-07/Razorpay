@@ -481,12 +481,12 @@ function App() {
 
         {dashboardStats && (
           <section className="metric-grid">
-            <article className="metric recovered">
+            <article className="metric failed">
               <small>Revenue At Risk</small>
               <strong>{formatINR(dashboardStats.revenue_at_risk)}</strong>
               <span>From backend stats</span>
             </article>
-            <article className="metric recovering">
+            <article className="metric recovered">
               <small>Revenue Recovered</small>
               <strong>{formatINR(dashboardStats.revenue_recovered)}</strong>
               <span>From backend stats</span>

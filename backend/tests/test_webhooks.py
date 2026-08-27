@@ -1,3 +1,5 @@
+from _pytest import assertion
+from app.models.customer import Customer
 import json
 import uuid
 
@@ -11,6 +13,7 @@ from app.db.database import SessionLocal, init_db
 from app.main import app
 from app.models.audit_event import AuditEvent
 from app.models.payment_case import CaseStatus, PaymentCase
+from app.models.customer import Customer
 from app.models.webhook_log import WebhookLog
 
 SECRET = "local-webhook-secret-for-tests"
@@ -56,7 +59,14 @@ def test_valid_signature_and_payment_failed_create_case_and_audit(client: TestCl
         events = list(db.scalars(select(AuditEvent).where(AuditEvent.case_id == case.id)))
         log = db.scalar(select(WebhookLog).where(WebhookLog.event_id == f"evt_{suffix}"))
     assert case is not None and case.status == CaseStatus.FAILED
-    assert {"failure_detected", "case_created", "ml_prediction", "policy_check", "ai_analysis", "ai_unavailable"}.issubset({event.event_type for event in events})
+
+    customer = db.get(Customer, case.customer_id)
+
+    assert customer is not None
+    assert customer.failed_payments >= 1
+    assert {"failure_detected", "case_created", "ml_prediction", "policy_check", "ai_analysis", "ai_unavailable"}.issubset(
+        {event.event_type for event in events})
+
     assert log.processed
 
 

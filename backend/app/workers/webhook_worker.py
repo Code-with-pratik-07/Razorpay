@@ -56,6 +56,12 @@ def _process_failed(db: Session, payload: dict[str, Any]) -> None:
     case = _find_case(db, payment_id, order_id)
     if case is None:
         customer = _find_or_create_customer(db, payment)
+        # Increment failed payments on the customer for new case creation only.
+        # The existing webhook idempotency (unique event_id) already prevents the
+        # _process_failed path from running twice for the same event. But guard
+        # here against a second *different* failed event for the same payment by
+        # only incrementing in the new-case branch, not the existing-case branch.
+        customer.failed_payments += 1
         case = PaymentCase(
             case_number=f"RPA-{uuid.uuid4().hex[:20]}", customer_id=customer.id,
             razorpay_payment_id=payment_id, razorpay_order_id=order_id,
@@ -92,6 +98,14 @@ def _process_recovered(db: Session, payload: dict[str, Any], event_type: str) ->
     case.razorpay_order_id = order_id or case.razorpay_order_id
     case.status = CaseStatus.RECOVERED
     case.recovered_at = datetime.utcnow()
+    # Update customer lifetime stats now that a payment has been confirmed.
+    # The guard above (case.status == CaseStatus.RECOVERED) ensures this only
+    # runs once per case — the second call for an already-recovered case returns
+    # early before reaching this point.
+    customer = db.get(Customer, case.customer_id)
+    if customer is not None:
+        customer.successful_payments += 1
+        customer.lifetime_value += case.amount
     db.commit()
     log_audit_event(db, case.id, "payment_success", {"event": event_type, "payment_id": payment_id})
     log_audit_event(db, case.id, "case_recovered", {"order_id": order_id})

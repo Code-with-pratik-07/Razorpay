@@ -33,6 +33,10 @@ def check_recovery_policy(case: PaymentCase, policy: RecoveryPolicy, *, now: dat
         return PolicyCheckResult(False, "Case is already recovered.", False)
     if case.status == CaseStatus.CLOSED:
         return PolicyCheckResult(False, "Case is closed.", False)
+    if case.status == CaseStatus.RECOVERING:
+        return PolicyCheckResult(False, "Recovery is already in progress for this case.", False)
+    if case.status == CaseStatus.HUMAN_REVIEW:
+        return PolicyCheckResult(False, "Case requires human review; automated recovery is not permitted.", True)
     if not case.razorpay_payment_id and not case.razorpay_order_id:
         return PolicyCheckResult(False, "Valid payment or order information is required.", True)
     if case.amount <= 0:

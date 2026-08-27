@@ -76,6 +76,16 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
 
 
 def execute_recovery(db: Session, case: PaymentCase) -> dict[str, Any]:
+    # Guard: if recovery is already in progress, return immediately without any DB
+    # writes, audit events, retry-count increments, or new payment link creation.
+    # This makes the backend independently safe regardless of the calling client.
+    if case.status == CaseStatus.RECOVERING:
+        return {
+            "action": "no_action",
+            "status": case.status.value,
+            "message": "Recovery is already in progress for this case. No new action was taken.",
+            "payment_link_url": None,
+        }
     policy_result = check_recovery_policy(case, _policy(db))
     case.policy_check_passed, case.policy_reason = policy_result.allowed, policy_result.reason
     db.commit(); log_audit_event(db, case.id, "policy_check", policy_result.to_dict())
