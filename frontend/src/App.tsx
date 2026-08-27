@@ -159,14 +159,14 @@ function App() {
         setCases(next);
         if (stats) setDashboardStats(stats);
 
-        const nextId =
-          preserveSelection &&
-          selectedId &&
-          next.some((item) => item.id === selectedId)
-            ? selectedId
-            : next[0]?.id ?? null;
+        setSelectedId((currentSelectedId) => {
+          return preserveSelection &&
+            currentSelectedId &&
+            next.some((item) => item.id === currentSelectedId)
+              ? currentSelectedId
+              : next[0]?.id ?? null;
+        });
 
-        setSelectedId(nextId);
         setError(null);
       } catch (requestError) {
         setError(
@@ -178,7 +178,7 @@ function App() {
         setLoading(false);
       }
     },
-    [selectedId]
+    []
   );
 
   const loadDetails = useCallback(async (id: string) => {
