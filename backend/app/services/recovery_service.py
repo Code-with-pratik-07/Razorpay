@@ -148,6 +148,7 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
             "currency": case.currency,
             "reference_id": f"RECOVERAI-{case.case_number}-{uuid.uuid4().hex[:8]}",
             "description": "Payment recovery for case " + str(case.case_number),
+            "notes": {"recoverai_case_id": str(case.id)},
             "customer": {
                 "name": "Customer",
                 "email": case.customer.email,

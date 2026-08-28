@@ -39,7 +39,17 @@ def _find_or_create_customer(db: Session, payment: dict[str, Any]) -> Customer:
     return customer
 
 
-def _find_case(db: Session, payment_id: str | None, order_id: str | None) -> PaymentCase | None:
+def _find_case(db: Session, payment_id: str | None, order_id: str | None, payload: dict[str, Any] | None = None) -> PaymentCase | None:
+    if payload:
+        payment = _entity(payload, "payment")
+        order = _entity(payload, "order")
+        notes = payment.get("notes") or order.get("notes") or {}
+        case_id = notes.get("recoverai_case_id")
+        if case_id:
+            case = db.get(PaymentCase, case_id)
+            if case:
+                return case
+
     clauses = []
     if payment_id:
         clauses.append(PaymentCase.razorpay_payment_id == payment_id)
@@ -53,7 +63,7 @@ def _process_failed(db: Session, payload: dict[str, Any]) -> None:
     if not payment.get("id") and not payment.get("order_id"):
         raise ValueError("payment.failed payload is missing payment and order identifiers")
     payment_id, order_id = payment.get("id"), payment.get("order_id")
-    case = _find_case(db, payment_id, order_id)
+    case = _find_case(db, payment_id, order_id, payload)
     if case is None:
         customer = _find_or_create_customer(db, payment)
         # Increment failed payments on the customer for new case creation only.
@@ -91,7 +101,7 @@ def _process_recovered(db: Session, payload: dict[str, Any], event_type: str) ->
     payment, order = _entity(payload, "payment"), _entity(payload, "order")
     payment_id = payment.get("id")
     order_id = payment.get("order_id") or order.get("id")
-    case = _find_case(db, payment_id, order_id)
+    case = _find_case(db, payment_id, order_id, payload)
     if case is None:
         return  # Events can arrive out of order; a later failed event will create the case.
     confirmed = (event_type == "payment.captured" and payment.get("status") == "captured") or (

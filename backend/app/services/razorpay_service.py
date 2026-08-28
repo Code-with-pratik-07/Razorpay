@@ -71,6 +71,8 @@ class RazorpayService:
             }
             if "reference_id" in data:
                 invoice_payload["receipt"] = data["reference_id"]
+            if "notes" in data:
+                invoice_payload["notes"] = data["notes"]
                 
             return dict(self.client.invoice.create(invoice_payload))
         except Exception as exc:

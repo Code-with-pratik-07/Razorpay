@@ -135,3 +135,68 @@ def test_unsupported_and_malformed_payload_are_safe(client: TestClient) -> None:
     assert log.processed and log.error_message == "Unsupported event ignored."
     malformed = _post(client, b"not json", f"evt_malformed_{suffix}")
     assert malformed.status_code == 400
+
+
+def test_invoice_recovery_webhook_mapping(client: TestClient) -> None:
+    first = uuid.uuid4().hex[:8]
+    assert _post(client, _payment(f"pay_orig_{first}", f"order_orig_{first}"), f"evt_fail_orig_{first}").status_code == 200
+
+    with SessionLocal() as db:
+        case = db.scalar(select(PaymentCase).where(PaymentCase.razorpay_payment_id == f"pay_orig_{first}"))
+        case_id = case.id
+        customer_id = case.customer_id
+        customer = db.get(Customer, customer_id)
+        initial_successful = customer.successful_payments
+        initial_ltv = customer.lifetime_value
+
+    inv_pay_id = f"pay_inv_{first}"
+    inv_order_id = f"order_inv_{first}"
+
+    capture_payload = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": inv_pay_id,
+                    "order_id": inv_order_id,
+                    "amount": 499900,
+                    "status": "captured",
+                    "notes": {"recoverai_case_id": case_id}
+                }
+            }
+        }
+    }
+
+    assert _post(client, capture_payload, f"evt_capture_inv_{first}").status_code == 200
+
+    with SessionLocal() as db:
+        case = db.get(PaymentCase, case_id)
+        assert case.status == CaseStatus.RECOVERED
+        assert case.recovered_at is not None
+        assert case.razorpay_payment_id == inv_pay_id
+        assert case.razorpay_order_id == inv_order_id
+
+        customer = db.get(Customer, customer_id)
+        assert customer.successful_payments == initial_successful + 1
+        assert customer.lifetime_value == initial_ltv + case.amount
+
+    assert _post(client, capture_payload, f"evt_capture_inv_dup_{first}").status_code == 200
+
+    with SessionLocal() as db:
+        customer = db.get(Customer, customer_id)
+        assert customer.successful_payments == initial_successful + 1
+
+    unrelated_payload = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": "pay_unrelated",
+                    "order_id": "order_unrelated",
+                    "status": "captured",
+                    "notes": {"recoverai_case_id": "non-existent-id"}
+                }
+            }
+        }
+    }
+    assert _post(client, unrelated_payload, f"evt_unrelated_{first}").status_code == 200
