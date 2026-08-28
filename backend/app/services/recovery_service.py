@@ -142,10 +142,22 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
     db.commit()
 
     try:
-        link = RazorpayService().create_payment_link({"amount": case.amount, "currency": case.currency, "reference_id": case.case_number, "description": "Secure payment recovery link"})
-    except RazorpayServiceError:
+        payload = {
+            "amount": int(case.amount),
+            "currency": case.currency,
+            "reference_id": str(case.case_number),
+            "description": "Payment recovery for case " + str(case.case_number),
+            "customer": {
+                "name": "Customer",
+                "email": case.customer.email,
+                "contact": "9999999999"
+            }
+        }
+        link = RazorpayService().create_payment_link(payload)
+    except RazorpayServiceError as exc:
         case.status = original_status
-        db.commit(); log_audit_event(db, case.id, "error", {"operation": "payment_link", "safe_message": "Payment Link creation failed."})
+        db.commit()
+        log_audit_event(db, case.id, "error", {"operation": "payment_link", "safe_message": "Payment Link creation failed.", "provider_error": str(exc)})
         return {"action": "error", "status": case.status.value, "message": "Payment Link could not be created.", "payment_link_url": None}
     case.recovery_action = RecoveryAction.PAYMENT_LINK
     case.retry_count += 1; case.last_retry_at = datetime.now(timezone.utc).replace(tzinfo=None)

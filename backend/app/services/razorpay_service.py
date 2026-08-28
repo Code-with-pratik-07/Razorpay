@@ -55,4 +55,7 @@ class RazorpayService:
         try:
             return dict(self.client.payment_link.create(data))
         except Exception as exc:
-            raise RazorpayServiceError("Unable to create Razorpay Payment Link.") from exc
+            error_details = str(exc)
+            if hasattr(exc, 'args') and len(exc.args) > 0:
+                error_details = str(exc.args[0])
+            raise RazorpayServiceError(f"Unable to create Razorpay Payment Link: {error_details}") from exc
