@@ -30,6 +30,18 @@ def client(monkeypatch):
     get_settings.cache_clear()
 
 
+@pytest.fixture
+def mock_execute_recovery(monkeypatch):
+    import app.services.recovery_service
+    calls = []
+    def mock_execute(db, case, automatic=False):
+        calls.append({"case_id": case.id, "automatic": automatic})
+        case.status = CaseStatus.RECOVERING
+        db.commit()
+    monkeypatch.setattr(app.services.recovery_service, "execute_recovery", mock_execute)
+    return calls
+
+
 def _payment(payment_id: str, order_id: str, status: str = "failed") -> dict:
     return {
         "event": f"payment.{status}",
@@ -50,7 +62,7 @@ def _post(client: TestClient, payload: dict | bytes, event_id: str | None = None
     return client.post("/webhooks/razorpay", content=raw, headers=headers)
 
 
-def test_valid_signature_and_payment_failed_create_case_and_audit(client: TestClient) -> None:
+def test_valid_signature_and_payment_failed_create_case_and_audit(client: TestClient, mock_execute_recovery: list) -> None:
     suffix = uuid.uuid4().hex[:8]
     response = _post(client, _payment(f"pay_{suffix}", f"order_{suffix}"), f"evt_{suffix}")
     assert response.status_code == 200
@@ -58,7 +70,10 @@ def test_valid_signature_and_payment_failed_create_case_and_audit(client: TestCl
         case = db.scalar(select(PaymentCase).where(PaymentCase.razorpay_payment_id == f"pay_{suffix}"))
         events = list(db.scalars(select(AuditEvent).where(AuditEvent.case_id == case.id)))
         log = db.scalar(select(WebhookLog).where(WebhookLog.event_id == f"evt_{suffix}"))
-    assert case is not None and case.status == CaseStatus.FAILED
+    assert case is not None and case.status == CaseStatus.RECOVERING
+    assert len(mock_execute_recovery) == 1
+    assert mock_execute_recovery[0]["case_id"] == case.id
+    assert mock_execute_recovery[0]["automatic"] is True
 
     customer = db.get(Customer, case.customer_id)
 

@@ -30,6 +30,7 @@ class CaseSummary(BaseModel):
     max_retries: int
     policy_check_passed: bool | None
     policy_reason: str | None
+    notification_status: str | None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -55,6 +56,9 @@ class DashboardStats(BaseModel):
     revenue_recovered: int
     recovery_rate: float
     cases_processed: int
+    human_review_cases: int
+    human_review_amount: int
+    automatic_recoveries: int
 
 
 class ExperimentResult(BaseModel):

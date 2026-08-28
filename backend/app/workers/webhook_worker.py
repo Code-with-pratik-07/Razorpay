@@ -75,6 +75,11 @@ def _process_failed(db: Session, payload: dict[str, Any]) -> None:
         log_audit_event(db, case.id, "failure_detected", {"payment_id": payment_id, "order_id": order_id})
         log_audit_event(db, case.id, "case_created", {"source": "razorpay_webhook"})
         analyze_case(db, case)
+
+        if case.policy_check_passed and case.status != CaseStatus.HUMAN_REVIEW:
+            from app.services.recovery_service import execute_recovery
+            execute_recovery(db, case, automatic=True)
+
         return
     case.razorpay_payment_id = payment_id or case.razorpay_payment_id
     case.razorpay_order_id = order_id or case.razorpay_order_id

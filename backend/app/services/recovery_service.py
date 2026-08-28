@@ -12,7 +12,7 @@ from app.models.payment_case import CaseStatus, PaymentCase, RecoveryAction
 from app.models.recovery_policy import RecoveryPolicy
 from app.schemas.recovery import AIDecision
 from app.services.audit_service import list_audit_events, log_audit_event
-from app.services.notification_service import send_mock_recovery_message
+from app.services.notification_service import send_recovery_email
 from app.services.policy_service import check_recovery_policy
 from app.services.razorpay_service import RazorpayService, RazorpayServiceError
 
@@ -77,7 +77,8 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
     return {"prediction": prediction, "policy": policy_result.to_dict(), "ai": decision}
 
 
-def execute_recovery(db: Session, case: PaymentCase) -> dict[str, Any]:
+def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) -> dict[str, Any]:
+    original_status = case.status
     # Guard: if recovery is already in progress, return immediately without any DB
     # writes, audit events, retry-count increments, or new payment link creation.
     # This makes the backend independently safe regardless of the calling client.
@@ -124,20 +125,30 @@ def execute_recovery(db: Session, case: PaymentCase) -> dict[str, Any]:
                 "safe_message": "Invalid recovery action; escalated.",
             },
         )
-    log_audit_event(db, case.id, "recovery_started", {"advisory_action": requested, "executed_action": action})
+    log_audit_event(db, case.id, "recovery_started", {"advisory_action": requested, "executed_action": action, "automatic": automatic})
     if action == "escalate":
         case.status, case.recovery_action = CaseStatus.HUMAN_REVIEW, RecoveryAction.ESCALATE
         db.commit(); log_audit_event(db, case.id, "human_escalation", {"reason": "Advisory escalation"})
         return {"action": action, "status": case.status.value, "message": "Escalated to human review.", "payment_link_url": None}
 
+    updated = db.query(PaymentCase).filter(
+        PaymentCase.id == case.id,
+        PaymentCase.status == case.status
+    ).update({"status": CaseStatus.RECOVERING}, synchronize_session=False)
+
+    if updated == 0:
+        db.rollback()
+        return {"action": "no_action", "status": case.status.value, "message": "Concurrent recovery blocked.", "payment_link_url": None}
+    db.commit()
+
     try:
         link = RazorpayService().create_payment_link({"amount": case.amount, "currency": case.currency, "reference_id": case.case_number, "description": "Secure payment recovery link"})
     except RazorpayServiceError:
-        case.status, case.recovery_action = CaseStatus.HUMAN_REVIEW, RecoveryAction.ESCALATE
+        case.status = original_status
         db.commit(); log_audit_event(db, case.id, "error", {"operation": "payment_link", "safe_message": "Payment Link creation failed."})
-        return {"action": "escalate", "status": case.status.value, "message": "Payment Link could not be created; escalated.", "payment_link_url": None}
-    case.status, case.recovery_action = CaseStatus.RECOVERING, RecoveryAction.PAYMENT_LINK
+        return {"action": "error", "status": case.status.value, "message": "Payment Link could not be created.", "payment_link_url": None}
+    case.recovery_action = RecoveryAction.PAYMENT_LINK
     case.retry_count += 1; case.last_retry_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit(); log_audit_event(db, case.id, "payment_link_created", {"payment_link_id": link.get("id"), "url": link.get("short_url")})
-    send_mock_recovery_message(db, case.id, decision.customer_message)
+    send_recovery_email(db, case, link.get("short_url"))
     return {"action": "payment_link", "status": case.status.value, "message": "Payment Link created.", "payment_link_url": link.get("short_url")}

@@ -4,6 +4,32 @@ AI-assisted payment-recovery and revenue-protection system for Razorpay Test Mod
 
 ---
 
+## Hackathon Demo
+
+RecoverAI includes a fully deterministic "Demo Mode" for 5-minute hackathon presentations.
+
+1. **Start the Environment**
+   ```bash
+   cd backend && uvicorn app.main:app --reload
+   # In a new terminal
+   cd frontend && npm run dev
+   ```
+
+2. **Access the Demo Dashboard**
+   Open `http://localhost:5173`. You will see the `DEMO MODE` badge at the top.
+
+3. **Reset Demo Data**
+   Click the **Start Demo** button in the LIVE DEMO panel. This securely resets the synthetic database and loads 4 specific presentation scenarios:
+   - `01 Automatic Recovery` (Perfect execution path)
+   - `02 Human Review` (Policy strictly overrides AI)
+   - `03 Recovered Payment` (Success webhook simulation)
+   - `04 Duplicate Protection` (Concurrency safety)
+
+4. **Detailed Presentation Guide**
+   For the exact 5-minute script and step-by-step walkthrough, read the [Demo Guide](docs/RECOVERAI_DEMO_GUIDE.md).
+
+---
+
 ## Overview
 
 RecoverAI automatically detects failed payments arriving via Razorpay webhooks, evaluates each case through a multi-layer decision pipeline, and attempts to recover the revenue by generating a Razorpay Payment Link for the customer. All decisions are governed by a deterministic policy engine that acts as the authoritative guardrail. A Groq-hosted LLM provides an advisory recommendation only — it can never override policy.

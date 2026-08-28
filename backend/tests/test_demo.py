@@ -30,9 +30,17 @@ def test_demo_reset_enabled():
     assert "successfully reset" in response.json()["message"]
 
     # Verify that data was actually seeded
-    cases_response = client.get("/api/cases?limit=1")
+    cases_response = client.get("/api/cases?limit=100")
     assert cases_response.status_code == 200
-    assert len(cases_response.json()) > 0
+    cases = cases_response.json()
+    assert len(cases) > 0
+
+    # Verify showcase cases are present deterministically
+    case_numbers = [c["case_number"] for c in cases]
+    assert "DEMO-A-AUTO" in case_numbers
+    assert "DEMO-B-HUMAN" in case_numbers
+    assert "DEMO-C-RECOVERED" in case_numbers
+    assert "DEMO-D-DUPLICATE" in case_numbers
 
     # Reset DEMO_MODE to avoid leaking state
     get_settings().demo_mode = False

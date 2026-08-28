@@ -28,6 +28,7 @@ type RecoveryCase = {
   max_retries: number;
   policy_check_passed: boolean | null;
   policy_reason: string | null;
+  notification_status: string | null;
   created_at: string;
 };
 
@@ -74,6 +75,9 @@ type DashboardStats = {
   revenue_recovered: number;
   recovery_rate: number;
   cases_processed: number;
+  human_review_cases: number;
+  human_review_amount: number;
+  automatic_recoveries: number;
 };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -141,8 +145,10 @@ export default function App() {
           ? currentSelectedId : next[0]?.id ?? null;
       });
       setError(null);
+      return next;
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Could not load recovery cases.");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -175,20 +181,35 @@ export default function App() {
   }, [refreshCases]);
 
   const resetDemoData = async () => {
-    if (!window.confirm("This will permanently delete all current data and regenerate a fresh demo dataset. Continue?")) return;
+    if (!window.confirm("This will permanently delete all current data and regenerate a fresh demo dataset. Continue?")) return [];
     setResettingDemo(true);
     setError(null);
     setNotice(null);
     try {
       const res = await api<{ message: string }>("/api/demo/reset", { method: "POST" });
       setNotice(res.message);
-      await refreshCases(false);
+      const newCases = await refreshCases(false);
       setSelectedId(null);
+      return newCases || [];
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to reset demo data.");
+      return [];
     } finally {
       setResettingDemo(false);
     }
+  };
+
+  const selectScenario = (caseNumber: string, list: RecoveryCase[]) => {
+    const c = list.find(x => x.case_number === caseNumber);
+    if (c) {
+      setSelectedId(c.id);
+      document.getElementById('recovery-queue')?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const startDemo = async () => {
+    const newCases = await resetDemoData();
+    selectScenario('DEMO-A-AUTO', newCases);
   };
 
   useEffect(() => {
@@ -285,6 +306,10 @@ export default function App() {
   const existingPaymentLink = audit.find((event) => event.event_type === "payment_link_created")?.event_data.url as string | undefined;
   const currentLink = execution?.payment_link_url || existingPaymentLink;
 
+  const recoveryStartedEvent = audit.find((e) => e.event_type === "recovery_started");
+  const isAutomatic = recoveryStartedEvent?.event_data.automatic === true;
+  const executionMode = isAutomatic ? "AUTOMATIC" : recoveryStartedEvent ? "MANUAL" : "";
+
   return (
     <div className="product-shell">
       <aside className="sidebar">
@@ -307,25 +332,62 @@ export default function App() {
       </aside>
 
       <main className="content" id="overview">
-        {demoMode && (
-          <div className="demo-banner">
-            <div>
-              <h3>DEMO ENVIRONMENT</h3>
-              <p>Presentation data enabled. Sandbox environment active.</p>
+        <header className="dashboard-hero">
+          <div>
+            <h1>Payment Recovery Intelligence</h1>
+            <p className="dashboard-story">
+              Turn failed payments into recovered revenue.
+              <span>ML predicts. Policy decides. AI recommends. Recovery executes.</span>
+            </p>
+          </div>
+          {demoMode && (
+            <div className="demo-badge">
+              <strong>DEMO MODE</strong> · Razorpay Test Environment
             </div>
-            <button className="button danger" onClick={() => void resetDemoData()} disabled={resettingDemo || loading}>
-              {resettingDemo ? "Resetting..." : "Reset Demo Data"}
-            </button>
+          )}
+        </header>
+
+        {demoMode && (
+          <div className="demo-scenarios-panel">
+            <div className="demo-scenarios-header">
+              <h3>LIVE DEMO</h3>
+              <button className="button secondary" onClick={() => void startDemo()} disabled={resettingDemo || loading}>
+                {resettingDemo ? "Starting..." : "Start Demo"}
+              </button>
+            </div>
+            <div className="demo-scenarios-grid">
+              <div className="demo-card" onClick={() => selectScenario('DEMO-A-AUTO', cases)}>
+                <h4>01 Automatic Recovery</h4>
+                <p>Policy-approved payment recovery</p>
+              </div>
+              <div className="demo-card" onClick={() => selectScenario('DEMO-B-HUMAN', cases)}>
+                <h4>02 Human Review</h4>
+                <p>Policy blocks automatic action</p>
+              </div>
+              <div className="demo-card" onClick={() => selectScenario('DEMO-C-RECOVERED', cases)}>
+                <h4>03 Recovered Payment</h4>
+                <p>Customer successfully completes payment</p>
+              </div>
+              <div className="demo-card" onClick={() => selectScenario('DEMO-D-DUPLICATE', cases)}>
+                <h4>04 Duplicate Protection</h4>
+                <p>Existing recovery cannot execute twice</p>
+              </div>
+            </div>
+
+            <div className="how-it-works-panel">
+              <h4>HOW RECOVERAI WORKS</h4>
+              <div className="pipeline-horizontal">
+                <div><b>PAYMENT FAILURE</b></div>
+                <div>↓<br/><b>ML PREDICTION</b><br/><small>Predicts the likelihood of successful recovery.</small></div>
+                <div>↓<br/><b>POLICY ENGINE</b><br/><small>Authoritatively decides whether recovery is allowed.</small></div>
+                <div>↓<br/><b>AI ADVISOR</b><br/><small>Provides an advisory recommendation and explanation.</small></div>
+                <div>↓<br/><b>AUTOMATIC RECOVERY</b><br/><small>Creates a legitimate Razorpay Payment Link when authorized.</small></div>
+                <div>↓<br/><b>CUSTOMER PAYMENT</b><br/><small>Customer completes the outstanding payment.</small></div>
+                <div>↓<br/><b>RECOVERED</b><br/><small>Webhook confirms successful payment and closes case.</small></div>
+              </div>
+            </div>
           </div>
         )}
-
-        <header className="dashboard-hero">
-          <h1>Payment Recovery Intelligence</h1>
-          <p className="dashboard-story">
-            Turn failed payments into recovered revenue.
-            <span>ML predicts. Policy decides. AI recommends. Recovery executes.</span>
-          </p>
-        </header>
 
         {error && <div className="alert error">{error}</div>}
         {notice && <div className="alert success">{notice}</div>}
@@ -334,22 +396,35 @@ export default function App() {
           <div className="metric">
             <span className="metric-label">Revenue at Risk</span>
             <div className="metric-value">{formatINR(dashboardStats?.revenue_at_risk ?? 0)}</div>
-            <div className="metric-sub">From failed attempts</div>
+            <div className="metric-sub">Failed value currently eligible or under review.</div>
           </div>
           <div className="metric">
-            <span className="metric-label">Revenue Recovered</span>
+            <span className="metric-label">Recovered Revenue</span>
             <div className="metric-value" style={{ color: 'var(--color-success)' }}>{formatINR(dashboardStats?.revenue_recovered ?? 0)}</div>
-            <div className="metric-sub">Via automated links</div>
+            <div className="metric-sub">Revenue recovered through successful payment recovery.</div>
           </div>
           <div className="metric">
             <span className="metric-label">Recovery Rate</span>
             <div className="metric-value">{(dashboardStats?.recovery_rate ?? 0).toFixed(1)}%</div>
-            <div className="metric-sub">Conversion of at-risk</div>
+            <div className="metric-sub">Share of eligible recovery value successfully recovered.</div>
           </div>
           <div className="metric">
-            <span className="metric-label">Active Cases</span>
+            <span className="metric-label">Cases Processed</span>
             <div className="metric-value">{dashboardStats?.cases_processed ?? 0}</div>
             <div className="metric-sub">In decision pipeline</div>
+          </div>
+          <div className="metric">
+            <span className="metric-label">Automatic Recoveries</span>
+            <div className="metric-value">{dashboardStats?.automatic_recoveries ?? 0}</div>
+            <div className="metric-sub">Automatic recoveries initiated</div>
+          </div>
+          <div className="metric warning-metric" onClick={() => {
+            const hrCases = cases.filter(c => c.status === 'human_review');
+            if (hrCases.length > 0) setSelectedId(hrCases[0].id);
+          }} style={{ cursor: 'pointer' }}>
+            <span className="metric-label">HUMAN REVIEW REQUIRED</span>
+            <div className="metric-value">{dashboardStats?.human_review_cases ?? 0} CASES</div>
+            <div className="metric-sub">{formatINR(dashboardStats?.human_review_amount ?? 0)} AT RISK</div>
           </div>
         </div>
 
@@ -454,8 +529,15 @@ export default function App() {
               <>
                 <header className="details-header">
                   <div className="details-title">
-                    <h2>{selected.case_number}</h2>
+                    <h2>{selected.case_number} {selected.case_number === 'DEMO-C-RECOVERED' && <span style={{fontSize: 12, fontWeight: 500, padding: '2px 6px', background: 'var(--color-bg-hover)', color: 'var(--color-text-light)', borderRadius: 4, marginLeft: 8}}>Synthetic Demo Data</span>}</h2>
                     <div className="details-meta">{selected.customer_email} • {title(selected.payment_method)}</div>
+                    <div className="details-meta" style={{ marginTop: 4 }}>
+                      <strong>Email: </strong>
+                      {selected.notification_status === 'SENT' ? "Recovery instructions sent to the customer." :
+                       selected.notification_status === 'NOT_AVAILABLE' ? "No customer email is available." :
+                       selected.notification_status === 'FAILED' ? "Payment Link exists, but notification delivery failed." :
+                       selected.notification_status === 'NOT_SENT' ? "Notification has not been sent." : "Pending"}
+                    </div>
                   </div>
                   <div className="details-amount">
                     {formatINR(selected.amount)}
@@ -468,34 +550,57 @@ export default function App() {
                      <div className="pipeline-track" />
 
                      <div className="pipeline-step completed">
-                       <div className="step-icon">1</div>
-                       <div className="step-title">Failed</div>
+                       <div className="step-icon">✓</div>
+                       <div className="step-title">PAYMENT FAILED</div>
                        <div className="step-meta">{title(selected.failure_reason)}</div>
                      </div>
 
                      <div className={`pipeline-step ${explanation?.ml ? 'completed' : 'active'}`}>
-                       <div className="step-icon">2</div>
-                       <div className="step-title">ML Model</div>
-                       <div className="step-meta">{explanation?.ml?.recovery_probability != null ? `${(explanation.ml.recovery_probability * 100).toFixed(0)}% prob` : 'Pending'}</div>
+                       <div className="step-icon">{explanation?.ml ? '✓' : '•'}</div>
+                       <div className="step-title">ML PREDICTION</div>
+                       <div className="step-meta">{explanation?.ml?.recovery_probability != null ? `${(explanation.ml.recovery_probability * 100).toFixed(0)}% recovery probability` : 'Pending'}</div>
                      </div>
 
-                     <div className={`pipeline-step ${explanation?.policy ? (explanation.policy.allowed ? 'completed' : 'active') : ''}`}>
-                       <div className="step-icon">3</div>
-                       <div className="step-title">Policy</div>
-                       <div className="step-meta">{explanation?.policy ? (explanation.policy.allowed ? 'Allowed' : 'Blocked') : 'Pending'}</div>
+                     <div className={`pipeline-step ${explanation?.policy ? (explanation.policy.allowed ? 'completed' : 'warning') : ''}`}>
+                       <div className="step-icon">{explanation?.policy ? (explanation.policy.allowed ? '✓' : '!') : '•'}</div>
+                       <div className="step-title">POLICY ENGINE</div>
+                       <div className="step-meta">{explanation?.policy ? (explanation.policy.allowed ? 'Automatic recovery approved' : 'BLOCKED') : 'Pending'}</div>
                      </div>
 
                      <div className={`pipeline-step ${explanation?.ai ? 'completed' : ''}`}>
-                       <div className="step-icon">4</div>
-                       <div className="step-title">AI Advisor</div>
-                       <div className="step-meta">{explanation?.ai ? title(explanation.ai.recommended_action) : 'Pending'}</div>
+                       <div className="step-icon">{explanation?.ai ? '✓' : '•'}</div>
+                       <div className="step-title">AI ADVISOR</div>
+                       <div className="step-meta">{explanation?.ai ? `${title(explanation.ai.recommended_action)} recommended` : 'Pending'}</div>
                      </div>
 
-                     <div className={`pipeline-step ${selected.status === 'recovered' || selected.status === 'recovering' ? 'completed' : ''}`}>
-                       <div className="step-icon">5</div>
-                       <div className="step-title">Recovery</div>
-                       <div className="step-meta">{title(selected.recovery_action)}</div>
+                     <div className={`pipeline-step ${selected.status === 'recovered' || selected.status === 'recovering' ? 'completed' : explanation?.policy && !explanation.policy.allowed ? 'blocked' : ''}`}>
+                       <div className="step-icon">{selected.status === 'recovered' || selected.status === 'recovering' ? '✓' : explanation?.policy && !explanation.policy.allowed ? '—' : '•'}</div>
+                       <div className="step-title">RECOVERY</div>
+                       <div className="step-meta">{selected.status === 'recovered' || selected.status === 'recovering' ? 'Payment Link created' : explanation?.policy && !explanation.policy.allowed ? 'Not executed' : 'Pending'}</div>
                      </div>
+
+                     {explanation?.policy && !explanation.policy.allowed && (
+                       <div className="pipeline-step blocked">
+                         <div className="step-icon">→</div>
+                         <div className="step-title">HUMAN REVIEW REQUIRED</div>
+                       </div>
+                     )}
+
+                     {(selected.status === 'recovered' || selected.status === 'recovering') && (
+                       <div className={`pipeline-step ${selected.status === 'recovered' ? 'completed' : 'active'}`}>
+                         <div className="step-icon">{selected.status === 'recovered' ? '✓' : '•'}</div>
+                         <div className="step-title">CUSTOMER PAYMENT</div>
+                         <div className="step-meta">{selected.status === 'recovered' ? 'Payment Received' : 'Awaiting payment'}</div>
+                       </div>
+                     )}
+
+                     {selected.status === 'recovered' && (
+                       <div className="pipeline-step completed">
+                         <div className="step-icon">✓</div>
+                         <div className="step-title">RECOVERED</div>
+                         <div className="step-meta">Revenue Recovered</div>
+                       </div>
+                     )}
                   </div>
 
                   {explanation && (
@@ -537,20 +642,24 @@ export default function App() {
                       {currentLink && currentLink !== "mock_demo_link" && (
                         <>
                           <div className="success-link">{currentLink}</div>
-                          <button
-                            className="button secondary"
-                            onClick={() => {
-                              void navigator.clipboard.writeText(String(currentLink));
-                              setNotice("Link copied to clipboard!");
-                            }}
-                          >
-                            Copy Payment Link
-                          </button>
+                          <div style={{ display: 'flex', gap: 12 }}>
+                            <a className="button" href={currentLink} target="_blank" rel="noreferrer">Open Payment Link ↗</a>
+                            <button
+                              className="button secondary"
+                              onClick={() => {
+                                void navigator.clipboard.writeText(String(currentLink));
+                                setNotice("Link copied to clipboard!");
+                              }}
+                            >
+                              Copy Link
+                            </button>
+                          </div>
                         </>
                       )}
                       {currentLink === "mock_demo_link" && !execution && (
-                         <div className="success-link" style={{color: 'var(--color-text-light)', fontStyle: 'italic', background: 'transparent', padding: 0}}>
-                            [Seeded mock link. Execute Recovery to generate a real Razorpay payment link.]
+                         <div className="demo-payment-link" style={{color: 'var(--color-text-light)', fontStyle: 'italic', background: 'transparent', padding: 0}}>
+                            <b>DEMO PAYMENT LINK</b><br/>
+                            Execute Recovery to generate a real Razorpay Test Mode Payment Link.
                          </div>
                       )}
                     </div>
@@ -559,7 +668,7 @@ export default function App() {
                   <div className="action-panel">
                      <div className="action-info">
                        <b>Execute Action</b>
-                       {selected.status === 'recovered' ? 'Revenue successfully recovered.' : selected.status === 'recovering' ? 'Payment link is active.' : policyAllowed ? 'Ready to execute recommendation.' : 'Policy blocked execution.'}
+                       {selected.status === 'recovered' ? 'Revenue successfully recovered.' : selected.status === 'recovering' ? `Payment link is active. ${executionMode ? `(${executionMode})` : ''}` : policyAllowed ? 'Ready to execute recommendation.' : 'Policy blocked execution.'}
                      </div>
 
                      <div style={{ display: 'flex', gap: 12 }}>
@@ -585,13 +694,32 @@ export default function App() {
                        <div className="timeline">
                          {audit.map((event) => {
                            const type = event.event_type.toLowerCase();
-                           const kind = type.includes('fail') || type.includes('block') || type.includes('escalat') ? 'warning' : type.includes('success') || type.includes('recover') ? 'success' : 'info';
+                           const kind = type.includes('fail') || type.includes('block') || type.includes('escalat') ? 'warning' : type.includes('success') || type.includes('recover') || type.includes('sent') ? 'success' : 'info';
+
+                           const auditLabels: Record<string, string> = {
+                             "webhook_received": "Payment failure received",
+                             "failure_detected": "Payment failure detected",
+                             "case_created": "Recovery case created",
+                             "ml_prediction": "ML prediction generated",
+                             "policy_check": "Recovery policy evaluated",
+                             "recovery_started": "Recovery execution started",
+                             "payment_link_created": "Razorpay Payment Link created",
+                             "email_notification_sent": "Customer recovery email sent",
+                             "email_notification_failed": "Customer notification failed",
+                             "payment_success": "Customer payment received",
+                             "payment_captured": "Customer payment received",
+                             "case_recovered": "Recovery completed",
+                             "ai_analysis": "AI Advisory recommendation",
+                             "human_escalation": "Escalated for human review"
+                           };
+                           const label = auditLabels[type] || title(event.event_type);
+
                            return (
                              <div key={event.id} className={`timeline-event ${kind}`}>
                                 <div className="timeline-dot" />
                                 <div className="timeline-time">{new Date(event.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}</div>
                                 <div className="timeline-content">
-                                   <b>{title(event.event_type)}</b>
+                                   <b>{label}</b>
                                    <pre>{JSON.stringify(event.event_data, null, 2)}</pre>
                                 </div>
                              </div>

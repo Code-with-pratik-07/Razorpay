@@ -18,7 +18,7 @@ def _case(db: Session, case_id: str) -> PaymentCase:
 
 
 def _summary(case: PaymentCase) -> dict:
-    return {"id": case.id, "case_number": case.case_number, "customer_email": case.customer.email, "amount": case.amount, "currency": case.currency, "status": case.status.value, "failure_reason": case.failure_reason, "payment_method": case.payment_method, "recovery_probability": case.recovery_probability, "recovery_action": case.recovery_action.value, "retry_count": case.retry_count, "max_retries": case.max_retries, "policy_check_passed": case.policy_check_passed, "policy_reason": case.policy_reason, "created_at": case.created_at}
+    return {"id": case.id, "case_number": case.case_number, "customer_email": case.customer.email, "amount": case.amount, "currency": case.currency, "status": case.status.value, "failure_reason": case.failure_reason, "payment_method": case.payment_method, "recovery_probability": case.recovery_probability, "recovery_action": case.recovery_action.value, "retry_count": case.retry_count, "max_retries": case.max_retries, "policy_check_passed": case.policy_check_passed, "policy_reason": case.policy_reason, "notification_status": case.notification_status, "created_at": case.created_at}
 
 
 @router.get("", response_model=list[CaseSummary])

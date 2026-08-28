@@ -49,5 +49,6 @@ class PaymentCase(Base):
     recovered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     policy_check_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     policy_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    notification_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     customer = relationship("Customer", back_populates="payment_cases")
     audit_events = relationship("AuditEvent", back_populates="payment_case")

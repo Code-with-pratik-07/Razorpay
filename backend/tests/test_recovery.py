@@ -172,3 +172,44 @@ def test_execute_recovery_policy_blocked_returns_escalate(monkeypatch) -> None:
         case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
         result = execute_recovery(db, case)
         assert result["action"] == "escalate"
+
+def test_execute_recovery_atomic_lock_prevents_duplicate(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_123")
+    monkeypatch.setenv("RAZORPAY_KEY_SECRET", "secret")
+    case_id = _case(status=CaseStatus.FAILED, amount=1000, recovery_probability=0.9)
+    with SessionLocal() as db:
+        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+        db.expire_on_commit = False
+        # Simulate that another thread already changed it in the DB while our in-memory `case` is still FAILED
+        db.query(type(case)).filter(type(case).id == case_id).update({"status": CaseStatus.RECOVERING}, synchronize_session=False)
+        db.commit()
+
+        result = execute_recovery(db, case)
+        assert result["action"] == "no_action"
+        assert result["message"] == "Concurrent recovery blocked."
+
+def test_execute_recovery_email_failure_does_not_rollback_link(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_123")
+    monkeypatch.setenv("RAZORPAY_KEY_SECRET", "secret")
+    monkeypatch.setenv("EMAIL_ENABLED", "true")
+    monkeypatch.setenv("EMAIL_PROVIDER_API_KEY", "invalid_key")
+    __import__("app.core.config", fromlist=["get_settings"]).get_settings.cache_clear()
+
+    case_id = _case(status=CaseStatus.FAILED, amount=1000, recovery_probability=0.9)
+    with SessionLocal() as db:
+        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+        class DummyRazorpayService:
+            def create_payment_link(self, data): return {"id": "plink_123", "short_url": "https://rzp.io/rzp/123"}
+        monkeypatch.setattr("app.services.recovery_service.RazorpayService", lambda *args, **kwargs: DummyRazorpayService())
+
+        def mock_post(*args, **kwargs):
+            raise __import__("httpx").RequestError("Connection failed")
+        monkeypatch.setattr("httpx.post", mock_post)
+
+        result = execute_recovery(db, case)
+        assert result["action"] == "payment_link"
+        assert result["payment_link_url"] == "https://rzp.io/rzp/123"
+        assert case.status == CaseStatus.RECOVERING
+        assert case.notification_status == "FAILED"
