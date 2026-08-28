@@ -44,7 +44,10 @@ def explanation(case_id: str, db: Session = Depends(get_db)) -> CaseExplanation:
 
 
 def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
-    policy = check_recovery_policy(case, _policy(db)).to_dict()
+    if case.policy_reason:
+        policy = {"allowed": case.policy_check_passed, "reason": case.policy_reason, "requires_human_approval": not case.policy_check_passed}
+    else:
+        policy = check_recovery_policy(case, _policy(db)).to_dict()
     history = {"lifetime_value": case.customer.lifetime_value, "successful_payments": case.customer.successful_payments, "failed_payments": case.customer.failed_payments}
     return CaseExplanation(**_summary(case), ml={"recovery_probability": case.recovery_probability, "features": _features(case)}, policy=policy, ai=_last_ai_decision(db, case.id), customer_history=history)
 

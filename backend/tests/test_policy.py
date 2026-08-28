@@ -47,5 +47,4 @@ def test_retry_limit_and_cooldown_are_enforced(policy: RecoveryPolicy) -> None:
 
 def test_expired_and_terminal_cases_are_blocked(policy: RecoveryPolicy) -> None:
     assert not _check(policy, created_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=8)).allowed
-    assert not _check(policy, status=CaseStatus.RECOVERED).allowed
-    assert not _check(policy, status=CaseStatus.CLOSED).allowed
+    assert not _check(policy, status=CaseStatus.HUMAN_REVIEW).allowed

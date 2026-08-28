@@ -11,8 +11,12 @@ class Base(DeclarativeBase):
 
 
 settings = get_settings()
-engine_options: dict[str, object] = {"connect_args": {"check_same_thread": False}} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, **engine_options)
+db_url = settings.database_url
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+engine_options: dict[str, object] = {"connect_args": {"check_same_thread": False}} if db_url.startswith("sqlite") else {}
+engine = create_engine(db_url, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

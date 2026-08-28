@@ -25,8 +25,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT"],
-    allow_headers=["Content-Type", "X-Razorpay-Signature", "X-Razorpay-Event-Id"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 app.include_router(health_router)
 app.include_router(audit_router)
