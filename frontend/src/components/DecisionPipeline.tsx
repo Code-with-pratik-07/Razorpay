@@ -47,7 +47,7 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
          <div className="step-icon">{selected.status === 'recovered' || selected.status === 'recovering' ? '✓' : explanation?.policy && !explanation.policy.allowed ? '—' : '•'}</div>
          <div className="step-content">
            <div className="step-title">RECOVERY</div>
-           <div className="step-meta">{selected.status === 'recovered' || selected.status === 'recovering' ? 'Payment Link created' : explanation?.policy && !explanation.policy.allowed ? 'Not executed' : 'Pending'}</div>
+           <div className="step-meta">{selected.status === 'recovered' || selected.status === 'recovering' ? 'Payment Link created' : explanation?.policy ? 'Not executed' : 'Pending'}</div>
          </div>
        </div>
 
@@ -60,12 +60,12 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
          </div>
        )}
 
-       {(selected.status === 'recovered' || selected.status === 'recovering') && (
+       {(!explanation?.policy || explanation.policy.allowed) && (
          <div className={`pipeline-step ${selected.status === 'recovered' ? 'completed' : 'active'}`}>
            <div className="step-icon">{selected.status === 'recovered' ? '✓' : '•'}</div>
            <div className="step-content">
              <div className="step-title">CUSTOMER PAYMENT</div>
-             <div className="step-meta">{selected.status === 'recovered' ? 'Payment Received' : 'Awaiting payment'}</div>
+             <div className="step-meta">{selected.status === 'recovered' ? 'Payment Received' : selected.status === 'recovering' ? 'Awaiting payment' : 'Awaiting recovery action'}</div>
            </div>
          </div>
        )}

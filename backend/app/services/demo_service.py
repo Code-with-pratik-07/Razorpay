@@ -37,7 +37,7 @@ def seed_demo_data(reset: bool = False):
 
         case_a = PaymentCase(
             case_number="DEMO-A-AUTO", customer_id=customers[0].id, razorpay_payment_id="pay_demo_auto", razorpay_order_id="order_demo_auto",
-            amount=250000, currency="INR", status=CaseStatus.RECOVERING, failure_reason="insufficient_funds", payment_method="upi",
+            amount=250000, currency="INR", status=CaseStatus.FAILED, failure_reason="insufficient_funds", payment_method="upi",
             recovery_probability=0.95, recovery_action=RecoveryAction.PAYMENT_LINK, created_at=now - timedelta(minutes=10),
             policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="NOT_SENT"
         )
@@ -66,8 +66,6 @@ def seed_demo_data(reset: bool = False):
         log_audit_event(db, case_a.id, "ml_prediction", {"recovery_probability": 0.95})
         log_audit_event(db, case_a.id, "policy_check", {"allowed": True, "reason": "Recovery action is permitted by policy."})
         log_audit_event(db, case_a.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "High recovery probability and good lifetime value.", "customer_message": "Please complete your payment using this secure link.", "confidence": 0.95, "source": "groq"})
-        log_audit_event(db, case_a.id, "recovery_started", {"advisory_action": "payment_link", "executed_action": "payment_link", "automatic": True})
-        log_audit_event(db, case_a.id, "payment_link_created", {"url": "mock_demo_link"})
 
         log_audit_event(db, case_b.id, "failure_detected", {"demo": True, "note": "Synthetic Demo B"})
         log_audit_event(db, case_b.id, "ml_prediction", {"recovery_probability": 0.88})
