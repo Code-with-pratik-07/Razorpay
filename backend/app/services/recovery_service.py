@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import Any
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -145,7 +146,7 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
         payload = {
             "amount": int(case.amount),
             "currency": case.currency,
-            "reference_id": str(case.case_number),
+            "reference_id": f"RECOVERAI-{case.case_number}-{uuid.uuid4().hex[:8]}",
             "description": "Payment recovery for case " + str(case.case_number),
             "customer": {
                 "name": "Customer",
