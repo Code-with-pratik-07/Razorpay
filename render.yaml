@@ -22,7 +22,7 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: DEMO_MODE
-        value: "false"
+        value: "true"
 
 databases:
   - name: recoverai-db
