@@ -58,7 +58,6 @@ When a payment fails in Razorpay, the default experience is silence. RecoverAI t
 
 ---
 
-
 ## Architecture
 
 ```
