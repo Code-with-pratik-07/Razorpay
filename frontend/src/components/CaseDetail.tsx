@@ -66,6 +66,8 @@ export function CaseDetail({
     ? { label: 'UNCERTAIN — Human Review', cls: 'ml-uncertain' }
     : mlDecision === 'LOW'
     ? { label: 'LOW — Recovery Stopped', cls: 'ml-low' }
+    : mlDecision === 'COLD_START'
+    ? { label: 'LIMITED HISTORY', cls: 'ml-cold' }
     : null;
 
   return (
@@ -120,17 +122,21 @@ export function CaseDetail({
           <div className="intelligence-panel">
              <div className="intelligence-card">
                <h4><i/> Case Metrics</h4>
-               <div className="stat-row"><span>ML Probability</span> <b>{explanation.ml.recovery_probability != null ? (explanation.ml.recovery_probability * 100).toFixed(1) + "%" : "—"}</b></div>
+                <div className="stat-row"><span>ML Probability</span> <b>{mlDecision === 'COLD_START' ? "N/A (Cold Start)" : explanation.ml.recovery_probability != null ? (explanation.ml.recovery_probability * 100).toFixed(1) + "%" : "—"}</b></div>
                {mlBadge && (
                  <div className="stat-row">
                    <span>ML Decision</span>
                    <b className={mlBadge.cls} style={{
                      fontSize: '0.7rem', padding: '2px 7px', borderRadius: 4,
-                     background: mlDecision === 'HIGH' ? '#064e3b' : mlDecision === 'UNCERTAIN' ? '#78350f' : '#3b1515',
-                     color: mlDecision === 'HIGH' ? '#34d399' : mlDecision === 'UNCERTAIN' ? '#fbbf24' : '#f87171',
+                     background: mlDecision === 'HIGH' ? '#064e3b' : mlDecision === 'UNCERTAIN' ? '#78350f' : mlDecision === 'COLD_START' ? '#1e3a8a' : '#3b1515',
+                     color: mlDecision === 'HIGH' ? '#34d399' : mlDecision === 'UNCERTAIN' ? '#fbbf24' : mlDecision === 'COLD_START' ? '#93c5fd' : '#f87171',
                    }}>{mlBadge.label}</b>
                  </div>
                )}
+               <div className="stat-row"><span>Recovery Tier</span> <b>{mlDecision === 'COLD_START' ? 'COLD START' : mlDecision}</b></div>
+               <div className="stat-row"><span>Max Attempts</span> <b>{selected.max_retries}</b></div>
+               <div className="stat-row"><span>Attempts Used</span> <b>{selected.retry_count}</b></div>
+               <div className="stat-row"><span>Attempts Remaining</span> <b>{selected.max_retries - selected.retry_count}</b></div>
                <div className="stat-row"><span>Lifetime Value</span> <b>{formatINR(explanation.customer_history.lifetime_value)}</b></div>
                <div className="stat-row"><span>Success Rate</span> <b>{explanation.customer_history.successful_payments} / {explanation.customer_history.successful_payments + explanation.customer_history.failed_payments}</b></div>
              </div>
@@ -189,7 +195,7 @@ export function CaseDetail({
            <div className="action-info">
              {isAbandoned ? (
                <span style={{color:'#f87171'}}>
-                 <b>STOPPED</b><br/>Low recovery probability.
+                 <b>STOPPED</b><br/>Low recovery probability or max attempts reached.
                </span>
              ) : isRecovered ? (
                <span>

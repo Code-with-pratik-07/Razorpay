@@ -49,13 +49,16 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
     else:
         policy = check_recovery_policy(case, _policy(db)).to_dict()
     history = {"lifetime_value": case.customer.lifetime_value, "successful_payments": case.customer.successful_payments, "failed_payments": case.customer.failed_payments}
+    
+    is_cold_start = (case.customer.successful_payments + case.customer.failed_payments) < 3
+    
     return CaseExplanation(
         **_summary(case),
         ml={"recovery_probability": case.recovery_probability, "features": _features(case)},
         policy=policy,
         ai=_last_ai_decision(db, case.id),
         customer_history=history,
-        ml_decision=ml_routing_decision(case.recovery_probability),
+        ml_decision=ml_routing_decision(case.recovery_probability, is_cold_start),
     )
 
 

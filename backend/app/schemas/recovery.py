@@ -41,7 +41,7 @@ class CaseExplanation(CaseSummary):
     policy: dict[str, object]
     ai: AIDecision | None
     customer_history: dict[str, object]
-    ml_decision: str | None = None  # "HIGH" | "UNCERTAIN" | "LOW" | None
+    ml_decision: str | None = None  # "HIGH" | "UNCERTAIN" | "LOW" | "COLD_START" | None
 
 
 class ExecuteRecoveryResponse(BaseModel):

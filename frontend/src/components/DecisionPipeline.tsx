@@ -25,6 +25,7 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
   if (mlDecision === 'HIGH' && probStr) mlLabel = `${probStr} — High confidence`;
   else if (mlDecision === 'UNCERTAIN' && probStr) mlLabel = `${probStr} — Uncertain`;
   else if (mlDecision === 'LOW' && probStr) mlLabel = `${probStr} — Low`;
+  else if (mlDecision === 'COLD_START') mlLabel = `Limited History (Cold Start)`;
 
   // Policy step label
   const policyLabel = !policyDone

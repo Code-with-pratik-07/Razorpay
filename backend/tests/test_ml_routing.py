@@ -44,14 +44,14 @@ class TestMlRoutingDecision:
     def test_explicit_0_40_is_uncertain(self):
         assert ml_routing_decision(0.40) == "UNCERTAIN"
 
-    def test_explicit_0_6999_is_uncertain(self):
-        assert ml_routing_decision(0.6999) == "UNCERTAIN"
+    def test_explicit_0_5999_is_uncertain(self):
+        assert ml_routing_decision(0.5999) == "UNCERTAIN"
 
-    def test_explicit_0_70_is_high(self):
-        assert ml_routing_decision(0.70) == "HIGH"
+    def test_explicit_0_60_is_high(self):
+        assert ml_routing_decision(0.60) == "HIGH"
 
-    def test_explicit_0_7001_is_high(self):
-        assert ml_routing_decision(0.7001) == "HIGH"
+    def test_explicit_0_6001_is_high(self):
+        assert ml_routing_decision(0.6001) == "HIGH"
 
     def test_between_thresholds_is_uncertain(self):
         assert ml_routing_decision(0.55) == "UNCERTAIN"
@@ -111,9 +111,9 @@ class TestAnalyzeCaseRouting:
 
         monkeypatch.setattr(rs, "predict_recovery", mock_predict)
         init_db()
-        # amount > 500000 triggers policy block
+        # amount > 2000000 triggers policy block
         with SessionLocal() as db:
-            case = create_case(db, status=CaseStatus.FAILED, amount=600000)
+            case = create_case(db, status=CaseStatus.FAILED, amount=2500000)
             analyze_case(db, case)
             db.refresh(case)
             assert case.status == CaseStatus.HUMAN_REVIEW

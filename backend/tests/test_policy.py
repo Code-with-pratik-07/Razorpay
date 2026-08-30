@@ -14,7 +14,7 @@ def policy() -> RecoveryPolicy:
     return RecoveryPolicy(
         max_retry_attempts=3,
         max_recovery_window_days=7,
-        max_auto_recovery_amount=500000,
+        max_auto_recovery_amount=2000000,
         min_time_between_retries_hours=24,
     )
 
@@ -28,11 +28,11 @@ def _check(policy: RecoveryPolicy, **overrides: object):
 
 def test_inr_amounts_at_or_below_limit_are_allowed(policy: RecoveryPolicy) -> None:
     assert _check(policy, amount=499900).allowed  # ₹4,999
-    assert _check(policy, amount=500000).allowed  # ₹5,000
+    assert _check(policy, amount=2000000).allowed  # ₹20,000
 
 
 def test_amount_above_inr_limit_requires_human_approval(policy: RecoveryPolicy) -> None:
-    result = _check(policy, amount=500100)  # ₹5,001
+    result = _check(policy, amount=2000100)  # ₹20,001
     assert not result.allowed
     assert result.requires_human_approval
 

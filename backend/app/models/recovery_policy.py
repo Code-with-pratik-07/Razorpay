@@ -13,7 +13,7 @@ class RecoveryPolicy(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     max_retry_attempts: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     max_recovery_window_days: Mapped[int] = mapped_column(Integer, default=7, nullable=False)
-    max_auto_recovery_amount: Mapped[int] = mapped_column(Integer, default=500000, nullable=False, comment="Paise; ₹5,000")
+    max_auto_recovery_amount: Mapped[int] = mapped_column(Integer, default=2000000, nullable=False, comment="Paise; ₹20,000")
     min_time_between_retries_hours: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(timezone.utc).replace(tzinfo=None), onupdate=datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)

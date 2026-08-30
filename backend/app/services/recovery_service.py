@@ -23,13 +23,15 @@ from app.services.razorpay_service import RazorpayService, RazorpayServiceError
 # These drive the three-way routing: HIGH → automatic, UNCERTAIN → human review,
 # LOW → stopped (ABANDONED status, which already exists in CaseStatus).
 # ---------------------------------------------------------------------------
-ML_HIGH_THRESHOLD = 0.70       # probability >= this → automatic recovery
+ML_HIGH_THRESHOLD = 0.60       # probability >= this → automatic recovery
 ML_UNCERTAIN_THRESHOLD = 0.40  # probability >= this but < HIGH → human review
 # probability < ML_UNCERTAIN_THRESHOLD → ABANDONED (no recovery attempt)
 
 
-def ml_routing_decision(recovery_probability: float | None) -> str:
-    """Classify ML probability into HIGH / UNCERTAIN / LOW routing bucket."""
+def ml_routing_decision(recovery_probability: float | None, is_cold_start: bool = False) -> str:
+    """Classify ML probability into HIGH / UNCERTAIN / LOW / COLD_START routing bucket."""
+    if is_cold_start:
+        return "COLD_START"
     if recovery_probability is None or recovery_probability < ML_UNCERTAIN_THRESHOLD:
         return "LOW"
     if recovery_probability < ML_HIGH_THRESHOLD:
@@ -68,14 +70,29 @@ def _last_ai_decision(db: Session, case_id: str) -> AIDecision | None:
 
 
 def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | None = None) -> dict[str, Any]:
-    if case.status not in {CaseStatus.FAILED, CaseStatus.ABANDONED}:
+    if case.status not in {CaseStatus.FAILED, CaseStatus.ABANDONED, CaseStatus.HUMAN_REVIEW}:
         return {"error": f"Case is in '{case.status.value}' state and cannot be analyzed."}
+    
+    original_status = case.status
     case.status = CaseStatus.ANALYZING
     db.commit()
     features = _features(case)
     prediction = predict_recovery(features)
     case.recovery_probability = prediction["recovery_probability"]
-    log_audit_event(db, case.id, "customer_analyzed", {"customer_id": case.customer_id})
+    
+    is_cold_start = (case.customer.successful_payments + case.customer.failed_payments) < 3
+    ml_decision = ml_routing_decision(case.recovery_probability, is_cold_start)
+    
+    if ml_decision == "COLD_START":
+        case.max_retries = 2
+    elif ml_decision == "HIGH":
+        case.max_retries = 3
+    elif ml_decision == "UNCERTAIN":
+        case.max_retries = 2
+    else:
+        case.max_retries = 1
+
+    log_audit_event(db, case.id, "customer_analyzed", {"customer_id": case.customer_id, "is_cold_start": is_cold_start, "max_retries": case.max_retries})
     log_audit_event(db, case.id, "ml_prediction", prediction)
     policy_result = check_recovery_policy(case, _policy(db))
     case.policy_check_passed = policy_result.allowed
@@ -103,10 +120,9 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
         log_audit_event(db, case.id, "human_escalation", {
             "reason": policy_result.reason,
             "source": "policy",
-            "ml_decision": ml_routing_decision(case.recovery_probability),
+            "ml_decision": ml_decision,
         })
     else:
-        ml_decision = ml_routing_decision(case.recovery_probability)
         if ml_decision == "LOW":
             case.status = CaseStatus.ABANDONED
             log_audit_event(db, case.id, "recovery_stopped", {
@@ -124,12 +140,14 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
                 "threshold": ML_HIGH_THRESHOLD,
                 "source": "ml_routing",
             })
+        elif ml_decision == "COLD_START":
+            case.status = CaseStatus.HUMAN_REVIEW if original_status == CaseStatus.HUMAN_REVIEW else CaseStatus.FAILED
+            log_audit_event(db, case.id, "cold_start_routing", {"message": "Using COLD_START recovery policy", "max_retries": 2})
         else:  # HIGH
-            # Leave as FAILED — ready for automatic execute_recovery.
-            case.status = CaseStatus.FAILED
+            case.status = CaseStatus.HUMAN_REVIEW if original_status == CaseStatus.HUMAN_REVIEW else CaseStatus.FAILED
 
     db.commit()
-    return {"prediction": prediction, "policy": policy_result.to_dict(), "ai": decision, "ml_decision": ml_routing_decision(case.recovery_probability)}
+    return {"prediction": prediction, "policy": policy_result.to_dict(), "ai": decision, "ml_decision": ml_decision}
 
 
 def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) -> dict[str, Any]:
@@ -141,6 +159,15 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
             "action": "stopped",
             "status": case.status.value,
             "message": "Recovery probability was too low. No recovery action has been taken.",
+            "payment_link_url": None,
+        }
+
+    # Guard: enforce retry limit
+    if case.retry_count >= case.max_retries:
+        return {
+            "action": "stopped",
+            "status": case.status.value,
+            "message": f"Maximum recovery attempts ({case.max_retries}) reached. No further action permitted.",
             "payment_link_url": None,
         }
 
@@ -182,7 +209,8 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
     # For explicit manual executions on HUMAN_REVIEW cases (merchant approval), also
     # enforce ML routing for LOW-probability cases even if policy technically allows it.
     if not automatic:
-        ml_decision = ml_routing_decision(case.recovery_probability)
+        is_cold_start = (case.customer.successful_payments + case.customer.failed_payments) < 3
+        ml_decision = ml_routing_decision(case.recovery_probability, is_cold_start)
         if ml_decision == "LOW":
             case.status = CaseStatus.ABANDONED
             db.commit()

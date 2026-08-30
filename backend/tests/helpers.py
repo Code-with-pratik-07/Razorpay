@@ -8,7 +8,7 @@ from app.models.payment_case import CaseStatus, PaymentCase
 
 def create_case(db: Session, **overrides: object) -> PaymentCase:
     suffix = uuid.uuid4().hex[:10]
-    customer = Customer(email=f"test-{suffix}@recoverai.local")
+    customer = Customer(email=f"test-{suffix}@recoverai.local", successful_payments=5)
     db.add(customer)
     db.flush()
     values: dict[str, object] = {

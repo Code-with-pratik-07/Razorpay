@@ -24,7 +24,7 @@ class PolicyCheckResult:
 def check_recovery_policy(case: PaymentCase, policy: RecoveryPolicy, *, now: datetime | None = None) -> PolicyCheckResult:
     """Return the sole policy verdict for an automated recovery action.
 
-    Amounts are stored in paise, so the default 500000 policy ceiling is ₹5,000.
+    Amounts are stored in paise, so the default 2000000 policy ceiling is ₹20,000.
     The ordering is intentional: terminal states and invalid payment data are never
     made eligible by a lower amount or a strong ML score.
     """

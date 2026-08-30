@@ -11,7 +11,7 @@ def test_default_policy_uses_inr_paise() -> None:
         db.commit()
         db.refresh(policy)
         assert policy.max_retry_attempts == 3
-        assert policy.max_auto_recovery_amount == 500000
+        assert policy.max_auto_recovery_amount == 2000000
 
 
 def test_case_enums_are_restricted() -> None:

@@ -26,7 +26,7 @@ def seed_demo_data(reset: bool = False):
                 razorpay_customer_id=f"cust_demo_{suffix}",
                 successful_payments=random.randint(0, 5),
                 failed_payments=random.randint(1, 3),
-                lifetime_value=random.randint(10000, 500000)
+                lifetime_value=random.randint(10000, 2000000)
             )
             db.add(c)
             customers.append(c)
@@ -43,7 +43,7 @@ def seed_demo_data(reset: bool = False):
         )
         case_b = PaymentCase(
             case_number="DEMO-B-HUMAN", customer_id=customers[1].id, razorpay_payment_id="pay_demo_human", razorpay_order_id="order_demo_human",
-            amount=600000, currency="INR", status=CaseStatus.HUMAN_REVIEW, failure_reason="fraud_suspicion", payment_method="card",
+            amount=2500000, currency="INR", status=CaseStatus.HUMAN_REVIEW, failure_reason="fraud_suspicion", payment_method="card",
             recovery_probability=0.55, recovery_action=RecoveryAction.ESCALATE, created_at=now - timedelta(minutes=15),
             policy_check_passed=False, policy_reason="Amount exceeds the automatic recovery limit.", notification_status="NOT_SENT"
         )
@@ -101,7 +101,7 @@ def seed_demo_data(reset: bool = False):
             amount = int(row['amount'])
             
             prob = random.uniform(0.1, 0.95)
-            policy_pass = amount <= 500000
+            policy_pass = amount <= 2000000
 
             if not policy_pass:
                 status = CaseStatus.HUMAN_REVIEW
@@ -109,7 +109,7 @@ def seed_demo_data(reset: bool = False):
             elif prob < 0.40:
                 status = CaseStatus.ABANDONED
                 action = RecoveryAction.NONE
-            elif prob < 0.70:
+            elif prob < 0.60:
                 status = CaseStatus.HUMAN_REVIEW
                 action = RecoveryAction.NONE
             else:
@@ -236,7 +236,7 @@ def simulate_failure_event(
             "status": case.status.value,
             "recovery_probability": case.recovery_probability,
             "ml_decision": (
-                "HIGH" if (case.recovery_probability or 0) >= 0.70
+                "HIGH" if (case.recovery_probability or 0) >= 0.60
                 else "UNCERTAIN" if (case.recovery_probability or 0) >= 0.40
                 else "LOW"
             ),

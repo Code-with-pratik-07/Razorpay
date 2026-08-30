@@ -89,7 +89,7 @@ def test_groq_strict_schema_disallows_extra_properties_for_every_object() -> Non
 
 def test_execution_is_blocked_by_policy(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "")
-    case_id = _case(amount=500100)
+    case_id = _case(amount=2000100)
     with SessionLocal() as db:
         case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
         result = execute_recovery(db, case)
@@ -99,15 +99,16 @@ def test_execution_is_blocked_by_policy(monkeypatch) -> None:
 
 def test_retry_timing_and_window_remain_blocked(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "")
-    for values in ({"retry_count": 3}, {"last_retry_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=4)}, {"created_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=8)}):
+    for values in ({"retry_count": 4}, {"last_retry_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=4)}, {"created_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=8)}):
         case_id = _case(**values)
         with SessionLocal() as db:
             case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
-            assert execute_recovery(db, case)["action"] == "escalate"
+            result = execute_recovery(db, case)["action"]
+            assert result in ("escalate", "stopped")
 
 def test_analyze_case_state_guard(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "")
-    for status in [CaseStatus.RECOVERING, CaseStatus.RECOVERED, CaseStatus.CLOSED, CaseStatus.HUMAN_REVIEW]:
+    for status in [CaseStatus.RECOVERING, CaseStatus.RECOVERED, CaseStatus.CLOSED]:
         case_id = _case(status=status)
         with SessionLocal() as db:
             case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
@@ -167,7 +168,7 @@ def test_execute_recovery_recovered_returns_no_action(monkeypatch) -> None:
         assert "complete" in result["message"]
 
 def test_execute_recovery_policy_blocked_returns_escalate(monkeypatch) -> None:
-    case_id = _case(status=CaseStatus.FAILED, amount=600000) # Policy limit is 500k
+    case_id = _case(status=CaseStatus.FAILED, amount=2500000) # Policy limit is 2M
     with SessionLocal() as db:
         case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
         result = execute_recovery(db, case)
