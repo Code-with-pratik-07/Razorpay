@@ -37,14 +37,14 @@ def seed_demo_data(reset: bool = False):
 
         case_a = PaymentCase(
             case_number="DEMO-A-AUTO", customer_id=customers[0].id, razorpay_payment_id="pay_demo_auto", razorpay_order_id="order_demo_auto",
-            amount=250000, currency="INR", status=CaseStatus.RECOVERING, failure_reason="insufficient_funds", payment_method="upi",
+            amount=250000, currency="INR", status=CaseStatus.FAILED, failure_reason="insufficient_funds", payment_method="upi",
             recovery_probability=0.95, recovery_action=RecoveryAction.PAYMENT_LINK, created_at=now - timedelta(minutes=10),
-            policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="SENT"
+            policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="PENDING"
         )
         case_b = PaymentCase(
             case_number="DEMO-B-HUMAN", customer_id=customers[1].id, razorpay_payment_id="pay_demo_human", razorpay_order_id="order_demo_human",
             amount=600000, currency="INR", status=CaseStatus.HUMAN_REVIEW, failure_reason="fraud_suspicion", payment_method="card",
-            recovery_probability=0.88, recovery_action=RecoveryAction.ESCALATE, created_at=now - timedelta(minutes=15),
+            recovery_probability=0.55, recovery_action=RecoveryAction.ESCALATE, created_at=now - timedelta(minutes=15),
             policy_check_passed=False, policy_reason="Amount exceeds the automatic recovery limit.", notification_status="NOT_SENT"
         )
         case_c = PaymentCase(
@@ -62,13 +62,14 @@ def seed_demo_data(reset: bool = False):
         db.add_all([case_a, case_b, case_c, case_d])
         db.flush()
 
+        # Execute recovery for DEMO-A-AUTO to get a REAL Razorpay link!
         log_audit_event(db, case_a.id, "failure_detected", {"demo": True, "note": "Synthetic Demo A"})
         log_audit_event(db, case_a.id, "ml_prediction", {"recovery_probability": 0.95})
         log_audit_event(db, case_a.id, "policy_check", {"allowed": True, "reason": "Recovery action is permitted by policy."})
         log_audit_event(db, case_a.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "High recovery probability.", "customer_message": "Please pay.", "confidence": 0.95, "source": "groq"})
-        log_audit_event(db, case_a.id, "recovery_started", {"advisory_action": "payment_link", "executed_action": "payment_link", "automatic": True})
-        log_audit_event(db, case_a.id, "payment_link_created", {"url": "mock_demo_link"})
-        log_audit_event(db, case_a.id, "email_notification_sent", {"provider": "demo", "status_code": 200})
+        
+        from app.services.recovery_service import execute_recovery
+        execute_recovery(db, case_a, automatic=True)
 
         log_audit_event(db, case_b.id, "failure_detected", {"demo": True, "note": "Synthetic Demo B"})
         log_audit_event(db, case_b.id, "ml_prediction", {"recovery_probability": 0.88})
@@ -81,7 +82,7 @@ def seed_demo_data(reset: bool = False):
         log_audit_event(db, case_c.id, "policy_check", {"allowed": True, "reason": "Recovery action is permitted by policy."})
         log_audit_event(db, case_c.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "Timeout.", "confidence": 0.90, "source": "groq"})
         log_audit_event(db, case_c.id, "recovery_started", {"advisory_action": "payment_link", "executed_action": "payment_link", "automatic": True})
-        log_audit_event(db, case_c.id, "payment_link_created", {"url": "mock_demo_link"})
+        log_audit_event(db, case_c.id, "payment_link_created", {"url": "https://rzp.io/i/demo_recovered"})
         log_audit_event(db, case_c.id, "email_notification_sent", {"provider": "demo", "status_code": 200})
         log_audit_event(db, case_c.id, "payment_success", {"demo": True, "event": "payment.captured", "payment_id": "pay_demo_success"})
         log_audit_event(db, case_c.id, "case_recovered", {"order_id": "order_demo_success"})
@@ -150,7 +151,7 @@ def seed_demo_data(reset: bool = False):
 
             if status in {CaseStatus.RECOVERING, CaseStatus.RECOVERED}:
                 log_audit_event(db, case.id, "recovery_started", {"advisory_action": "payment_link", "executed_action": "payment_link", "automatic": True})
-                log_audit_event(db, case.id, "payment_link_created", {"url": "mock_demo_link"})
+                log_audit_event(db, case.id, "payment_link_created", {"url": "https://rzp.io/i/demo_mock_" + uuid.uuid4().hex[:6]})
 
             if status == CaseStatus.RECOVERED:
                 case.recovered_at = created_at + timedelta(hours=1)
