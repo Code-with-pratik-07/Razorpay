@@ -255,7 +255,7 @@ class TestMessageActionFix:
                 "confidence": 0.5,
                 "source": "groq",
             })
-            result = execute_recovery(db, case, automatic=False)
+            result = execute_recovery(db, case, automatic=True)
         # Must be 'message', not 'escalate'
         assert result["action"] == "message"
         assert result["payment_link_url"] is None

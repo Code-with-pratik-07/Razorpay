@@ -5,6 +5,7 @@ import pytest
 from app.db.database import SessionLocal, init_db
 from app.models.payment_case import CaseStatus
 from app.models.recovery_policy import RecoveryPolicy
+from app.models.audit_event import AuditEvent
 from app.services.policy_service import check_recovery_policy
 from tests.helpers import create_case
 

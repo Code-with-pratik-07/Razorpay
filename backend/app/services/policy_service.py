@@ -38,7 +38,7 @@ def check_recovery_policy(case: PaymentCase, policy: RecoveryPolicy, *, now: dat
     if case.currency != "INR":
         return PolicyCheckResult(False, "Only INR recovery cases are currently supported.", True)
     if automatic and case.amount > policy.max_auto_recovery_amount:
-        return PolicyCheckResult(False, "Amount exceeds the automatic recovery limit.", True)
+        return PolicyCheckResult(False, "Automatic recovery blocked — Human approval required.", True)
     if case.retry_count >= policy.max_retry_attempts:
         return PolicyCheckResult(False, "Maximum retry attempts reached.", True)
     if current_time - case.created_at > timedelta(days=policy.max_recovery_window_days):
@@ -47,4 +47,6 @@ def check_recovery_policy(case: PaymentCase, policy: RecoveryPolicy, *, now: dat
         retry_after = case.last_retry_at + timedelta(hours=policy.min_time_between_retries_hours)
         if current_time < retry_after:
             return PolicyCheckResult(False, "Retry cooldown is active.", False, retry_after)
-    return PolicyCheckResult(True, "Recovery action is permitted by policy.", False)
+    if not automatic:
+        return PolicyCheckResult(True, "Manual recovery approved.", False)
+    return PolicyCheckResult(True, "Automatic recovery approved.", False)

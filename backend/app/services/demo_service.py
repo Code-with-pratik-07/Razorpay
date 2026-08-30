@@ -39,25 +39,25 @@ def seed_demo_data(reset: bool = False):
             case_number="DEMO-A-AUTO", customer_id=customers[0].id, razorpay_payment_id="pay_demo_auto", razorpay_order_id="order_demo_auto",
             amount=250000, currency="INR", status=CaseStatus.FAILED, failure_reason="insufficient_funds", payment_method="upi",
             recovery_probability=0.95, recovery_action=RecoveryAction.PAYMENT_LINK, created_at=now - timedelta(minutes=10),
-            policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="PENDING", max_retries=3
+            policy_check_passed=True, policy_reason="Automatic recovery approved.", notification_status="PENDING", max_retries=3
         )
         case_b = PaymentCase(
             case_number="DEMO-B-HUMAN", customer_id=customers[1].id, razorpay_payment_id="pay_demo_human", razorpay_order_id="order_demo_human",
             amount=2500000, currency="INR", status=CaseStatus.HUMAN_REVIEW, failure_reason="fraud_suspicion", payment_method="card",
             recovery_probability=0.55, recovery_action=RecoveryAction.ESCALATE, created_at=now - timedelta(minutes=15),
-            policy_check_passed=False, policy_reason="Amount exceeds the automatic recovery limit.", notification_status="PENDING", max_retries=2
+            policy_check_passed=False, policy_reason="Automatic recovery blocked — Human approval required.", notification_status="PENDING", max_retries=2
         )
         case_c = PaymentCase(
             case_number="DEMO-C-RECOVERED", customer_id=customers[2].id, razorpay_payment_id="pay_demo_recovered", razorpay_order_id="order_demo_recovered",
             amount=150000, currency="INR", status=CaseStatus.RECOVERED, failure_reason="network_timeout", payment_method="netbanking",
             recovery_probability=0.92, recovery_action=RecoveryAction.PAYMENT_LINK, created_at=now - timedelta(hours=2), recovered_at=now - timedelta(minutes=30),
-            policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="SENT", max_retries=3
+            policy_check_passed=True, policy_reason="Automatic recovery approved.", notification_status="SENT", max_retries=3
         )
         case_d = PaymentCase(
             case_number="DEMO-D-STOPPED", customer_id=customers[3].id, razorpay_payment_id="pay_demo_stopped", razorpay_order_id="order_demo_stopped",
             amount=30000, currency="INR", status=CaseStatus.ABANDONED, failure_reason="bank_declined", payment_method="card",
             recovery_probability=0.25, recovery_action=RecoveryAction.NONE, created_at=now - timedelta(hours=1),
-            policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="NOT_SENT", max_retries=1
+            policy_check_passed=True, policy_reason="Automatic recovery approved.", notification_status="NOT_SENT", max_retries=1
         )
         db.add_all([case_a, case_b, case_c, case_d])
         db.flush()
@@ -65,7 +65,7 @@ def seed_demo_data(reset: bool = False):
         # Execute recovery for DEMO-A-AUTO to get a REAL Razorpay link!
         log_audit_event(db, case_a.id, "failure_detected", {"demo": True, "note": "Synthetic Demo A"})
         log_audit_event(db, case_a.id, "ml_prediction", {"recovery_probability": 0.95})
-        log_audit_event(db, case_a.id, "policy_check", {"allowed": True, "reason": "Recovery action is permitted by policy."})
+        log_audit_event(db, case_a.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
         log_audit_event(db, case_a.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "High recovery probability.", "customer_message": "Please pay.", "confidence": 0.95, "source": "groq"})
         
         from app.services.recovery_service import execute_recovery
@@ -73,13 +73,13 @@ def seed_demo_data(reset: bool = False):
 
         log_audit_event(db, case_b.id, "failure_detected", {"demo": True, "note": "Synthetic Demo B"})
         log_audit_event(db, case_b.id, "ml_prediction", {"recovery_probability": 0.88})
-        log_audit_event(db, case_b.id, "policy_check", {"allowed": False, "reason": "Amount exceeds the automatic recovery limit."})
+        log_audit_event(db, case_b.id, "policy_check", {"allowed": False, "reason": "Automatic recovery blocked — Human approval required."})
         log_audit_event(db, case_b.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Policy block.", "confidence": 0.85, "source": "groq"})
         log_audit_event(db, case_b.id, "human_escalation", {"reason": "Policy blocked automatic recovery", "source": "policy"})
 
         log_audit_event(db, case_c.id, "failure_detected", {"demo": True, "note": "Synthetic Demo C"})
         log_audit_event(db, case_c.id, "ml_prediction", {"recovery_probability": 0.92})
-        log_audit_event(db, case_c.id, "policy_check", {"allowed": True, "reason": "Recovery action is permitted by policy."})
+        log_audit_event(db, case_c.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
         log_audit_event(db, case_c.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "Timeout.", "confidence": 0.90, "source": "groq"})
         log_audit_event(db, case_c.id, "recovery_started", {"advisory_action": "payment_link", "executed_action": "payment_link", "automatic": True})
         log_audit_event(db, case_c.id, "payment_link_created", {"url": "https://rzp.io/i/demo_recovered"})
@@ -89,7 +89,7 @@ def seed_demo_data(reset: bool = False):
 
         log_audit_event(db, case_d.id, "failure_detected", {"demo": True, "note": "Synthetic Demo D"})
         log_audit_event(db, case_d.id, "ml_prediction", {"recovery_probability": 0.25})
-        log_audit_event(db, case_d.id, "policy_check", {"allowed": True, "reason": "Recovery action is permitted by policy."})
+        log_audit_event(db, case_d.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
         log_audit_event(db, case_d.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Low probability.", "confidence": 0.80, "source": "groq"})
         log_audit_event(db, case_d.id, "recovery_stopped", {"reason": "Predicted recovery probability is too low.", "ml_decision": "LOW"})
 
@@ -132,7 +132,7 @@ def seed_demo_data(reset: bool = False):
                 recovery_action=action,
                 created_at=created_at,
                 policy_check_passed=policy_pass,
-                policy_reason="Recovery action is permitted by policy." if policy_pass else "Amount exceeds the automatic recovery limit.",
+                policy_reason="Automatic recovery approved." if policy_pass else "Automatic recovery blocked — Human approval required.",
                 max_retries=max_retries
             )
             db.add(case)

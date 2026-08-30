@@ -200,7 +200,7 @@ export function CaseDetail({
                </span>
              ) : isRecovered ? (
                <span>
-                 <b>Recovery:</b> AUTOMATIC<br/>
+                 <b>Recovery:</b> {executionMode || 'AUTOMATIC'}<br/>
                  <b>Payment Link:</b> PAID<br/>
                  <b>Customer Payment:</b> PAYMENT RECEIVED
                </span>
@@ -210,7 +210,7 @@ export function CaseDetail({
                  : <span style={{color:'#f87171'}}><b>Human Review Required</b> — Recovery cannot be approved (low probability).</span>
              ) : (
                <span>
-                 <b>Recovery:</b> AUTOMATIC<br/>
+                 <b>Recovery:</b> {executionMode || 'AUTOMATIC'}<br/>
                  <b>Payment Link:</b> {currentLink ? 'CREATED' : (selected.status === 'failed' ? 'FAILED / PENDING' : 'PENDING')}<br/>
                  <b>Customer Payment:</b> AWAITING PAYMENT<br/>
                  <b>Notification:</b> {selected.notification_status === 'SENT' ? 'EMAIL SENT' : selected.notification_status === 'NOT_SENT' ? (emailHtmlPreview ? 'EMAIL MOCKED' : 'NOT AVAILABLE') : selected.notification_status === 'FAILED' ? 'EMAIL FAILED' : 'NOT AVAILABLE'}

@@ -233,8 +233,11 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
     {"payment_link", "retry"},
 )
     requested = decision.recommended_action
-    # Razorpay does not expose an API to retry a failed payment. Convert only this unsupported request to a Payment Link.
-    if requested == "retry":
+    
+    if not automatic:
+        action = "payment_link"
+    elif requested == "retry":
+        # Razorpay does not expose an API to retry a failed payment. Convert only this unsupported request to a Payment Link.
         action = "payment_link"
     elif requested in {"payment_link", "escalate", "message"}:
         action = requested
@@ -301,7 +304,7 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
         case.status = original_status
         db.commit()
         log_audit_event(db, case.id, "error", {"operation": "payment_link", "safe_message": "Payment Link creation failed.", "provider_error": str(exc)})
-        return {"action": "error", "status": case.status.value, "message": "Payment Link could not be created.", "payment_link_url": None}
+        return {"action": "error", "status": case.status.value, "message": str(exc), "payment_link_url": None}
     case.recovery_action = RecoveryAction.PAYMENT_LINK
     case.retry_count += 1; case.last_retry_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit(); log_audit_event(db, case.id, "payment_link_created", {"payment_link_id": link.get("id"), "url": link.get("short_url")})
