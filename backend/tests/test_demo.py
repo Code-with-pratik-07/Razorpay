@@ -92,6 +92,18 @@ def test_demo_showcase_inconsistencies(monkeypatch):
     demo_c = next(c for c in cases if c["case_number"] == "DEMO-C-RECOVERED")
     assert demo_c["status"] == "recovered"
     
+    # Check DEMO-C AI Advisor
+    audit_c = client.get(f"/api/cases/{demo_c['id']}/audit").json()
+    ai_event_c = next(e for e in audit_c if e["event_type"] == "ai_analysis")
+    assert ai_event_c["event_data"]["recommended_action"] == "payment_link"
+    assert "customer_message" in ai_event_c["event_data"]
+    
+    # Check that explanation.ai is not null (i.e. not "Pending")
+    explanation_c = client.get(f"/api/cases/{demo_c['id']}/explanation").json()
+    assert explanation_c["ai"] is not None
+    assert explanation_c["ai"]["recommended_action"] == "payment_link"
+    assert explanation_c["ai"]["source"] == "demo"
+    
     # DEMO-D
     demo_d = next(c for c in cases if c["case_number"] == "DEMO-D-STOPPED")
     assert demo_d["status"] == "abandoned"

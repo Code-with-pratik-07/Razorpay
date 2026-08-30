@@ -80,7 +80,7 @@ def seed_demo_data(reset: bool = False):
         log_audit_event(db, case_c.id, "failure_detected", {"demo": True, "note": "Synthetic Demo C"})
         log_audit_event(db, case_c.id, "ml_prediction", {"recovery_probability": 0.92})
         log_audit_event(db, case_c.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
-        log_audit_event(db, case_c.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "Timeout.", "confidence": 0.90, "source": "groq"})
+        log_audit_event(db, case_c.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "High recovery probability and eligible recovery profile.", "customer_message": "Please complete your payment using this secure payment link.", "confidence": 0.92, "source": "demo"})
         log_audit_event(db, case_c.id, "recovery_started", {"advisory_action": "payment_link", "executed_action": "payment_link", "automatic": True})
         log_audit_event(db, case_c.id, "payment_link_created", {"url": "https://rzp.io/i/demo_recovered"})
         log_audit_event(db, case_c.id, "email_notification_sent", {"provider": "demo", "status_code": 200})

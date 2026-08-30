@@ -12,7 +12,7 @@ class AIDecision(BaseModel):
     reasoning: str = Field(min_length=1, max_length=2000)
     customer_message: str = Field(min_length=1, max_length=1000)
     confidence: float = Field(ge=0, le=1)
-    source: Literal["groq", "fallback"] = "fallback"
+    source: Literal["groq", "fallback", "demo"] = "fallback"
 
 
 class CaseSummary(BaseModel):
