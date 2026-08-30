@@ -36,6 +36,7 @@ export function CaseDetail({
     return <div className="empty-state">Select a case to view details</div>;
   }
 
+  const mlDecision = explanation?.ml_decision ?? null;
   const policyAllowed = explanation?.policy.allowed ?? selected?.policy_check_passed ?? false;
   const existingPaymentLink = audit.find((event) => event.event_type === "payment_link_created")?.event_data.url as string | undefined;
   const currentLink = execution?.payment_link_url || existingPaymentLink;
@@ -44,6 +45,29 @@ export function CaseDetail({
   const isAutomatic = recoveryStartedEvent?.event_data.automatic === true;
   const executionMode = isAutomatic ? "AUTOMATIC" : recoveryStartedEvent ? "MANUAL" : "";
 
+  // Find mock email preview from audit events
+  const emailPreviewEvent = audit.find((e) => e.event_type === "email_notification_skipped" && e.event_data.email_html_preview);
+  const emailHtmlPreview = emailPreviewEvent?.event_data.email_html_preview as string | undefined;
+  const [showEmailPreview, setShowEmailPreview] = React.useState(false);
+
+  // Determine what action buttons the merchant can see
+  const isAbandoned = selected.status === 'abandoned';
+  const isHumanReview = selected.status === 'human_review';
+  const isRecovering = selected.status === 'recovering';
+  const isRecovered = selected.status === 'recovered';
+
+  // Merchant can approve recovery for HUMAN_REVIEW if policy allows and NOT low ML
+  const canApproveRecovery = isHumanReview && policyAllowed && mlDecision !== 'LOW';
+
+  // ML routing label helpers
+  const mlBadge = mlDecision === 'HIGH'
+    ? { label: 'HIGH CONFIDENCE', cls: 'ml-high' }
+    : mlDecision === 'UNCERTAIN'
+    ? { label: 'UNCERTAIN — Human Review', cls: 'ml-uncertain' }
+    : mlDecision === 'LOW'
+    ? { label: 'LOW — Recovery Stopped', cls: 'ml-low' }
+    : null;
+
   return (
     <>
       <header className="details-header">
@@ -51,15 +75,37 @@ export function CaseDetail({
           <h2>
             {selected.case_number} 
             {selected.case_number === 'DEMO-C-RECOVERED' && <span className="synthetic-badge">Synthetic Demo Data</span>}
+            {isAutomatic && isRecovering && <span className="synthetic-badge" style={{background:'#0ea5e9',marginLeft:8}}>AUTO</span>}
           </h2>
           <div className="details-meta">{selected.customer_email ?? 'Unknown'} • {title(selected.payment_method)}</div>
           <div className="details-meta email-status">
-            <strong>Email: </strong>
-            {selected.notification_status === 'SENT' ? "Recovery instructions sent to the customer." :
-             selected.notification_status === 'NOT_AVAILABLE' ? "No customer email is available." :
-             selected.notification_status === 'FAILED' ? "Payment Link exists, but notification delivery failed." :
-             selected.notification_status === 'NOT_SENT' ? "Notification has not been sent." : "Pending"}
+            <strong>Notification: </strong>
+            {selected.notification_status === 'SENT' ? "✓ Recovery email sent to customer." :
+             selected.notification_status === 'NOT_AVAILABLE' ? "No customer email available." :
+             selected.notification_status === 'FAILED' ? "Payment Link exists, but email delivery failed." :
+             selected.notification_status === 'NOT_SENT' ? (emailHtmlPreview ? "Email mocked — " : "Email not sent.") : "Pending"}
+            {selected.notification_status === 'NOT_SENT' && emailHtmlPreview && (
+              <button
+                id="view-email-preview-btn"
+                className="button secondary"
+                style={{marginLeft: 8, padding: '2px 10px', fontSize: '0.75rem'}}
+                onClick={() => setShowEmailPreview(v => !v)}
+              >
+                {showEmailPreview ? 'Hide Email' : 'View Generated Email'}
+              </button>
+            )}
           </div>
+          {showEmailPreview && emailHtmlPreview && (
+            <div className="email-preview-panel" style={{
+              marginTop: 12, padding: 16, background: '#0f1729', border: '1px solid #2a3a5c',
+              borderRadius: 8, maxHeight: 320, overflowY: 'auto'
+            }}>
+              <div style={{marginBottom: 8, color: '#64748b', fontSize: '0.75rem'}}>
+                📧 MOCKED EMAIL PREVIEW — not actually sent
+              </div>
+              <div dangerouslySetInnerHTML={{ __html: emailHtmlPreview }} />
+            </div>
+          )}
         </div>
         <div className="details-amount">
           {formatINR(selected.amount)}
@@ -74,7 +120,17 @@ export function CaseDetail({
           <div className="intelligence-panel">
              <div className="intelligence-card">
                <h4><i/> Case Metrics</h4>
-               <div className="stat-row"><span>Probability</span> <b>{explanation.ml.recovery_probability != null ? (explanation.ml.recovery_probability * 100).toFixed(1) + "%" : "—"}</b></div>
+               <div className="stat-row"><span>ML Probability</span> <b>{explanation.ml.recovery_probability != null ? (explanation.ml.recovery_probability * 100).toFixed(1) + "%" : "—"}</b></div>
+               {mlBadge && (
+                 <div className="stat-row">
+                   <span>ML Decision</span>
+                   <b className={mlBadge.cls} style={{
+                     fontSize: '0.7rem', padding: '2px 7px', borderRadius: 4,
+                     background: mlDecision === 'HIGH' ? '#064e3b' : mlDecision === 'UNCERTAIN' ? '#78350f' : '#3b1515',
+                     color: mlDecision === 'HIGH' ? '#34d399' : mlDecision === 'UNCERTAIN' ? '#fbbf24' : '#f87171',
+                   }}>{mlBadge.label}</b>
+                 </div>
+               )}
                <div className="stat-row"><span>Lifetime Value</span> <b>{formatINR(explanation.customer_history.lifetime_value)}</b></div>
                <div className="stat-row"><span>Success Rate</span> <b>{explanation.customer_history.successful_payments} / {explanation.customer_history.successful_payments + explanation.customer_history.failed_payments}</b></div>
              </div>
@@ -91,8 +147,12 @@ export function CaseDetail({
 
         {(execution || currentLink) && (
           <div className="success-panel">
-            <h3>{selected.status === 'recovered' ? '✓ PAYMENT SUCCESSFUL' : '✓ RECOVERY ACTION EXECUTED'}</h3>
-            <p>{selected.status === 'recovered' ? 'Revenue successfully recovered via Razorpay.' : (execution?.message || "Payment Link recovery is in progress.")}</p>
+            <h3>{isRecovered ? '✓ PAYMENT SUCCESSFUL' : '✓ RECOVERY ACTION EXECUTED'}</h3>
+            <p>
+              {isRecovered
+                ? 'Revenue successfully recovered via Razorpay.'
+                : (execution?.message || "Payment Link recovery is in progress.")}
+            </p>
             {currentLink && currentLink !== "mock_demo_link" && currentLink !== "mock_demo_real_simulated" && (
               <>
                 <div className="success-link">{currentLink}</div>
@@ -127,20 +187,45 @@ export function CaseDetail({
 
         <div className="action-panel">
            <div className="action-info">
-             <b>Execute Action</b>
-             {selected.status === 'recovered' ? 'Revenue successfully recovered.' : selected.status === 'recovering' ? `Payment link is active. ${executionMode ? `(${executionMode})` : ''}` : policyAllowed ? 'Ready to execute recommendation.' : 'Policy blocked execution.'}
+             {isAbandoned ? (
+               <span style={{color:'#f87171'}}>
+                 <b>Recovery Stopped</b> — ML probability too low for automatic or manual recovery.
+               </span>
+             ) : isRecovered ? (
+               'Revenue successfully recovered.'
+             ) : isRecovering ? (
+               <span>Payment link is active. {executionMode ? `(${executionMode})` : ''}</span>
+             ) : isHumanReview ? (
+               canApproveRecovery
+                 ? <span style={{color:'#fbbf24'}}><b>Human Review Required</b> — Click "Approve Recovery" to proceed.</span>
+                 : <span style={{color:'#f87171'}}><b>Human Review Required</b> — Recovery cannot be approved (policy or low probability).</span>
+             ) : policyAllowed ? (
+               'Ready to execute recommendation.'
+             ) : (
+               'Policy blocked execution.'
+             )}
            </div>
 
            <div className="action-buttons">
-             <button className="button secondary" onClick={() => void analyze()} disabled={actionLoading !== null}>
+             <button id="rerun-analysis-btn" className="button secondary" onClick={() => void analyze()} disabled={actionLoading !== null}>
                {actionLoading === 'analyze' ? <span className="spinner"/> : null}
-               Analyze
+               {explanation ? 'Re-run Analysis' : 'View Analysis'}
              </button>
 
-             {policyAllowed && selected.status !== 'recovered' && (selected.status !== 'recovering' || currentLink === 'mock_demo_link') && (
-               <button className="button primary" onClick={() => void execute()} disabled={actionLoading !== null}>
+             {/* Approve Recovery — only for HUMAN_REVIEW with HIGH ML and policy-allowed */}
+             {canApproveRecovery && !isRecovered && (
+               <button id="approve-recovery-btn" className="button primary" onClick={() => void execute()} disabled={actionLoading !== null}>
                  {actionLoading === 'execute' ? <span className="spinner"/> : null}
-                 Execute
+                 Approve Recovery
+               </button>
+             )}
+
+             {/* Execute — only for FAILED (analyzed, HIGH, policy-allowed) cases */}
+             {policyAllowed && !isRecovered && !isRecovering && !isHumanReview && !isAbandoned &&
+              (selected.status === 'failed' || (isRecovering && currentLink === 'mock_demo_link')) && (
+               <button id="execute-recovery-btn" className="button primary" onClick={() => void execute()} disabled={actionLoading !== null}>
+                 {actionLoading === 'execute' ? <span className="spinner"/> : null}
+                 Execute Recovery
                </button>
              )}
            </div>

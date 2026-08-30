@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.models.payment_case import PaymentCase
 from app.schemas.recovery import CaseExplanation, CaseSummary, ExecuteRecoveryResponse
-from app.services.recovery_service import _features, _last_ai_decision, _policy, analyze_case, execute_recovery
+from app.services.recovery_service import _features, _last_ai_decision, _policy, analyze_case, execute_recovery, ml_routing_decision
 from app.services.policy_service import check_recovery_policy
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
@@ -49,7 +49,14 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
     else:
         policy = check_recovery_policy(case, _policy(db)).to_dict()
     history = {"lifetime_value": case.customer.lifetime_value, "successful_payments": case.customer.successful_payments, "failed_payments": case.customer.failed_payments}
-    return CaseExplanation(**_summary(case), ml={"recovery_probability": case.recovery_probability, "features": _features(case)}, policy=policy, ai=_last_ai_decision(db, case.id), customer_history=history)
+    return CaseExplanation(
+        **_summary(case),
+        ml={"recovery_probability": case.recovery_probability, "features": _features(case)},
+        policy=policy,
+        ai=_last_ai_decision(db, case.id),
+        customer_history=history,
+        ml_decision=ml_routing_decision(case.recovery_probability),
+    )
 
 
 @router.post("/{case_id}/execute", response_model=ExecuteRecoveryResponse)

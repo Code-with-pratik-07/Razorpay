@@ -152,3 +152,83 @@ def seed_demo_data(reset: bool = False):
 
         db.commit()
         print("Demo data successfully seeded!")
+
+
+def simulate_failure_event(
+    amount: int | None = None,
+    failure_reason: str | None = None,
+    payment_method: str | None = None,
+    successful_payments: int | None = None,
+) -> dict:
+    """Create a synthetic payment failure and run the full analysis + ML routing pipeline.
+
+    This is the demo equivalent of Razorpay sending a real payment.failed webhook.
+    It intentionally runs the real pipeline — no shortcuts, no mocked decisions.
+    """
+    import random as _random
+    from app.services.recovery_service import analyze_case, execute_recovery
+
+    # Randomly vary customer history to show different ML routing outcomes across demos.
+    _methods = ["card", "upi", "netbanking"]
+    _reasons = ["insufficient_funds", "card_expired", "network_timeout", "bank_declined"]
+
+    with SessionLocal() as db:
+        suffix = uuid.uuid4().hex[:8]
+        succ = successful_payments if successful_payments is not None else _random.randint(0, 10)
+        customer = Customer(
+            email=f"demo_{suffix}@example.com",
+            razorpay_customer_id=f"cust_sim_{suffix}",
+            successful_payments=succ,
+            failed_payments=_random.randint(0, 3),
+            lifetime_value=float(succ * _random.randint(5000, 50000)),
+        )
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
+
+        case = PaymentCase(
+            case_number=f"SIM-{suffix.upper()}",
+            customer_id=customer.id,
+            razorpay_payment_id=f"pay_sim_{suffix}",
+            razorpay_order_id=f"order_sim_{suffix}",
+            amount=amount if amount is not None else _random.randint(10000, 250000),
+            currency="INR",
+            status=CaseStatus.FAILED,
+            failure_reason=failure_reason if failure_reason in _reasons else _random.choice(_reasons),
+            payment_method=payment_method if payment_method in _methods else _random.choice(_methods),
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        log_audit_event(db, case.id, "failure_detected", {
+            "payment_id": case.razorpay_payment_id,
+            "order_id": case.razorpay_order_id,
+            "source": "demo_simulation",
+        })
+        log_audit_event(db, case.id, "case_created", {"source": "demo_simulation"})
+
+        # Run the real pipeline — ML → policy → Groq → routing.
+        analyze_case(db, case)
+        db.refresh(case)
+
+        # If analyze_case routed to HIGH (status=FAILED), trigger automatic recovery.
+        if case.status == CaseStatus.FAILED:
+            execute_recovery(db, case, automatic=True)
+            db.refresh(case)
+
+        return {
+            "case_id": case.id,
+            "case_number": case.case_number,
+            "status": case.status.value,
+            "recovery_probability": case.recovery_probability,
+            "ml_decision": (
+                "HIGH" if (case.recovery_probability or 0) >= 0.70
+                else "UNCERTAIN" if (case.recovery_probability or 0) >= 0.40
+                else "LOW"
+            ),
+            "message": (
+                f"Case {case.case_number} created and processed automatically."
+            ),
+        }
+

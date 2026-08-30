@@ -7,6 +7,36 @@ interface DecisionPipelineProps {
 }
 
 export function DecisionPipeline({ selected, explanation }: DecisionPipelineProps) {
+  const mlDecision = explanation?.ml_decision ?? null;
+  const prob = explanation?.ml?.recovery_probability;
+  const probStr = prob != null ? `${(prob * 100).toFixed(0)}%` : null;
+
+  const isAbandoned = selected.status === 'abandoned';
+  const isHumanReview = selected.status === 'human_review';
+  const isRecovering = selected.status === 'recovering';
+  const isRecovered = selected.status === 'recovered';
+
+  // Policy step state
+  const policyDone = explanation?.policy != null;
+  const policyAllowed = explanation?.policy?.allowed ?? false;
+
+  // ML step label
+  let mlLabel = probStr ? `${probStr} recovery probability` : 'Pending';
+  if (mlDecision === 'HIGH' && probStr) mlLabel = `${probStr} — High confidence`;
+  else if (mlDecision === 'UNCERTAIN' && probStr) mlLabel = `${probStr} — Uncertain`;
+  else if (mlDecision === 'LOW' && probStr) mlLabel = `${probStr} — Low`;
+
+  // Policy step label
+  const policyLabel = !policyDone
+    ? 'Pending'
+    : !policyAllowed
+    ? 'BLOCKED — Human Review'
+    : mlDecision === 'UNCERTAIN'
+    ? 'Allowed — Uncertain ML (Human Review)'
+    : mlDecision === 'LOW'
+    ? 'Allowed — ML too low (Stopped)'
+    : '✓ Automatic recovery approved';
+
   return (
     <div className="decision-pipeline">
        <div className="pipeline-track" />
@@ -19,19 +49,19 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
          </div>
        </div>
 
-       <div className={`pipeline-step ${explanation?.ml ? 'completed' : 'active'}`}>
-         <div className="step-icon">{explanation?.ml ? '✓' : '•'}</div>
+       <div className={`pipeline-step ${explanation?.ml ? (mlDecision === 'LOW' ? 'warning' : 'completed') : 'active'}`}>
+         <div className="step-icon">{explanation?.ml ? (mlDecision === 'LOW' ? '↓' : '✓') : '•'}</div>
          <div className="step-content">
            <div className="step-title">ML PREDICTION</div>
-           <div className="step-meta">{explanation?.ml?.recovery_probability != null ? `${(explanation.ml.recovery_probability * 100).toFixed(0)}% recovery probability` : 'Pending'}</div>
+           <div className="step-meta">{mlLabel}</div>
          </div>
        </div>
 
-       <div className={`pipeline-step ${explanation?.policy ? (explanation.policy.allowed ? 'completed' : 'warning') : ''}`}>
-         <div className="step-icon">{explanation?.policy ? (explanation.policy.allowed ? '✓' : '!') : '•'}</div>
+       <div className={`pipeline-step ${policyDone ? (policyAllowed && mlDecision !== 'UNCERTAIN' && mlDecision !== 'LOW' ? 'completed' : 'warning') : ''}`}>
+         <div className="step-icon">{policyDone ? (policyAllowed && mlDecision !== 'UNCERTAIN' && mlDecision !== 'LOW' ? '✓' : '!') : '•'}</div>
          <div className="step-content">
            <div className="step-title">POLICY ENGINE</div>
-           <div className="step-meta">{explanation?.policy ? (explanation.policy.allowed ? 'Automatic recovery approved' : 'BLOCKED') : 'Pending'}</div>
+           <div className="step-meta">{policyLabel}</div>
          </div>
        </div>
 
@@ -43,34 +73,47 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
          </div>
        </div>
 
-       <div className={`pipeline-step ${selected.status === 'recovered' || selected.status === 'recovering' ? 'completed' : explanation?.policy && !explanation.policy.allowed ? 'blocked' : ''}`}>
-         <div className="step-icon">{selected.status === 'recovered' || selected.status === 'recovering' ? '✓' : explanation?.policy && !explanation.policy.allowed ? '—' : '•'}</div>
-         <div className="step-content">
-           <div className="step-title">RECOVERY</div>
-           <div className="step-meta">{selected.status === 'recovered' || selected.status === 'recovering' ? 'Payment Link created' : explanation?.policy ? 'Not executed' : 'Pending'}</div>
-         </div>
-       </div>
-
-       {explanation?.policy && !explanation.policy.allowed && (
+       {/* Recovery step */}
+       {isAbandoned ? (
          <div className="pipeline-step blocked">
+           <div className="step-icon">■</div>
+           <div className="step-content">
+             <div className="step-title">RECOVERY STOPPED</div>
+             <div className="step-meta">ML probability too low — no action taken</div>
+           </div>
+         </div>
+       ) : isHumanReview ? (
+         <div className="pipeline-step warning">
            <div className="step-icon">→</div>
            <div className="step-content">
              <div className="step-title">HUMAN REVIEW REQUIRED</div>
+             <div className="step-meta">{!policyAllowed ? 'Policy blocked automatic recovery' : 'Below automatic recovery threshold'}</div>
+           </div>
+         </div>
+       ) : (
+         <div className={`pipeline-step ${isRecovered || isRecovering ? 'completed' : policyDone && !policyAllowed ? 'blocked' : ''}`}>
+           <div className="step-icon">{isRecovered || isRecovering ? '✓' : policyDone && !policyAllowed ? '—' : '•'}</div>
+           <div className="step-content">
+             <div className="step-title">RECOVERY</div>
+             <div className="step-meta">{isRecovered || isRecovering ? 'Payment Link created' : policyDone ? 'Not executed' : 'Pending'}</div>
            </div>
          </div>
        )}
 
-       {(!explanation?.policy || explanation.policy.allowed) && (
-         <div className={`pipeline-step ${selected.status === 'recovered' ? 'completed' : 'active'}`}>
-           <div className="step-icon">{selected.status === 'recovered' ? '✓' : '•'}</div>
+       {/* Customer payment step */}
+       {!isAbandoned && (
+         <div className={`pipeline-step ${isRecovered ? 'completed' : isRecovering ? 'active' : ''}`}>
+           <div className="step-icon">{isRecovered ? '✓' : '•'}</div>
            <div className="step-content">
              <div className="step-title">CUSTOMER PAYMENT</div>
-             <div className="step-meta">{selected.status === 'recovered' ? 'Payment Received' : selected.status === 'recovering' ? 'Awaiting payment' : 'Awaiting recovery action'}</div>
+             <div className="step-meta">
+               {isRecovered ? 'Payment Received' : isRecovering ? 'Awaiting customer payment' : 'Awaiting recovery action'}
+             </div>
            </div>
          </div>
        )}
 
-       {selected.status === 'recovered' && (
+       {isRecovered && (
          <div className="pipeline-step completed">
            <div className="step-icon">✓</div>
            <div className="step-content">

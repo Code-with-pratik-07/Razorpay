@@ -7,6 +7,7 @@ interface DemoControlCenterProps {
   resettingDemo: boolean;
   loading: boolean;
   startDemo: () => Promise<void>;
+  simulateFailure: () => Promise<void>;
   selectScenario: (caseNumber: string, list: RecoveryCase[]) => void;
   selectedId: string | null;
 }
@@ -17,6 +18,7 @@ export function DemoControlCenter({
   resettingDemo,
   loading,
   startDemo,
+  simulateFailure,
   selectScenario,
   selectedId
 }: DemoControlCenterProps) {
@@ -34,6 +36,9 @@ export function DemoControlCenter({
           <h3>LIVE DEMO</h3>
           <p>4 deterministic scenarios demonstrating RecoverAI</p>
         </div>
+        <button className="button secondary" style={{marginRight: '8px'}} onClick={() => void simulateFailure()} disabled={resettingDemo || loading}>
+          Simulate Payment Failure
+        </button>
         <button className="button primary" onClick={() => void startDemo()} disabled={resettingDemo || loading}>
           {resettingDemo ? "Starting..." : "Start Demo"}
         </button>

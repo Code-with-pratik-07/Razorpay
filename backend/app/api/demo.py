@@ -8,12 +8,18 @@ from app.ml.predict import load_model
 from app.ml.train import MODEL_PATH
 from app.schemas.recovery import ExperimentResult
 from app.core.config import get_settings
-from app.services.demo_service import seed_demo_data
+from app.services.demo_service import seed_demo_data, simulate_failure_event
 
 router = APIRouter(prefix="/api/demo", tags=["demo"])
 
 class DemoStatus(BaseModel):
     demo_mode_enabled: bool
+
+class SimulateFailureRequest(BaseModel):
+    amount: int | None = None
+    failure_reason: str | None = None
+    payment_method: str | None = None
+    successful_payments: int | None = None
 
 @router.get("/status", response_model=DemoStatus)
 def get_demo_status():
@@ -30,6 +36,32 @@ def reset_demo_data():
         )
     seed_demo_data(reset=True)
     return {"message": "Demo database successfully reset and seeded."}
+
+
+
+@router.post("/simulate-failure")
+def simulate_payment_failure(body: SimulateFailureRequest | None = None):
+    """Simulate a payment.failed event and run the full automatic recovery pipeline.
+
+    This is the primary demo action. It creates a realistic customer + failed PaymentCase,
+    then executes the real ML prediction → policy check → Groq advisory → routing pipeline.
+    No mocking. If DEMO_MODE=true and Razorpay credentials are set, a real Razorpay Test
+    Mode invoice is generated for HIGH-confidence cases.
+    """
+    settings = get_settings()
+    if not settings.demo_mode:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo mode is disabled. Simulated failure events are only available in demo mode.",
+        )
+    req = body or SimulateFailureRequest()
+    result = simulate_failure_event(
+        amount=req.amount,
+        failure_reason=req.failure_reason,
+        payment_method=req.payment_method,
+        successful_payments=req.successful_payments,
+    )
+    return result
 
 
 @router.post("/run-experiment", response_model=ExperimentResult)

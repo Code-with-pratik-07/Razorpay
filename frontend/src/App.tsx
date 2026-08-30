@@ -131,6 +131,22 @@ export default function App() {
     selectScenario('DEMO-A-AUTO', newCases);
   };
 
+  const simulateFailure = async () => {
+    setResettingDemo(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await api<{ message: string; case_id: string }>("/api/demo/simulate-failure", { method: "POST", body: JSON.stringify({}) });
+      setNotice(res.message);
+      const newCases = await refreshCases(false);
+      selectScenario(newCases[0].case_number, newCases);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to simulate payment failure.");
+    } finally {
+      setResettingDemo(false);
+    }
+  };
+
   useEffect(() => {
     setExecution(null);
     if (selectedId) {
@@ -204,6 +220,7 @@ export default function App() {
           resettingDemo={resettingDemo}
           loading={loading}
           startDemo={startDemo}
+          simulateFailure={simulateFailure}
           selectScenario={selectScenario}
           selectedId={selectedId}
         />
