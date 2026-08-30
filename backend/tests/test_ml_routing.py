@@ -313,3 +313,78 @@ class TestNotificationStatus:
             execute_recovery(db, case, automatic=True)
             db.refresh(case)
         assert case.notification_status == "NOT_AVAILABLE"
+
+class TestMaxRetriesLogic:
+    def test_cold_start_max_retries_is_2(self, monkeypatch):
+        monkeypatch.setenv("GROQ_API_KEY", "")
+        import app.services.recovery_service as rs
+        def mock_predict(features, model_path=None):
+            return {"recovery_probability": 0.95, "risk_level": "TEST", "feature_summary": features}
+        monkeypatch.setattr(rs, "predict_recovery", mock_predict)
+        
+        init_db()
+        with SessionLocal() as db:
+            from app.models.customer import Customer
+            # Force cold start (0 successful, 0 failed)
+            customer = Customer(email="test@cold.com", successful_payments=0, failed_payments=0)
+            db.add(customer); db.flush()
+            case = create_case(db, customer_id=customer.id, status=CaseStatus.FAILED)
+            analyze_case(db, case)
+            db.refresh(case)
+            assert case.max_retries == 2
+            assert rs.ml_routing_decision(case.recovery_probability, is_cold_start=True) == "COLD_START"
+
+    def test_high_probability_max_retries_is_3(self, monkeypatch):
+        monkeypatch.setenv("GROQ_API_KEY", "")
+        import app.services.recovery_service as rs
+        def mock_predict(features, model_path=None):
+            return {"recovery_probability": 0.95, "risk_level": "TEST", "feature_summary": features}
+        monkeypatch.setattr(rs, "predict_recovery", mock_predict)
+        
+        init_db()
+        with SessionLocal() as db:
+            from app.models.customer import Customer
+            # Not a cold start (3 successful)
+            customer = Customer(email="test@high.com", successful_payments=3, failed_payments=0)
+            db.add(customer); db.flush()
+            case = create_case(db, customer_id=customer.id, status=CaseStatus.FAILED)
+            analyze_case(db, case)
+            db.refresh(case)
+            assert case.max_retries == 3
+            assert rs.ml_routing_decision(case.recovery_probability, is_cold_start=False) == "HIGH"
+
+    def test_uncertain_probability_max_retries_is_2(self, monkeypatch):
+        monkeypatch.setenv("GROQ_API_KEY", "")
+        import app.services.recovery_service as rs
+        def mock_predict(features, model_path=None):
+            return {"recovery_probability": 0.50, "risk_level": "TEST", "feature_summary": features}
+        monkeypatch.setattr(rs, "predict_recovery", mock_predict)
+        
+        init_db()
+        with SessionLocal() as db:
+            from app.models.customer import Customer
+            customer = Customer(email="test@unc.com", successful_payments=3, failed_payments=0)
+            db.add(customer); db.flush()
+            case = create_case(db, customer_id=customer.id, status=CaseStatus.FAILED)
+            analyze_case(db, case)
+            db.refresh(case)
+            assert case.max_retries == 2
+            assert rs.ml_routing_decision(case.recovery_probability, is_cold_start=False) == "UNCERTAIN"
+
+    def test_low_probability_max_retries_is_1(self, monkeypatch):
+        monkeypatch.setenv("GROQ_API_KEY", "")
+        import app.services.recovery_service as rs
+        def mock_predict(features, model_path=None):
+            return {"recovery_probability": 0.20, "risk_level": "TEST", "feature_summary": features}
+        monkeypatch.setattr(rs, "predict_recovery", mock_predict)
+        
+        init_db()
+        with SessionLocal() as db:
+            from app.models.customer import Customer
+            customer = Customer(email="test@low.com", successful_payments=3, failed_payments=0)
+            db.add(customer); db.flush()
+            case = create_case(db, customer_id=customer.id, status=CaseStatus.FAILED)
+            analyze_case(db, case)
+            db.refresh(case)
+            assert case.max_retries == 1
+            assert rs.ml_routing_decision(case.recovery_probability, is_cold_start=False) == "LOW"

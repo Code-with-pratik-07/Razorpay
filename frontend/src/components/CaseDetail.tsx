@@ -136,7 +136,7 @@ export function CaseDetail({
                <div className="stat-row"><span>Recovery Tier</span> <b>{mlDecision === 'COLD_START' ? 'COLD START' : mlDecision}</b></div>
                <div className="stat-row"><span>Max Attempts</span> <b>{selected.max_retries}</b></div>
                <div className="stat-row"><span>Attempts Used</span> <b>{selected.retry_count}</b></div>
-               <div className="stat-row"><span>Attempts Remaining</span> <b>{selected.max_retries - selected.retry_count}</b></div>
+               <div className="stat-row"><span>Attempts Remaining</span> <b>{Math.max(0, selected.max_retries - selected.retry_count)}</b></div>
                <div className="stat-row"><span>Lifetime Value</span> <b>{formatINR(explanation.customer_history.lifetime_value)}</b></div>
                <div className="stat-row"><span>Success Rate</span> <b>{explanation.customer_history.successful_payments} / {explanation.customer_history.successful_payments + explanation.customer_history.failed_payments}</b></div>
              </div>

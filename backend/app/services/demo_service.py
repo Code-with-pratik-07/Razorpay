@@ -39,25 +39,25 @@ def seed_demo_data(reset: bool = False):
             case_number="DEMO-A-AUTO", customer_id=customers[0].id, razorpay_payment_id="pay_demo_auto", razorpay_order_id="order_demo_auto",
             amount=250000, currency="INR", status=CaseStatus.FAILED, failure_reason="insufficient_funds", payment_method="upi",
             recovery_probability=0.95, recovery_action=RecoveryAction.PAYMENT_LINK, created_at=now - timedelta(minutes=10),
-            policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="PENDING"
+            policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="PENDING", max_retries=3
         )
         case_b = PaymentCase(
             case_number="DEMO-B-HUMAN", customer_id=customers[1].id, razorpay_payment_id="pay_demo_human", razorpay_order_id="order_demo_human",
             amount=2500000, currency="INR", status=CaseStatus.HUMAN_REVIEW, failure_reason="fraud_suspicion", payment_method="card",
             recovery_probability=0.55, recovery_action=RecoveryAction.ESCALATE, created_at=now - timedelta(minutes=15),
-            policy_check_passed=False, policy_reason="Amount exceeds the automatic recovery limit.", notification_status="NOT_SENT"
+            policy_check_passed=False, policy_reason="Amount exceeds the automatic recovery limit.", notification_status="NOT_SENT", max_retries=2
         )
         case_c = PaymentCase(
             case_number="DEMO-C-RECOVERED", customer_id=customers[2].id, razorpay_payment_id="pay_demo_recovered", razorpay_order_id="order_demo_recovered",
             amount=150000, currency="INR", status=CaseStatus.RECOVERED, failure_reason="network_timeout", payment_method="netbanking",
             recovery_probability=0.92, recovery_action=RecoveryAction.PAYMENT_LINK, created_at=now - timedelta(hours=2), recovered_at=now - timedelta(minutes=30),
-            policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="SENT"
+            policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="SENT", max_retries=3
         )
         case_d = PaymentCase(
             case_number="DEMO-D-STOPPED", customer_id=customers[3].id, razorpay_payment_id="pay_demo_stopped", razorpay_order_id="order_demo_stopped",
             amount=30000, currency="INR", status=CaseStatus.ABANDONED, failure_reason="bank_declined", payment_method="card",
             recovery_probability=0.25, recovery_action=RecoveryAction.NONE, created_at=now - timedelta(hours=1),
-            policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="NOT_SENT"
+            policy_check_passed=True, policy_reason="Recovery action is permitted by policy.", notification_status="NOT_SENT", max_retries=1
         )
         db.add_all([case_a, case_b, case_c, case_d])
         db.flush()
@@ -125,6 +125,15 @@ def seed_demo_data(reset: bool = False):
                     action = RecoveryAction.PAYMENT_LINK
 
             created_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=random.randint(1, 120))
+            is_cold_start = (customer.successful_payments + customer.failed_payments) < 3
+            if is_cold_start:
+                max_retries = 2
+            elif prob >= 0.60:
+                max_retries = 3
+            elif prob >= 0.40:
+                max_retries = 2
+            else:
+                max_retries = 1
 
             case = PaymentCase(
                 case_number=f"DEMO-{uuid.uuid4().hex[:10].upper()}",
@@ -140,7 +149,8 @@ def seed_demo_data(reset: bool = False):
                 recovery_action=action,
                 created_at=created_at,
                 policy_check_passed=policy_pass,
-                policy_reason="Recovery action is permitted by policy." if policy_pass else "Amount exceeds the automatic recovery limit."
+                policy_reason="Recovery action is permitted by policy." if policy_pass else "Amount exceeds the automatic recovery limit.",
+                max_retries=max_retries
             )
             db.add(case)
             db.flush()
