@@ -45,7 +45,7 @@ def seed_demo_data(reset: bool = False):
             case_number="DEMO-B-HUMAN", customer_id=customers[1].id, razorpay_payment_id="pay_demo_human", razorpay_order_id="order_demo_human",
             amount=2500000, currency="INR", status=CaseStatus.HUMAN_REVIEW, failure_reason="fraud_suspicion", payment_method="card",
             recovery_probability=0.55, recovery_action=RecoveryAction.ESCALATE, created_at=now - timedelta(minutes=15),
-            policy_check_passed=False, policy_reason="Amount exceeds the automatic recovery limit.", notification_status="NOT_SENT", max_retries=2
+            policy_check_passed=False, policy_reason="Amount exceeds the automatic recovery limit.", notification_status="PENDING", max_retries=2
         )
         case_c = PaymentCase(
             case_number="DEMO-C-RECOVERED", customer_id=customers[2].id, razorpay_payment_id="pay_demo_recovered", razorpay_order_id="order_demo_recovered",
@@ -95,6 +95,7 @@ def seed_demo_data(reset: bool = False):
 
         print("Seeding synthetic demo cases...")
         features, _ = generate_training_data(samples=50)
+        from app.services.recovery_service import execute_recovery
 
         for i, row in features.iterrows():
             customer = random.choice(customers)
@@ -102,27 +103,6 @@ def seed_demo_data(reset: bool = False):
             
             prob = random.uniform(0.1, 0.95)
             policy_pass = amount <= 2000000
-
-            if not policy_pass:
-                status = CaseStatus.HUMAN_REVIEW
-                action = RecoveryAction.ESCALATE
-            elif prob < 0.40:
-                status = CaseStatus.ABANDONED
-                action = RecoveryAction.NONE
-            elif prob < 0.60:
-                status = CaseStatus.HUMAN_REVIEW
-                action = RecoveryAction.NONE
-            else:
-                rand = random.random()
-                if rand < 0.3:
-                    status = CaseStatus.FAILED
-                    action = RecoveryAction.NONE
-                elif rand < 0.7:
-                    status = CaseStatus.RECOVERING
-                    action = RecoveryAction.PAYMENT_LINK
-                else:
-                    status = CaseStatus.RECOVERED
-                    action = RecoveryAction.PAYMENT_LINK
 
             created_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=random.randint(1, 120))
             is_cold_start = (customer.successful_payments + customer.failed_payments) < 3
@@ -134,6 +114,9 @@ def seed_demo_data(reset: bool = False):
                 max_retries = 2
             else:
                 max_retries = 1
+
+            status = CaseStatus.FAILED
+            action = RecoveryAction.NONE
 
             case = PaymentCase(
                 case_number=f"DEMO-{uuid.uuid4().hex[:10].upper()}",
@@ -159,19 +142,26 @@ def seed_demo_data(reset: bool = False):
             log_audit_event(db, case.id, "ml_prediction", {"recovery_probability": case.recovery_probability})
             log_audit_event(db, case.id, "policy_check", {"allowed": case.policy_check_passed, "reason": case.policy_reason})
 
-            if status in {CaseStatus.RECOVERING, CaseStatus.RECOVERED}:
-                log_audit_event(db, case.id, "recovery_started", {"advisory_action": "payment_link", "executed_action": "payment_link", "automatic": True})
-                log_audit_event(db, case.id, "payment_link_created", {"url": "https://rzp.io/i/demo_mock_" + uuid.uuid4().hex[:6]})
-
-            if status == CaseStatus.RECOVERED:
-                case.recovered_at = created_at + timedelta(hours=1)
-                log_audit_event(db, case.id, "payment_success", {"demo": True})
-                log_audit_event(db, case.id, "case_recovered", {"order_id": case.razorpay_order_id})
-
-            if status == CaseStatus.HUMAN_REVIEW:
-                log_audit_event(db, case.id, "human_escalation", {"reason": "Demo escalation"})
-            elif status == CaseStatus.ABANDONED:
+            # Evaluate routing to log AI correctly and set status
+            if not policy_pass:
+                case.status = CaseStatus.HUMAN_REVIEW
+                case.recovery_action = RecoveryAction.ESCALATE
+                log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Policy blocked automatic recovery.", "customer_message": "Manual review required.", "confidence": prob, "source": "fallback"})
+                log_audit_event(db, case.id, "human_escalation", {"reason": "Policy blocked automatic recovery", "source": "policy"})
+            elif prob < 0.40:
+                case.status = CaseStatus.ABANDONED
+                case.recovery_action = RecoveryAction.NONE
+                log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Low recovery probability.", "customer_message": "", "confidence": prob, "source": "fallback"})
                 log_audit_event(db, case.id, "recovery_stopped", {"reason": "Probability too low", "ml_decision": "LOW"})
+            elif prob < 0.60:
+                case.status = CaseStatus.HUMAN_REVIEW
+                case.recovery_action = RecoveryAction.NONE
+                log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Uncertain recovery probability.", "customer_message": "", "confidence": prob, "source": "fallback"})
+                log_audit_event(db, case.id, "human_escalation", {"reason": "Uncertain ML probability", "source": "ml_routing"})
+            else:
+                # High probability + Policy passed -> execute automatically!
+                log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "High recovery probability.", "customer_message": "Please pay.", "confidence": prob, "source": "fallback"})
+                execute_recovery(db, case, automatic=True)
 
         db.commit()
         print("Demo data successfully seeded!")
