@@ -21,7 +21,7 @@ class PolicyCheckResult:
         return result
 
 
-def check_recovery_policy(case: PaymentCase, policy: RecoveryPolicy, *, now: datetime | None = None) -> PolicyCheckResult:
+def check_recovery_policy(case: PaymentCase, policy: RecoveryPolicy, *, now: datetime | None = None, automatic: bool = True) -> PolicyCheckResult:
     """Return the sole policy verdict for an automated recovery action.
 
     Amounts are stored in paise, so the default 2000000 policy ceiling is ₹20,000.
@@ -29,7 +29,7 @@ def check_recovery_policy(case: PaymentCase, policy: RecoveryPolicy, *, now: dat
     made eligible by a lower amount or a strong ML score.
     """
     current_time = now or datetime.now(timezone.utc).replace(tzinfo=None)
-    if case.status == CaseStatus.HUMAN_REVIEW:
+    if automatic and case.status == CaseStatus.HUMAN_REVIEW:
         return PolicyCheckResult(False, "Case requires human review; automated recovery is not permitted.", True)
     if not case.razorpay_payment_id and not case.razorpay_order_id:
         return PolicyCheckResult(False, "Valid payment or order information is required.", True)
@@ -37,7 +37,7 @@ def check_recovery_policy(case: PaymentCase, policy: RecoveryPolicy, *, now: dat
         return PolicyCheckResult(False, "Payment amount must be positive.", True)
     if case.currency != "INR":
         return PolicyCheckResult(False, "Only INR recovery cases are currently supported.", True)
-    if case.amount > policy.max_auto_recovery_amount:
+    if automatic and case.amount > policy.max_auto_recovery_amount:
         return PolicyCheckResult(False, "Amount exceeds the automatic recovery limit.", True)
     if case.retry_count >= policy.max_retry_attempts:
         return PolicyCheckResult(False, "Maximum retry attempts reached.", True)

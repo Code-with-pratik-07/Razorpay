@@ -89,10 +89,10 @@ def test_groq_strict_schema_disallows_extra_properties_for_every_object() -> Non
 
 def test_execution_is_blocked_by_policy(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "")
-    case_id = _case(amount=2000100)
+    case_id = _case(amount=2000100, recovery_probability=0.90)
     with SessionLocal() as db:
         case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
-        result = execute_recovery(db, case)
+        result = execute_recovery(db, case, automatic=True)
         assert result["action"] == "escalate"
         assert case.status == CaseStatus.HUMAN_REVIEW
 
@@ -100,10 +100,11 @@ def test_execution_is_blocked_by_policy(monkeypatch) -> None:
 def test_retry_timing_and_window_remain_blocked(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "")
     for values in ({"retry_count": 4}, {"last_retry_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=4)}, {"created_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=8)}):
+        values["recovery_probability"] = 0.90
         case_id = _case(**values)
         with SessionLocal() as db:
             case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
-            result = execute_recovery(db, case)["action"]
+            result = execute_recovery(db, case, automatic=True)["action"]
             assert result in ("escalate", "stopped")
 
 def test_analyze_case_state_guard(monkeypatch) -> None:
@@ -199,8 +200,36 @@ def test_execute_recovery_policy_blocked_returns_escalate(monkeypatch) -> None:
     case_id = _case(status=CaseStatus.FAILED, amount=2500000) # Policy limit is 2M
     with SessionLocal() as db:
         case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
-        result = execute_recovery(db, case)
+        result = execute_recovery(db, case, automatic=True)
         assert result["action"] == "escalate"
+
+def test_execute_recovery_manual_human_review_allows_high_amount(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_123")
+    monkeypatch.setenv("RAZORPAY_KEY_SECRET", "secret")
+    
+    # Simulate a case that was blocked by policy and put into HUMAN_REVIEW
+    case_id = _case(status=CaseStatus.HUMAN_REVIEW, amount=2500000, recovery_probability=0.85)
+    with SessionLocal() as db:
+        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+        class DummyRazorpayService:
+            def create_payment_link(self, data): return {"id": "plink_123", "short_url": "https://rzp.io/rzp/123"}
+        monkeypatch.setattr("app.services.recovery_service.RazorpayService", lambda *args, **kwargs: DummyRazorpayService())
+
+        # Merchant explicitly approves
+        result = execute_recovery(db, case, automatic=False)
+        assert result["action"] == "payment_link"
+        assert result["payment_link_url"] == "https://rzp.io/rzp/123"
+
+def test_execute_recovery_low_ml_blocks_manual_human_review(monkeypatch) -> None:
+    # A LOW case somehow manually approved (e.g. merchant bypassing frontend logic)
+    case_id = _case(status=CaseStatus.HUMAN_REVIEW, amount=1000, recovery_probability=0.10)
+    with SessionLocal() as db:
+        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+        
+        result = execute_recovery(db, case, automatic=False)
+        assert result["action"] == "stopped"
+        assert case.status == CaseStatus.ABANDONED
 
 def test_execute_recovery_atomic_lock_prevents_duplicate(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "")

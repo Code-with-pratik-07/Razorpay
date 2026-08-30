@@ -198,20 +198,15 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
         case.status = CaseStatus.FAILED
 
     # Merchant explicit approval of a HUMAN_REVIEW case:
-    # policy_service has a guardrail that blocks HUMAN_REVIEW status. Temporarily
-    # restore FAILED so that the policy can evaluate the actual case attributes.
-    # This does NOT bypass any policy safety guardrail — all other checks still apply.
-    if case.status == CaseStatus.HUMAN_REVIEW and not automatic:
-        case.status = CaseStatus.FAILED
-
-    policy_result = check_recovery_policy(case, _policy(db))
+    # We pass automatic=False so policy_service allows execution even if amount > 20,000
+    # and bypasses the strict HUMAN_REVIEW block.
+    policy_result = check_recovery_policy(case, _policy(db), automatic=automatic)
     case.policy_check_passed, case.policy_reason = policy_result.allowed, policy_result.reason
     db.commit(); log_audit_event(db, case.id, "policy_check", policy_result.to_dict())
     if not policy_result.allowed:
         case.status, case.recovery_action = CaseStatus.HUMAN_REVIEW, RecoveryAction.ESCALATE
         db.commit(); log_audit_event(db, case.id, "human_escalation", {"reason": policy_result.reason, "source": "policy"})
         return {"action": "escalate", "status": case.status.value, "message": policy_result.reason, "payment_link_url": None}
-
 
     # For explicit manual executions on HUMAN_REVIEW cases (merchant approval), also
     # enforce ML routing for LOW-probability cases even if policy technically allows it.

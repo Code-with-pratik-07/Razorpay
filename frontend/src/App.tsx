@@ -158,18 +158,14 @@ export default function App() {
     }
   }, [selectedId, loadDetails]);
 
-  const analyze = async (recalculateMl: boolean = false) => {
+  const analyze = async () => {
     if (!selected) return;
     setActionLoading("analyze");
     setError(null);
     setNotice(null);
     try {
       const data = await api<Explanation>(`/api/cases/${selected.id}/analyze`, { 
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ recalculate_ml: recalculateMl })
+        method: "POST"
       });
       setExplanation(data);
       setSelected(data);
@@ -184,7 +180,7 @@ export default function App() {
   };
 
   const execute = async () => {
-    if (!selected || explanation?.policy.allowed === false) return;
+    if (!selected) return;
     setActionLoading("execute");
     setError(null);
     setNotice(null);

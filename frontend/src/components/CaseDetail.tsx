@@ -12,7 +12,7 @@ interface CaseDetailProps {
   execution: Execution | null;
   detailLoading: boolean;
   actionLoading: string | null;
-  analyze: (recalculateMl?: boolean) => Promise<void>;
+  analyze: () => Promise<void>;
   execute: () => Promise<void>;
   setNotice: (n: string) => void;
 }
@@ -56,8 +56,9 @@ export function CaseDetail({
   const isRecovering = selected.status === 'recovering';
   const isRecovered = selected.status === 'recovered';
 
-  // Merchant can approve recovery for HUMAN_REVIEW if policy allows and NOT low ML
-  const canApproveRecovery = isHumanReview && policyAllowed && mlDecision !== 'LOW';
+  // Merchant can approve recovery for HUMAN_REVIEW if not low ML
+  // The backend will enforce manual policy limits upon execution.
+  const canApproveRecovery = isHumanReview && mlDecision !== 'LOW';
 
   // ML routing label helpers
   const mlBadge = mlDecision === 'HIGH'
@@ -206,7 +207,7 @@ export function CaseDetail({
              ) : isHumanReview ? (
                canApproveRecovery
                  ? <span style={{color:'#fbbf24'}}><b>Human Review Required</b> — Click "Approve Recovery" to proceed.</span>
-                 : <span style={{color:'#f87171'}}><b>Human Review Required</b> — Recovery cannot be approved (policy or low probability).</span>
+                 : <span style={{color:'#f87171'}}><b>Human Review Required</b> — Recovery cannot be approved (low probability).</span>
              ) : (
                <span>
                  <b>Recovery:</b> AUTOMATIC<br/>
@@ -218,15 +219,12 @@ export function CaseDetail({
            </div>
 
            <div className="action-buttons">
-             <button id="view-analysis-btn" className="button secondary" onClick={() => void analyze(false)} disabled={actionLoading !== null}>
+             <button id="view-analysis-btn" className="button secondary" onClick={() => void analyze()} disabled={actionLoading !== null}>
                {actionLoading === 'analyze' ? <span className="spinner"/> : null}
                View Analysis
              </button>
-             <button id="rerun-analysis-btn" className="button secondary" style={{marginLeft: '8px'}} onClick={() => void analyze(true)} disabled={actionLoading !== null}>
-               Re-run ML
-             </button>
 
-             {/* Approve Recovery — only for HUMAN_REVIEW with policy-allowed and NOT LOW */}
+             {/* Approve Recovery — only for HUMAN_REVIEW with NOT LOW */}
              {canApproveRecovery && !isRecovered && (
                <button id="approve-recovery-btn" className="button primary" onClick={() => void execute()} disabled={actionLoading !== null}>
                  {actionLoading === 'execute' ? <span className="spinner"/> : null}
