@@ -147,10 +147,10 @@ export function CaseDetail({
 
         {(execution || currentLink) && (
           <div className="success-panel">
-            <h3>{isRecovered ? '✓ PAYMENT SUCCESSFUL' : '✓ RECOVERY ACTION EXECUTED'}</h3>
+            <h3>{isRecovered ? '✓ CUSTOMER PAYMENT' : '✓ RECOVERY ACTION EXECUTED'}</h3>
             <p>
               {isRecovered
-                ? 'Revenue successfully recovered via Razorpay.'
+                ? <>Payment received successfully.<br/><br/><b>✓ RECOVERY ACTION EXECUTED</b><br/>Payment Link recovery was initiated.</>
                 : (execution?.message || "Payment Link recovery is in progress.")}
             </p>
             {currentLink && currentLink !== "mock_demo_link" && currentLink !== "mock_demo_real_simulated" && (
@@ -192,7 +192,11 @@ export function CaseDetail({
                  <b>STOPPED</b><br/>Low recovery probability.
                </span>
              ) : isRecovered ? (
-               'Revenue successfully recovered.'
+               <span>
+                 <b>Recovery:</b> AUTOMATIC<br/>
+                 <b>Payment Link:</b> PAID<br/>
+                 <b>Customer Payment:</b> PAYMENT RECEIVED
+               </span>
              ) : isHumanReview ? (
                canApproveRecovery
                  ? <span style={{color:'#fbbf24'}}><b>Human Review Required</b> — Click "Approve Recovery" to proceed.</span>
@@ -201,6 +205,7 @@ export function CaseDetail({
                <span>
                  <b>Recovery:</b> AUTOMATIC<br/>
                  <b>Payment Link:</b> {currentLink ? 'CREATED' : (selected.status === 'failed' ? 'FAILED / PENDING' : 'PENDING')}<br/>
+                 <b>Customer Payment:</b> AWAITING PAYMENT<br/>
                  <b>Notification:</b> {selected.notification_status === 'SENT' ? 'EMAIL SENT' : selected.notification_status === 'NOT_SENT' ? (emailHtmlPreview ? 'EMAIL MOCKED' : 'NOT AVAILABLE') : selected.notification_status === 'FAILED' ? 'EMAIL FAILED' : 'NOT AVAILABLE'}
                </span>
              )}

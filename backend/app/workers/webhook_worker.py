@@ -43,7 +43,10 @@ def _find_case(db: Session, payment_id: str | None, order_id: str | None, payloa
     if payload:
         payment = _entity(payload, "payment")
         order = _entity(payload, "order")
-        notes = payment.get("notes") or order.get("notes") or {}
+        invoice = _entity(payload, "invoice")
+        payment_link = _entity(payload, "payment_link")
+        
+        notes = payment.get("notes") or order.get("notes") or invoice.get("notes") or payment_link.get("notes") or {}
         case_id = notes.get("recoverai_case_id")
         if case_id:
             case = db.get(PaymentCase, case_id)
@@ -86,7 +89,11 @@ def _process_failed(db: Session, payload: dict[str, Any]) -> None:
         log_audit_event(db, case.id, "case_created", {"source": "razorpay_webhook"})
         analyze_case(db, case)
 
-        if case.policy_check_passed and case.status != CaseStatus.HUMAN_REVIEW:
+        # analyze_case performs three-way ML routing:
+        #   HIGH  (prob >= 0.70) + policy allowed → status = FAILED     → auto-execute below
+        #   UNCERTAIN (0.40–0.69) OR policy blocked → status = HUMAN_REVIEW → no auto-execute
+        #   LOW   (prob < 0.40)                   → status = ABANDONED  → no auto-execute
+        if case.status == CaseStatus.FAILED:
             from app.services.recovery_service import execute_recovery
             execute_recovery(db, case, automatic=True)
 
@@ -99,13 +106,20 @@ def _process_failed(db: Session, payload: dict[str, Any]) -> None:
 
 def _process_recovered(db: Session, payload: dict[str, Any], event_type: str) -> None:
     payment, order = _entity(payload, "payment"), _entity(payload, "order")
-    payment_id = payment.get("id")
-    order_id = payment.get("order_id") or order.get("id")
+    invoice, payment_link = _entity(payload, "invoice"), _entity(payload, "payment_link")
+    
+    payment_id = payment.get("id") or invoice.get("payment_id") or payment_link.get("payment_id")
+    order_id = payment.get("order_id") or order.get("id") or invoice.get("order_id") or payment_link.get("order_id")
+    
     case = _find_case(db, payment_id, order_id, payload)
     if case is None:
         return  # Events can arrive out of order; a later failed event will create the case.
-    confirmed = (event_type == "payment.captured" and payment.get("status") == "captured") or (
-        event_type == "order.paid" and order.get("status") == "paid"
+    
+    confirmed = (
+        (event_type == "payment.captured" and payment.get("status") == "captured") or
+        (event_type == "order.paid" and order.get("status") == "paid") or
+        (event_type == "invoice.paid" and invoice.get("status") == "paid") or
+        (event_type == "payment_link.paid" and payment_link.get("status") == "paid")
     )
     if not confirmed or case.status == CaseStatus.RECOVERED:
         return
@@ -134,7 +148,7 @@ def process_webhook_event(webhook_log_id: str) -> None:
         try:
             if log.event_type == "payment.failed":
                 _process_failed(db, log.raw_payload)
-            elif log.event_type in {"payment.captured", "order.paid"}:
+            elif log.event_type in {"payment.captured", "order.paid", "invoice.paid", "payment_link.paid"}:
                 _process_recovered(db, log.raw_payload, log.event_type)
             else:
                 log.error_message = "Unsupported event ignored."
