@@ -208,3 +208,97 @@ def test_invoice_recovery_webhook_mapping(client: TestClient) -> None:
         }
     }
     assert _post(client, unrelated_payload, f"evt_unrelated_{first}").status_code == 200
+
+def test_audit_event_correlation_with_missing_notes(client: TestClient) -> None:
+    first = uuid.uuid4().hex[:8]
+    assert _post(client, _payment(f"pay_demo_auto_{first}", f"order_demo_auto_{first}"), f"evt_fail_prod_{first}").status_code == 200
+
+    with SessionLocal() as db:
+        case = db.scalar(select(PaymentCase).where(PaymentCase.razorpay_payment_id == f"pay_demo_auto_{first}"))
+        case_id = case.id
+        
+        # Simulate execute_recovery creating a payment link and logging it to AuditEvent
+        from app.models.audit_event import AuditEvent
+        link_id = f"inv_TVvWPKQmV3Rq2K_{first}"
+        event = AuditEvent(
+            case_id=case_id,
+            event_type="payment_link_created",
+            event_data={"payment_link_id": link_id, "url": "https://rzp.io/test"}
+        )
+        db.add(event)
+        db.commit()
+
+    # The exact production webhook failure:
+    # 1. Payment captured webhook arrives
+    # 2. Payload contains payment entity with new payment ID and invoice ID
+    # 3. BUT payment entity has NO notes ([]).
+    prod_failure_payload = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": f"pay_TVvXFOXH2XncjJ_{first}",
+                    "invoice_id": link_id,
+                    "order_id": f"order_TVvWPWEWrWuLRJ_{first}",
+                    "amount": 250000,
+                    "status": "captured",
+                    "notes": []
+                }
+            }
+        }
+    }
+
+    # Should succeed and transition case via audit event lookup
+    assert _post(client, prod_failure_payload, f"evt_capture_prod_{first}").status_code == 200
+
+    with SessionLocal() as db:
+        case = db.get(PaymentCase, case_id)
+        assert case.status == CaseStatus.RECOVERED
+        assert case.razorpay_payment_id == f"pay_TVvXFOXH2XncjJ_{first}"
+
+def test_invoice_paid_and_payment_link_paid_correlation(client: TestClient) -> None:
+    first = uuid.uuid4().hex[:8]
+    assert _post(client, _payment(f"pay_inv_{first}", f"order_inv_{first}"), f"evt_fail_inv_{first}").status_code == 200
+
+    with SessionLocal() as db:
+        case = db.scalar(select(PaymentCase).where(PaymentCase.razorpay_payment_id == f"pay_inv_{first}"))
+        case_id = case.id
+
+    # invoice.paid payload where notes exist on invoice entity
+    invoice_paid = {
+        "event": "invoice.paid",
+        "payload": {
+            "invoice": {
+                "entity": {
+                    "id": f"inv_{first}",
+                    "status": "paid",
+                    "notes": {"recoverai_case_id": case_id}
+                }
+            }
+        }
+    }
+    assert _post(client, invoice_paid, f"evt_invoice_paid_{first}").status_code == 200
+    with SessionLocal() as db:
+        assert db.get(PaymentCase, case_id).status == CaseStatus.RECOVERED
+
+    # payment_link.paid payload 
+    second = uuid.uuid4().hex[:8]
+    assert _post(client, _payment(f"pay_pl_{second}", f"order_pl_{second}"), f"evt_fail_pl_{second}").status_code == 200
+    with SessionLocal() as db:
+        case2_id = db.scalar(select(PaymentCase).where(PaymentCase.razorpay_payment_id == f"pay_pl_{second}")).id
+
+    payment_link_paid = {
+        "event": "payment_link.paid",
+        "payload": {
+            "payment_link": {
+                "entity": {
+                    "id": f"plink_{second}",
+                    "status": "paid",
+                    "notes": {"recoverai_case_id": case2_id}
+                }
+            }
+        }
+    }
+    assert _post(client, payment_link_paid, f"evt_pl_paid_{second}").status_code == 200
+    with SessionLocal() as db:
+        assert db.get(PaymentCase, case2_id).status == CaseStatus.RECOVERED

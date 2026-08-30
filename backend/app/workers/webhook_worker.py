@@ -46,13 +46,33 @@ def _find_case(db: Session, payment_id: str | None, order_id: str | None, payloa
         invoice = _entity(payload, "invoice")
         payment_link = _entity(payload, "payment_link")
         
+        # 1. recoverai_case_id from notes
         notes = payment.get("notes") or order.get("notes") or invoice.get("notes") or payment_link.get("notes") or {}
+        if isinstance(notes, list):  # Razorpay returns [] for empty notes
+            notes = {}
         case_id = notes.get("recoverai_case_id")
         if case_id:
             case = db.get(PaymentCase, case_id)
             if case:
                 return case
 
+        # 2. AuditEvent correlation for payment.captured / invoice.paid
+        link_id = payment.get("invoice_id") or payment.get("payment_link_id") or invoice.get("id") or payment_link.get("id")
+        if link_id:
+            from app.models.audit_event import AuditEvent
+            from sqlalchemy import cast, String
+            # Look up payment_link_created events
+            stmt = select(AuditEvent).where(
+                AuditEvent.event_type == "payment_link_created"
+            ).order_by(AuditEvent.timestamp.desc()).limit(100)
+            
+            for evt in db.execute(stmt).scalars():
+                if evt.event_data.get("payment_link_id") == link_id:
+                    case = db.get(PaymentCase, evt.case_id)
+                    if case:
+                        return case
+
+    # 3. Fallback to existing Razorpay IDs
     clauses = []
     if payment_id:
         clauses.append(PaymentCase.razorpay_payment_id == payment_id)

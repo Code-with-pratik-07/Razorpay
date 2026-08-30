@@ -40,7 +40,7 @@ def test_demo_reset_enabled():
     assert "DEMO-A-AUTO" in case_numbers
     assert "DEMO-B-HUMAN" in case_numbers
     assert "DEMO-C-RECOVERED" in case_numbers
-    assert "DEMO-D-DUPLICATE" in case_numbers
+    assert "DEMO-D-STOPPED" in case_numbers
 
     # Reset DEMO_MODE to avoid leaking state
     get_settings().demo_mode = False
