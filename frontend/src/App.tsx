@@ -158,13 +158,19 @@ export default function App() {
     }
   }, [selectedId, loadDetails]);
 
-  const analyze = async () => {
+  const analyze = async (recalculateMl: boolean = false) => {
     if (!selected) return;
     setActionLoading("analyze");
     setError(null);
     setNotice(null);
     try {
-      const data = await api<Explanation>(`/api/cases/${selected.id}/analyze`, { method: "POST" });
+      const data = await api<Explanation>(`/api/cases/${selected.id}/analyze`, { 
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ recalculate_ml: recalculateMl })
+      });
       setExplanation(data);
       setSelected(data);
       setNotice("Analysis completed using ML, policy, and advisory AI.");

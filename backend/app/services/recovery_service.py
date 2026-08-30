@@ -69,7 +69,7 @@ def _last_ai_decision(db: Session, case_id: str) -> AIDecision | None:
     return None
 
 
-def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | None = None) -> dict[str, Any]:
+def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | None = None, recalculate_ml: bool = False) -> dict[str, Any]:
     if case.status not in {CaseStatus.FAILED, CaseStatus.ABANDONED, CaseStatus.HUMAN_REVIEW}:
         return {"error": f"Case is in '{case.status.value}' state and cannot be analyzed."}
     
@@ -77,8 +77,15 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
     case.status = CaseStatus.ANALYZING
     db.commit()
     features = _features(case)
-    prediction = predict_recovery(features)
-    case.recovery_probability = prediction["recovery_probability"]
+    if case.recovery_probability is None or recalculate_ml:
+        prediction = predict_recovery(features)
+        case.recovery_probability = prediction["recovery_probability"]
+    else:
+        prediction = {
+            "recovery_probability": case.recovery_probability,
+            "risk_level": "PRESERVED",
+            "feature_summary": features
+        }
     
     is_cold_start = (case.customer.successful_payments + case.customer.failed_payments) < 3
     ml_decision = ml_routing_decision(case.recovery_probability, is_cold_start)

@@ -116,6 +116,34 @@ def test_analyze_case_state_guard(monkeypatch) -> None:
             assert "error" in result
             assert case.status == status # Assert state was not corrupted
 
+def test_analyze_case_without_recalculate_ml_preserves_probability(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    case_id = _case(status=CaseStatus.HUMAN_REVIEW, recovery_probability=0.55, amount=2500000)
+    with SessionLocal() as db:
+        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+        # Mock predict_recovery to return 0.99 so we can prove it was NOT called
+        import app.services.recovery_service as rs
+        monkeypatch.setattr(rs, "predict_recovery", lambda x: {"recovery_probability": 0.99, "risk_level": "HIGH", "feature_summary": x})
+        
+        result = analyze_case(db, case, recalculate_ml=False)
+        assert result["prediction"]["recovery_probability"] == 0.55
+        assert case.recovery_probability == 0.55
+        assert case.status == CaseStatus.HUMAN_REVIEW
+
+def test_analyze_case_with_recalculate_ml_overwrites_probability(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    case_id = _case(status=CaseStatus.HUMAN_REVIEW, recovery_probability=0.55, amount=2500000)
+    with SessionLocal() as db:
+        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+        # Mock predict_recovery to return 0.99 so we can prove it WAS called
+        import app.services.recovery_service as rs
+        monkeypatch.setattr(rs, "predict_recovery", lambda x: {"recovery_probability": 0.99, "risk_level": "HIGH", "feature_summary": x})
+        
+        result = analyze_case(db, case, recalculate_ml=True)
+        assert result["prediction"]["recovery_probability"] == 0.99
+        assert case.recovery_probability == 0.99
+        assert case.status == CaseStatus.HUMAN_REVIEW
+
 def test_execute_recovery_mock_demo_link_allows_execution(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "")
     monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_123")

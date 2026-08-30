@@ -12,7 +12,7 @@ interface CaseDetailProps {
   execution: Execution | null;
   detailLoading: boolean;
   actionLoading: string | null;
-  analyze: () => Promise<void>;
+  analyze: (recalculateMl?: boolean) => Promise<void>;
   execute: () => Promise<void>;
   setNotice: (n: string) => void;
 }
@@ -218,9 +218,12 @@ export function CaseDetail({
            </div>
 
            <div className="action-buttons">
-             <button id="rerun-analysis-btn" className="button secondary" onClick={() => void analyze()} disabled={actionLoading !== null}>
+             <button id="view-analysis-btn" className="button secondary" onClick={() => void analyze(false)} disabled={actionLoading !== null}>
                {actionLoading === 'analyze' ? <span className="spinner"/> : null}
                View Analysis
+             </button>
+             <button id="rerun-analysis-btn" className="button secondary" style={{marginLeft: '8px'}} onClick={() => void analyze(true)} disabled={actionLoading !== null}>
+               Re-run ML
              </button>
 
              {/* Approve Recovery — only for HUMAN_REVIEW with policy-allowed and NOT LOW */}

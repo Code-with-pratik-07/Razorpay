@@ -32,9 +32,16 @@ def get_case(case_id: str, db: Session = Depends(get_db)) -> CaseSummary:
     return CaseSummary(**_summary(_case(db, case_id)))
 
 
+from pydantic import BaseModel
+
+class AnalyzeRequest(BaseModel):
+    recalculate_ml: bool = False
+
 @router.post("/{case_id}/analyze", response_model=CaseExplanation)
-def analyze(case_id: str, db: Session = Depends(get_db)) -> CaseExplanation:
-    case = _case(db, case_id); analyze_case(db, case)
+def analyze(case_id: str, request: AnalyzeRequest | None = None, db: Session = Depends(get_db)) -> CaseExplanation:
+    case = _case(db, case_id)
+    recalc = request.recalculate_ml if request else False
+    analyze_case(db, case, recalculate_ml=recalc)
     return _explanation(db, case)
 
 
