@@ -45,6 +45,7 @@ export type Explanation = RecoveryCase & {
     failed_payments: number;
   };
   ml_decision: "HIGH" | "UNCERTAIN" | "LOW" | "COLD_START" | null;
+  execution_error?: string | null;
 };
 
 export type AuditEvent = {

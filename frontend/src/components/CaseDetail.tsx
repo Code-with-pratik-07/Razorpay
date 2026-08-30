@@ -211,7 +211,7 @@ export function CaseDetail({
              ) : (
                <span>
                  <b>Recovery:</b> {executionMode || 'AUTOMATIC'}<br/>
-                 <b>Payment Link:</b> {currentLink ? 'CREATED' : (selected.status === 'failed' ? 'FAILED / PENDING' : 'PENDING')}<br/>
+                 <b>Payment Link:</b> {currentLink ? 'CREATED' : explanation?.execution_error ? 'FAILED TO CREATE' : (selected.status === 'failed' ? 'FAILED / PENDING' : 'PENDING')}<br/>
                  <b>Customer Payment:</b> AWAITING PAYMENT<br/>
                  <b>Notification:</b> {selected.notification_status === 'SENT' ? 'EMAIL SENT' : selected.notification_status === 'NOT_SENT' ? (emailHtmlPreview ? 'EMAIL MOCKED' : 'NOT AVAILABLE') : selected.notification_status === 'FAILED' ? 'EMAIL FAILED' : 'NOT AVAILABLE'}
                </span>

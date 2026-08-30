@@ -148,20 +148,22 @@ def seed_demo_data(reset: bool = False):
                 case.recovery_action = RecoveryAction.ESCALATE
                 log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Policy blocked automatic recovery.", "customer_message": "Manual review required.", "confidence": prob, "source": "fallback"})
                 log_audit_event(db, case.id, "human_escalation", {"reason": "Policy blocked automatic recovery", "source": "policy"})
-            elif prob < 0.40:
-                case.status = CaseStatus.ABANDONED
-                case.recovery_action = RecoveryAction.NONE
-                log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Low recovery probability.", "customer_message": "", "confidence": prob, "source": "fallback"})
-                log_audit_event(db, case.id, "recovery_stopped", {"reason": "Probability too low", "ml_decision": "LOW"})
-            elif prob < 0.60:
-                case.status = CaseStatus.HUMAN_REVIEW
-                case.recovery_action = RecoveryAction.NONE
-                log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Uncertain recovery probability.", "customer_message": "", "confidence": prob, "source": "fallback"})
-                log_audit_event(db, case.id, "human_escalation", {"reason": "Uncertain ML probability", "source": "ml_routing"})
             else:
-                # High probability + Policy passed -> execute automatically!
-                log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "High recovery probability.", "customer_message": "Please pay.", "confidence": prob, "source": "fallback"})
-                execute_recovery(db, case, automatic=True)
+                ml_decision = "COLD_START" if is_cold_start else ("HIGH" if prob >= 0.60 else "UNCERTAIN" if prob >= 0.40 else "LOW")
+                
+                if ml_decision == "LOW":
+                    case.status = CaseStatus.ABANDONED
+                    case.recovery_action = RecoveryAction.NONE
+                    log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Low recovery probability.", "customer_message": "", "confidence": prob, "source": "fallback"})
+                    log_audit_event(db, case.id, "recovery_stopped", {"reason": "Probability too low", "ml_decision": "LOW"})
+                elif ml_decision == "UNCERTAIN":
+                    case.status = CaseStatus.HUMAN_REVIEW
+                    case.recovery_action = RecoveryAction.NONE
+                    log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Uncertain recovery probability.", "customer_message": "", "confidence": prob, "source": "fallback"})
+                    log_audit_event(db, case.id, "human_escalation", {"reason": "Uncertain ML probability", "source": "ml_routing"})
+                else:  # HIGH or COLD_START
+                    log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "High recovery probability or COLD_START.", "customer_message": "Please pay.", "confidence": prob, "source": "fallback"})
+                    execute_recovery(db, case, automatic=True)
 
         db.commit()
         print("Demo data successfully seeded!")

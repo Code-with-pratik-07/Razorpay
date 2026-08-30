@@ -92,13 +92,13 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
            </div>
          </div>
        ) : (
-         <div className={`pipeline-step ${isRecovered || isRecovering ? 'completed' : policyDone && !policyAllowed ? 'blocked' : ''}`}>
-           <div className="step-icon">{isRecovered || isRecovering ? '✓' : policyDone && !policyAllowed ? '—' : '•'}</div>
-           <div className="step-content">
-             <div className="step-title">RECOVERY</div>
-             <div className="step-meta">{isRecovered || isRecovering ? 'Payment Link created' : policyDone ? 'Not executed' : 'Pending'}</div>
-           </div>
-         </div>
+         <div className={`pipeline-step ${isRecovered || isRecovering ? 'completed' : explanation?.execution_error ? 'warning' : policyDone && !policyAllowed ? 'blocked' : ''}`}>
+          <div className="step-icon">{isRecovered || isRecovering ? '✓' : explanation?.execution_error ? '!' : policyDone && !policyAllowed ? '—' : '•'}</div>
+          <div className="step-content">
+            <div className="step-title">RECOVERY</div>
+            <div className="step-meta">{isRecovered || isRecovering ? 'Payment Link created' : explanation?.execution_error ? `Execution Failed: ${explanation.execution_error}` : policyDone ? 'Not executed' : 'Pending'}</div>
+          </div>
+        </div>
        )}
 
        {/* Customer payment step */}

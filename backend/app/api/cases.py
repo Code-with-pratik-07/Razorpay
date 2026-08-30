@@ -6,6 +6,7 @@ from app.db.database import get_db
 from app.models.payment_case import PaymentCase
 from app.schemas.recovery import CaseExplanation, CaseSummary, ExecuteRecoveryResponse
 from app.services.recovery_service import _features, _last_ai_decision, _policy, analyze_case, execute_recovery, ml_routing_decision
+from app.services.audit_service import list_audit_events
 from app.services.policy_service import check_recovery_policy
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
@@ -53,6 +54,10 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
     
     is_cold_start = (case.customer.successful_payments + case.customer.failed_payments) < 3
     
+    events = list_audit_events(db, case.id)
+    error_event = next((e for e in reversed(events) if e.event_type == "error" and e.event_data.get("operation") == "payment_link"), None)
+    execution_error = error_event.event_data.get("provider_error") if error_event else None
+    
     return CaseExplanation(
         **_summary(case),
         ml={"recovery_probability": case.recovery_probability, "features": _features(case)},
@@ -60,6 +65,7 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
         ai=_last_ai_decision(db, case.id),
         customer_history=history,
         ml_decision=ml_routing_decision(case.recovery_probability, is_cold_start),
+        execution_error=execution_error,
     )
 
 
