@@ -38,23 +38,23 @@ class TestMlRoutingDecision:
     def test_zero_is_low(self):
         assert ml_routing_decision(0.0) == "LOW"
 
-    def test_below_uncertain_threshold_is_low(self):
-        assert ml_routing_decision(ML_UNCERTAIN_THRESHOLD - 0.01) == "LOW"
+    def test_explicit_0_3999_is_low(self):
+        assert ml_routing_decision(0.3999) == "LOW"
 
-    def test_at_uncertain_threshold_is_uncertain(self):
-        assert ml_routing_decision(ML_UNCERTAIN_THRESHOLD) == "UNCERTAIN"
+    def test_explicit_0_40_is_uncertain(self):
+        assert ml_routing_decision(0.40) == "UNCERTAIN"
+
+    def test_explicit_0_6999_is_uncertain(self):
+        assert ml_routing_decision(0.6999) == "UNCERTAIN"
+
+    def test_explicit_0_70_is_high(self):
+        assert ml_routing_decision(0.70) == "HIGH"
+
+    def test_explicit_0_7001_is_high(self):
+        assert ml_routing_decision(0.7001) == "HIGH"
 
     def test_between_thresholds_is_uncertain(self):
         assert ml_routing_decision(0.55) == "UNCERTAIN"
-
-    def test_just_below_high_threshold_is_uncertain(self):
-        assert ml_routing_decision(ML_HIGH_THRESHOLD - 0.001) == "UNCERTAIN"
-
-    def test_at_high_threshold_is_high(self):
-        assert ml_routing_decision(ML_HIGH_THRESHOLD) == "HIGH"
-
-    def test_above_high_threshold_is_high(self):
-        assert ml_routing_decision(0.99) == "HIGH"
 
 
 # ---------------------------------------------------------------------------

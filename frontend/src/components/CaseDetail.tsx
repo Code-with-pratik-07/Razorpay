@@ -189,43 +189,34 @@ export function CaseDetail({
            <div className="action-info">
              {isAbandoned ? (
                <span style={{color:'#f87171'}}>
-                 <b>Recovery Stopped</b> — ML probability too low for automatic or manual recovery.
+                 <b>STOPPED</b><br/>Low recovery probability.
                </span>
              ) : isRecovered ? (
                'Revenue successfully recovered.'
-             ) : isRecovering ? (
-               <span>Payment link is active. {executionMode ? `(${executionMode})` : ''}</span>
              ) : isHumanReview ? (
                canApproveRecovery
                  ? <span style={{color:'#fbbf24'}}><b>Human Review Required</b> — Click "Approve Recovery" to proceed.</span>
                  : <span style={{color:'#f87171'}}><b>Human Review Required</b> — Recovery cannot be approved (policy or low probability).</span>
-             ) : policyAllowed ? (
-               'Ready to execute recommendation.'
              ) : (
-               'Policy blocked execution.'
+               <span>
+                 <b>Recovery:</b> AUTOMATIC<br/>
+                 <b>Payment Link:</b> {currentLink ? 'CREATED' : (selected.status === 'failed' ? 'FAILED / PENDING' : 'PENDING')}<br/>
+                 <b>Notification:</b> {selected.notification_status === 'SENT' ? 'EMAIL SENT' : selected.notification_status === 'NOT_SENT' ? (emailHtmlPreview ? 'EMAIL MOCKED' : 'NOT AVAILABLE') : selected.notification_status === 'FAILED' ? 'EMAIL FAILED' : 'NOT AVAILABLE'}
+               </span>
              )}
            </div>
 
            <div className="action-buttons">
              <button id="rerun-analysis-btn" className="button secondary" onClick={() => void analyze()} disabled={actionLoading !== null}>
                {actionLoading === 'analyze' ? <span className="spinner"/> : null}
-               {explanation ? 'Re-run Analysis' : 'View Analysis'}
+               View Analysis
              </button>
 
-             {/* Approve Recovery — only for HUMAN_REVIEW with HIGH ML and policy-allowed */}
+             {/* Approve Recovery — only for HUMAN_REVIEW with policy-allowed and NOT LOW */}
              {canApproveRecovery && !isRecovered && (
                <button id="approve-recovery-btn" className="button primary" onClick={() => void execute()} disabled={actionLoading !== null}>
                  {actionLoading === 'execute' ? <span className="spinner"/> : null}
                  Approve Recovery
-               </button>
-             )}
-
-             {/* Execute — only for FAILED (analyzed, HIGH, policy-allowed) cases */}
-             {policyAllowed && !isRecovered && !isRecovering && !isHumanReview && !isAbandoned &&
-              (selected.status === 'failed' || (isRecovering && currentLink === 'mock_demo_link')) && (
-               <button id="execute-recovery-btn" className="button primary" onClick={() => void execute()} disabled={actionLoading !== null}>
-                 {actionLoading === 'execute' ? <span className="spinner"/> : null}
-                 Execute Recovery
                </button>
              )}
            </div>
