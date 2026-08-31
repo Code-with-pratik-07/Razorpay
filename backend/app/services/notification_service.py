@@ -34,7 +34,7 @@ def _build_email_html(case: PaymentCase, payment_link_url: str) -> str:
   <p style="color:#555;">{failure_msg}</p>
   <p>You can securely complete your payment using the button below:</p>
   <p>
-    <a href="{payment_link_url}"
+    <a href="{payment_link_url}" target="_blank" rel="noopener noreferrer"
        style="display:inline-block;padding:12px 24px;background-color:#6c63ff;
               color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
       Complete Payment

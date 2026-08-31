@@ -49,6 +49,7 @@ export function CaseDetail({
   const emailPreviewEvent = audit.find((e) => e.event_type === "email_notification_mocked" && e.event_data.email_html_preview);
   const emailHtmlPreview = emailPreviewEvent?.event_data.email_html_preview as string | undefined;
   const [showEmailPreview, setShowEmailPreview] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
 
   // Determine what action buttons the merchant can see
   const isAbandoned = selected.status === 'abandoned';
@@ -164,15 +165,18 @@ export function CaseDetail({
               <>
                 <div className="success-link">{currentLink}</div>
                 <div className="success-actions">
-                  <a className="button" href={currentLink} target="_blank" rel="noreferrer">Open Payment Link ↗</a>
+                  <a className="button" href={currentLink} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>Open Payment Link ↗</a>
                   <button
                     className="button secondary"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       void navigator.clipboard.writeText(String(currentLink));
                       setNotice("Link copied to clipboard!");
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
                     }}
                   >
-                    Copy Link
+                    {copied ? "Copied ✓" : "Copy Link"}
                   </button>
                 </div>
               </>
