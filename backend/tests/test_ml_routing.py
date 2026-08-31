@@ -94,10 +94,10 @@ class TestAnalyzeCaseRouting:
         assert case.status == CaseStatus.HUMAN_REVIEW
         assert result.get("ml_decision") == "UNCERTAIN"
 
-    def test_low_probability_sets_abandoned(self, monkeypatch):
-        """LOW ML → status=ABANDONED, no Payment Link."""
+    def test_low_probability_sets_failed(self, monkeypatch):
+        """LOW ML → status=FAILED (ready for auto execute_recovery of 1 attempt)."""
         case, result = self._run_analyze(monkeypatch, 0.25)
-        assert case.status == CaseStatus.ABANDONED
+        assert case.status == CaseStatus.FAILED
         assert result.get("ml_decision") == "LOW"
 
     def test_policy_blocked_overrides_high_ml(self, monkeypatch):
@@ -132,17 +132,18 @@ class TestAnalyzeCaseRouting:
         assert escalation.event_data.get("source") == "ml_routing"
         assert escalation.event_data.get("ml_decision") == "UNCERTAIN"
 
-    def test_low_recovery_stopped_audit_event_recorded(self, monkeypatch):
-        """LOW routing records a recovery_stopped audit event."""
+    def test_low_recovery_routing_audit_event_recorded(self, monkeypatch):
+        """LOW routing records a low_probability_routing audit event."""
         from sqlalchemy import select
         from app.models.audit_event import AuditEvent
 
         case, _ = self._run_analyze(monkeypatch, 0.20)
         with SessionLocal() as db:
             events = list(db.scalars(select(AuditEvent).where(AuditEvent.case_id == case.id)))
-        stopped = next((e for e in events if e.event_type == "recovery_stopped"), None)
-        assert stopped is not None
-        assert stopped.event_data.get("ml_decision") == "LOW"
+        routed = next((e for e in events if e.event_type == "low_probability_routing"), None)
+        assert routed is not None
+        assert routed.event_data.get("ml_decision") == "LOW"
+        assert routed.event_data.get("max_retries") == 1
 
 
 # ---------------------------------------------------------------------------
@@ -170,17 +171,33 @@ class TestExecuteRecoveryMlRouting:
         assert result["action"] == "stopped"
         assert case.status == CaseStatus.ABANDONED
 
-    def test_low_probability_manual_execute_blocked(self, monkeypatch):
-        """Manual execute on a FAILED case with LOW probability is blocked."""
+    def test_low_probability_exhaustion(self, monkeypatch):
+        """Execute on LOW probability runs 1 attempt, then exhausts."""
         monkeypatch.setenv("GROQ_API_KEY", "")
+        monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_123")
+        monkeypatch.setenv("RAZORPAY_KEY_SECRET", "secret")
         self._dummy_razorpay(monkeypatch)
-        # FAILED status but LOW probability — merchant tries to execute manually.
-        case_id = _case(monkeypatch, status=CaseStatus.FAILED, amount=1000, recovery_probability=0.20)
+        
+        # FAILED status, max_retries = 1, retry_count = 0
+        case_id = _case(monkeypatch, status=CaseStatus.FAILED, amount=1000, recovery_probability=0.20, max_retries=1, retry_count=0)
+        
         with SessionLocal() as db:
             case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
-            result = execute_recovery(db, case, automatic=False)
-        assert result["action"] == "stopped"
-        assert case.status == CaseStatus.ABANDONED
+            
+            # First attempt
+            result1 = execute_recovery(db, case, automatic=True)
+            assert result1["action"] == "payment_link"
+            assert case.retry_count == 1
+            assert case.status == CaseStatus.RECOVERING
+            
+            # Simulate failure and retry
+            case.status = CaseStatus.FAILED
+            db.commit()
+            
+            # Second attempt should be stopped and exhausted
+            result2 = execute_recovery(db, case, automatic=True)
+            assert result2["action"] == "stopped"
+            assert case.status == CaseStatus.ABANDONED
 
     def test_human_review_can_be_manually_executed(self, monkeypatch):
         """HUMAN_REVIEW with HIGH probability and policy allowed → merchant can approve."""
@@ -287,7 +304,7 @@ class TestNotificationStatus:
             case = create_case(db, status=CaseStatus.FAILED, amount=1000, recovery_probability=0.85)
             execute_recovery(db, case, automatic=True)
             db.refresh(case)
-        assert case.notification_status == "NOT_SENT"
+        assert case.notification_status == "MOCKED"
 
     def test_no_customer_email_status_is_not_available(self, monkeypatch):
         """When customer has no email, notification_status must be NOT_AVAILABLE."""

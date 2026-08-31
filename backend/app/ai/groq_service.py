@@ -35,14 +35,20 @@ def groq_structured_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
 def fallback_decision(context: dict[str, Any], permitted_actions: set[str], reason: str = "Deterministic fallback") -> AIDecision:
     probability = float(context.get("recovery_probability") or 0)
-    action = "payment_link" if "payment_link" in permitted_actions and probability >= 0.4 else "message"
+    action = "payment_link" if "payment_link" in permitted_actions else "message"
     if not permitted_actions:
         action = "escalate"
     elif action not in permitted_actions:
         action = next(iter(sorted(permitted_actions)))
+    
+    if probability < 0.40:
+        reasoning = f"{reason}. The recovery probability is low. Only one recovery attempt is permitted."
+    else:
+        reasoning = f"{reason}. The deterministic policy and recovery potential determine the permitted workflow."
+
     return AIDecision(
         recommended_action=action, confidence=0.5,
-        reasoning=f"{reason}. The deterministic policy and recovery potential determine the permitted workflow.",
+        reasoning=reasoning,
         customer_message="We noticed your payment did not complete. Please use the secure payment option to try again.",
         source="fallback",
     )

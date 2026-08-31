@@ -62,9 +62,9 @@ def send_recovery_email(db: Session, case: PaymentCase, payment_link_url: str) -
     if not settings.email_enabled or not settings.email_provider_api_key:
         # Demo/development mode — store the full generated email in the audit log so it
         # can be previewed from the dashboard without claiming a real send occurred.
-        case.notification_status = "NOT_SENT"
+        case.notification_status = "MOCKED"
         db.commit()
-        log_audit_event(db, case.id, "email_notification_skipped", {
+        log_audit_event(db, case.id, "email_notification_mocked", {
             "reason": "Email service not configured",
             "email_html_preview": _build_email_html(case, payment_link_url),
             "recipient": case.customer.email,

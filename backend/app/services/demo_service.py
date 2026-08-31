@@ -55,9 +55,9 @@ def seed_demo_data(reset: bool = False):
         )
         case_d = PaymentCase(
             case_number="DEMO-D-STOPPED", customer_id=customers[3].id, razorpay_payment_id="pay_demo_stopped", razorpay_order_id="order_demo_stopped",
-            amount=30000, currency="INR", status=CaseStatus.ABANDONED, failure_reason="bank_declined", payment_method="card",
+            amount=30000, currency="INR", status=CaseStatus.FAILED, failure_reason="bank_declined", payment_method="card",
             recovery_probability=0.25, recovery_action=RecoveryAction.NONE, created_at=now - timedelta(hours=1),
-            policy_check_passed=True, policy_reason="Automatic recovery approved.", notification_status="NOT_SENT", max_retries=1
+            policy_check_passed=True, policy_reason="Automatic recovery approved.", notification_status="PENDING", max_retries=1
         )
         db.add_all([case_a, case_b, case_c, case_d])
         db.flush()
@@ -90,8 +90,14 @@ def seed_demo_data(reset: bool = False):
         log_audit_event(db, case_d.id, "failure_detected", {"demo": True, "note": "Synthetic Demo D"})
         log_audit_event(db, case_d.id, "ml_prediction", {"recovery_probability": 0.25})
         log_audit_event(db, case_d.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
-        log_audit_event(db, case_d.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Low probability.", "confidence": 0.80, "source": "groq"})
-        log_audit_event(db, case_d.id, "recovery_stopped", {"reason": "Predicted recovery probability is too low.", "ml_decision": "LOW"})
+        log_audit_event(db, case_d.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "The recovery probability is low. Only one recovery attempt is permitted.", "confidence": 0.80, "source": "fallback", "customer_message": "Please pay."})
+        
+        # Execute first attempt to create real link
+        execute_recovery(db, case_d, automatic=True)
+        # Simulate payment failing/timeout by resetting to FAILED, then attempting again to trigger exhaustion
+        case_d.status = CaseStatus.FAILED
+        db.commit()
+        execute_recovery(db, case_d, automatic=True)
 
         print("Seeding synthetic demo cases...")
         features, _ = generate_training_data(samples=50)
@@ -152,10 +158,9 @@ def seed_demo_data(reset: bool = False):
                 ml_decision = "COLD_START" if is_cold_start else ("HIGH" if prob >= 0.60 else "UNCERTAIN" if prob >= 0.40 else "LOW")
                 
                 if ml_decision == "LOW":
-                    case.status = CaseStatus.ABANDONED
-                    case.recovery_action = RecoveryAction.NONE
-                    log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Low recovery probability.", "customer_message": "", "confidence": prob, "source": "fallback"})
-                    log_audit_event(db, case.id, "recovery_stopped", {"reason": "Probability too low", "ml_decision": "LOW"})
+                    log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "The recovery probability is low. Only one recovery attempt is permitted.", "customer_message": "Please pay.", "confidence": prob, "source": "fallback"})
+                    log_audit_event(db, case.id, "low_probability_routing", {"message": "Allowing 1 recovery attempt for LOW probability.", "max_retries": 1})
+                    execute_recovery(db, case, automatic=True)
                 elif ml_decision == "UNCERTAIN":
                     case.status = CaseStatus.HUMAN_REVIEW
                     case.recovery_action = RecoveryAction.NONE

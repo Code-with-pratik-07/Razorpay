@@ -46,7 +46,7 @@ export function CaseDetail({
   const executionMode = isAutomatic ? "AUTOMATIC" : recoveryStartedEvent ? "MANUAL" : "";
 
   // Find mock email preview from audit events
-  const emailPreviewEvent = audit.find((e) => e.event_type === "email_notification_skipped" && e.event_data.email_html_preview);
+  const emailPreviewEvent = audit.find((e) => e.event_type === "email_notification_mocked" && e.event_data.email_html_preview);
   const emailHtmlPreview = emailPreviewEvent?.event_data.email_html_preview as string | undefined;
   const [showEmailPreview, setShowEmailPreview] = React.useState(false);
 
@@ -56,9 +56,9 @@ export function CaseDetail({
   const isRecovering = selected.status === 'recovering';
   const isRecovered = selected.status === 'recovered';
 
-  // Merchant can approve recovery for HUMAN_REVIEW if not low ML
+  // Merchant can approve recovery for HUMAN_REVIEW if under retry limit
   // The backend will enforce manual policy limits upon execution.
-  const canApproveRecovery = isHumanReview && mlDecision !== 'LOW';
+  const canApproveRecovery = isHumanReview && selected.retry_count < selected.max_retries;
 
   // ML routing label helpers
   const mlBadge = mlDecision === 'HIGH'
@@ -86,8 +86,8 @@ export function CaseDetail({
             {selected.notification_status === 'SENT' ? "✓ Recovery email sent to customer." :
              selected.notification_status === 'NOT_AVAILABLE' ? "No customer email available." :
              selected.notification_status === 'FAILED' ? "Payment Link exists, but email delivery failed." :
-             selected.notification_status === 'NOT_SENT' ? (emailHtmlPreview ? "Email mocked — " : "Email not sent.") : "Pending"}
-            {selected.notification_status === 'NOT_SENT' && emailHtmlPreview && (
+             selected.notification_status === 'MOCKED' ? "Email mocked — " : "Pending"}
+            {selected.notification_status === 'MOCKED' && emailHtmlPreview && (
               <button
                 id="view-email-preview-btn"
                 className="button secondary"
@@ -213,7 +213,7 @@ export function CaseDetail({
                  <b>Recovery:</b> {executionMode || 'AUTOMATIC'}<br/>
                  <b>Payment Link:</b> {currentLink ? 'CREATED' : explanation?.execution_error ? 'FAILED TO CREATE' : (selected.status === 'failed' ? 'FAILED / PENDING' : 'PENDING')}<br/>
                  <b>Customer Payment:</b> AWAITING PAYMENT<br/>
-                 <b>Notification:</b> {selected.notification_status === 'SENT' ? 'EMAIL SENT' : selected.notification_status === 'NOT_SENT' ? (emailHtmlPreview ? 'EMAIL MOCKED' : 'NOT AVAILABLE') : selected.notification_status === 'FAILED' ? 'EMAIL FAILED' : 'NOT AVAILABLE'}
+                 <b>Notification:</b> {selected.notification_status === 'SENT' ? 'EMAIL SENT' : selected.notification_status === 'MOCKED' ? 'EMAIL MOCKED' : selected.notification_status === 'FAILED' ? 'EMAIL FAILED' : 'NOT AVAILABLE'}
                </span>
              )}
            </div>

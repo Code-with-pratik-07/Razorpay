@@ -131,11 +131,12 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
         })
     else:
         if ml_decision == "LOW":
-            case.status = CaseStatus.ABANDONED
-            log_audit_event(db, case.id, "recovery_stopped", {
-                "reason": "Predicted recovery probability is too low to justify a recovery attempt.",
+            case.status = CaseStatus.HUMAN_REVIEW if original_status == CaseStatus.HUMAN_REVIEW else CaseStatus.FAILED
+            log_audit_event(db, case.id, "low_probability_routing", {
+                "reason": "Predicted recovery probability is low. 1 recovery attempt allowed.",
                 "recovery_probability": case.recovery_probability,
                 "ml_decision": "LOW",
+                "max_retries": 1,
                 "threshold": ML_UNCERTAIN_THRESHOLD,
             })
         elif ml_decision == "UNCERTAIN":
@@ -171,6 +172,12 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
 
     # Guard: enforce retry limit
     if case.retry_count >= case.max_retries:
+        if case.status != CaseStatus.ABANDONED:
+            case.status = CaseStatus.ABANDONED
+            db.commit()
+            log_audit_event(db, case.id, "recovery_stopped", {
+                "reason": f"Maximum recovery attempts ({case.max_retries}) exhausted.",
+            })
         return {
             "action": "stopped",
             "status": case.status.value,
@@ -208,25 +215,8 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
         db.commit(); log_audit_event(db, case.id, "human_escalation", {"reason": policy_result.reason, "source": "policy"})
         return {"action": "escalate", "status": case.status.value, "message": policy_result.reason, "payment_link_url": None}
 
-    # For explicit manual executions on HUMAN_REVIEW cases (merchant approval), also
-    # enforce ML routing for LOW-probability cases even if policy technically allows it.
-    if not automatic:
-        is_cold_start = (case.customer.successful_payments + case.customer.failed_payments) < 3
-        ml_decision = ml_routing_decision(case.recovery_probability, is_cold_start)
-        if ml_decision == "LOW":
-            case.status = CaseStatus.ABANDONED
-            db.commit()
-            log_audit_event(db, case.id, "recovery_stopped", {
-                "reason": "Predicted recovery probability is too low. Manual override not permitted.",
-                "recovery_probability": case.recovery_probability,
-                "ml_decision": "LOW",
-            })
-            return {
-                "action": "stopped",
-                "status": case.status.value,
-                "message": "Recovery probability is too low. Manual execution is not permitted for this case.",
-                "payment_link_url": None,
-            }
+    # For explicit manual executions on HUMAN_REVIEW cases (merchant approval), we no longer
+    # block LOW-probability cases here. They are allowed 1 attempt just like automatic execution.
 
     decision = _last_ai_decision(db, case.id) or fallback_decision(
     {"recovery_probability": case.recovery_probability},

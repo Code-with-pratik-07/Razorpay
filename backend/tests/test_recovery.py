@@ -221,15 +221,22 @@ def test_execute_recovery_manual_human_review_allows_high_amount(monkeypatch) ->
         assert result["action"] == "payment_link"
         assert result["payment_link_url"] == "https://rzp.io/rzp/123"
 
-def test_execute_recovery_low_ml_blocks_manual_human_review(monkeypatch) -> None:
-    # A LOW case somehow manually approved (e.g. merchant bypassing frontend logic)
-    case_id = _case(status=CaseStatus.HUMAN_REVIEW, amount=1000, recovery_probability=0.10)
-    with SessionLocal() as db:
-        case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+    def test_execute_recovery_low_ml_allows_manual_human_review(monkeypatch) -> None:
+        # A LOW case somehow manually approved (e.g. merchant bypassing frontend logic)
+        case_id = _case(status=CaseStatus.HUMAN_REVIEW, amount=1000, recovery_probability=0.10, max_retries=1, retry_count=0)
         
-        result = execute_recovery(db, case, automatic=False)
-        assert result["action"] == "stopped"
-        assert case.status == CaseStatus.ABANDONED
+        # Mock Razorpay to avoid external calls
+        import app.services.recovery_service as rs
+        class DummyRazorpay:
+            def create_payment_link(self, data):
+                return {"id": "inv_123", "short_url": "https://rzp.io/rzp/test"}
+        monkeypatch.setattr(rs, "RazorpayService", lambda *a, **kw: DummyRazorpay())
+
+        with SessionLocal() as db:
+            case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
+            result = execute_recovery(db, case, automatic=False)
+            assert result["action"] == "payment_link"
+            assert case.status == CaseStatus.RECOVERING
 
 def test_execute_recovery_atomic_lock_prevents_duplicate(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "")

@@ -34,8 +34,6 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
     ? 'BLOCKED — Human Review'
     : mlDecision === 'UNCERTAIN'
     ? 'Allowed — Uncertain ML (Human Review)'
-    : mlDecision === 'LOW'
-    ? 'Allowed — ML too low (Stopped)'
     : '✓ Automatic recovery approved';
 
   return (
@@ -75,12 +73,12 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
        </div>
 
        {/* Recovery step */}
-       {isAbandoned ? (
+       {isAbandoned && selected.retry_count === 0 ? (
          <div className="pipeline-step blocked">
            <div className="step-icon">■</div>
            <div className="step-content">
              <div className="step-title">RECOVERY STOPPED</div>
-             <div className="step-meta">ML probability too low — no action taken</div>
+             <div className="step-meta">No recovery action permitted</div>
            </div>
          </div>
        ) : isHumanReview ? (
@@ -92,23 +90,23 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
            </div>
          </div>
        ) : (
-         <div className={`pipeline-step ${isRecovered || isRecovering ? 'completed' : explanation?.execution_error ? 'warning' : policyDone && !policyAllowed ? 'blocked' : ''}`}>
-          <div className="step-icon">{isRecovered || isRecovering ? '✓' : explanation?.execution_error ? '!' : policyDone && !policyAllowed ? '—' : '•'}</div>
+         <div className={`pipeline-step ${isRecovered || isRecovering || selected.retry_count > 0 ? 'completed' : explanation?.execution_error ? 'warning' : policyDone && !policyAllowed ? 'blocked' : ''}`}>
+          <div className="step-icon">{isRecovered || isRecovering || selected.retry_count > 0 ? '✓' : explanation?.execution_error ? '!' : policyDone && !policyAllowed ? '—' : '•'}</div>
           <div className="step-content">
             <div className="step-title">RECOVERY</div>
-            <div className="step-meta">{isRecovered || isRecovering ? 'Payment Link created' : explanation?.execution_error ? `Execution Failed: ${explanation.execution_error}` : policyDone ? 'Not executed' : 'Pending'}</div>
+            <div className="step-meta">{isRecovered || isRecovering || selected.retry_count > 0 ? 'Payment Link created' : explanation?.execution_error ? `Execution Failed: ${explanation.execution_error}` : policyDone ? 'Not executed' : 'Pending'}</div>
           </div>
         </div>
        )}
 
        {/* Customer payment step */}
-       {!isAbandoned && (
-         <div className={`pipeline-step ${isRecovered ? 'completed' : isRecovering ? 'active' : ''}`}>
-           <div className="step-icon">{isRecovered ? '✓' : '•'}</div>
+       {(!isAbandoned || selected.retry_count > 0) && (
+         <div className={`pipeline-step ${isRecovered ? 'completed' : isRecovering ? 'active' : isAbandoned ? 'blocked' : ''}`}>
+           <div className="step-icon">{isRecovered ? '✓' : isAbandoned ? '■' : '•'}</div>
            <div className="step-content">
              <div className="step-title">CUSTOMER PAYMENT</div>
              <div className="step-meta">
-               {isRecovered ? 'Payment Received' : isRecovering ? 'Awaiting customer payment' : 'Awaiting recovery action'}
+               {isRecovered ? 'Payment Received' : isAbandoned ? 'Payment Timeout / Exhausted' : isRecovering ? 'Awaiting customer payment' : 'Awaiting recovery action'}
              </div>
            </div>
          </div>
