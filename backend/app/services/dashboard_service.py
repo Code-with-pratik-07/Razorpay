@@ -10,7 +10,7 @@ def dashboard_stats(db: Session) -> dict[str, int | float]:
     cases = list(db.scalars(select(PaymentCase)))
     at_risk = [case for case in cases if case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED}]
     recovered = [case for case in cases if case.status == CaseStatus.RECOVERED]
-    processed = [case for case in cases if case.status in {CaseStatus.RECOVERED, CaseStatus.HUMAN_REVIEW, CaseStatus.RECOVERING}]
+    processed = [case for case in cases if case.status in {CaseStatus.FAILED, CaseStatus.RECOVERING, CaseStatus.RECOVERED, CaseStatus.ABANDONED}]
     human_review = [case for case in cases if case.status == CaseStatus.HUMAN_REVIEW]
 
     from app.models.audit_event import AuditEvent

@@ -35,7 +35,11 @@ export function Charts({ stats, cases }: ChartsProps) {
       acc[curr.status] = (acc[curr.status] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-    return Object.entries(counts).map(([name, value]) => ({ name: title(name), value })).sort((a, b) => b.value - a.value);
+    const STATUS_ORDER = ["failed", "recovering", "recovered", "abandoned"];
+    return STATUS_ORDER.map((status) => ({
+      name: title(status),
+      value: counts[status] || 0,
+    }));
   }, [cases]);
 
   const failureData = useMemo(() => {
