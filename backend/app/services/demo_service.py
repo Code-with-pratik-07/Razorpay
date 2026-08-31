@@ -8,6 +8,16 @@ from app.models.payment_case import CaseStatus, PaymentCase, RecoveryAction
 from app.services.audit_service import log_audit_event
 from app.ml.train import generate_training_data
 
+def _simulate_execution(db, case):
+    case.status = CaseStatus.RECOVERING
+    case.retry_count += 1
+    case.last_retry_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    case.recovery_action = RecoveryAction.PAYMENT_LINK
+    log_audit_event(db, case.id, "recovery_started", {"advisory_action": "payment_link", "executed_action": "payment_link", "automatic": True})
+    log_audit_event(db, case.id, "payment_link_created", {"payment_link_id": f"inv_sim_{uuid.uuid4().hex[:8]}", "url": "mock_demo_real_simulated"})
+    from app.services.notification_service import send_recovery_email
+    send_recovery_email(db, case, "mock_demo_real_simulated")
+    
 def seed_demo_data(reset: bool = False):
     if reset:
         print("Resetting database...")
@@ -160,7 +170,7 @@ def seed_demo_data(reset: bool = False):
                 if ml_decision == "LOW":
                     log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "The recovery probability is low. Only one recovery attempt is permitted.", "customer_message": "Please pay.", "confidence": prob, "source": "fallback"})
                     log_audit_event(db, case.id, "low_probability_routing", {"message": "Allowing 1 recovery attempt for LOW probability.", "max_retries": 1})
-                    execute_recovery(db, case, automatic=True)
+                    _simulate_execution(db, case)
                 elif ml_decision == "UNCERTAIN":
                     case.status = CaseStatus.HUMAN_REVIEW
                     case.recovery_action = RecoveryAction.NONE
@@ -168,7 +178,7 @@ def seed_demo_data(reset: bool = False):
                     log_audit_event(db, case.id, "human_escalation", {"reason": "Uncertain ML probability", "source": "ml_routing"})
                 else:  # HIGH or COLD_START
                     log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "High recovery probability or COLD_START.", "customer_message": "Please pay.", "confidence": prob, "source": "fallback"})
-                    execute_recovery(db, case, automatic=True)
+                    _simulate_execution(db, case)
 
         db.commit()
         print("Demo data successfully seeded!")

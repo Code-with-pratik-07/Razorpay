@@ -107,7 +107,7 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
     db.commit()
     log_audit_event(db, case.id, "policy_check", policy_result.to_dict())
     permitted = {"retry", "payment_link"} if policy_result.allowed else set()
-    context = {"case_id": case.id, "recovery_probability": case.recovery_probability, "failure_reason": case.failure_reason, "policy_reason": policy_result.reason}
+    context = {"case_id": case.id, "recovery_probability": case.recovery_probability, "failure_reason": case.failure_reason, "policy_reason": policy_result.reason, "is_cold_start": is_cold_start}
     try:
         decision = (advisor or GroqRecoveryAdvisor()).advise(context, permitted)
     except GroqUnavailableError:
