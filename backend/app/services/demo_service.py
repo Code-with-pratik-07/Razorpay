@@ -52,10 +52,16 @@ def seed_demo_data(reset: bool = False):
             policy_check_passed=True, policy_reason="Automatic recovery approved.", notification_status="PENDING", max_retries=3
         )
         case_b = PaymentCase(
+            case_number="DEMO-B-UNCERTAIN", customer_id=customers[1].id, razorpay_payment_id="pay_demo_uncertain", razorpay_order_id="order_demo_uncertain",
+            amount=150000, currency="INR", status=CaseStatus.FAILED, failure_reason="fraud_suspicion", payment_method="card",
+            recovery_probability=0.55, recovery_action=RecoveryAction.NONE, created_at=now - timedelta(minutes=15),
+            policy_check_passed=True, policy_reason="Automatic recovery approved.", notification_status="PENDING", max_retries=2
+        )
+        case_b_human = PaymentCase(
             case_number="DEMO-B-HUMAN", customer_id=customers[1].id, razorpay_payment_id="pay_demo_human", razorpay_order_id="order_demo_human",
             amount=2500000, currency="INR", status=CaseStatus.HUMAN_REVIEW, failure_reason="fraud_suspicion", payment_method="card",
-            recovery_probability=0.55, recovery_action=RecoveryAction.ESCALATE, created_at=now - timedelta(minutes=15),
-            policy_check_passed=False, policy_reason="Automatic recovery blocked — Human approval required.", notification_status="PENDING", max_retries=2
+            recovery_probability=0.88, recovery_action=RecoveryAction.ESCALATE, created_at=now - timedelta(minutes=10),
+            policy_check_passed=False, policy_reason="Automatic recovery blocked — Human approval required.", notification_status="PENDING", max_retries=3
         )
         case_c = PaymentCase(
             case_number="DEMO-C-RECOVERED", customer_id=customers[2].id, razorpay_payment_id="pay_demo_recovered", razorpay_order_id="order_demo_recovered",
@@ -69,7 +75,7 @@ def seed_demo_data(reset: bool = False):
             recovery_probability=0.25, recovery_action=RecoveryAction.NONE, created_at=now - timedelta(hours=1),
             policy_check_passed=True, policy_reason="Automatic recovery approved.", notification_status="PENDING", max_retries=1
         )
-        db.add_all([case_a, case_b, case_c, case_d])
+        db.add_all([case_a, case_b, case_b_human, case_c, case_d])
         db.flush()
 
         # Execute recovery for DEMO-A-AUTO to get a REAL Razorpay link!
@@ -81,11 +87,17 @@ def seed_demo_data(reset: bool = False):
         from app.services.recovery_service import execute_recovery
         execute_recovery(db, case_a, automatic=True)
 
-        log_audit_event(db, case_b.id, "failure_detected", {"demo": True, "note": "Synthetic Demo B"})
-        log_audit_event(db, case_b.id, "ml_prediction", {"recovery_probability": 0.88})
-        log_audit_event(db, case_b.id, "policy_check", {"allowed": False, "reason": "Automatic recovery blocked — Human approval required."})
-        log_audit_event(db, case_b.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Policy block.", "confidence": 0.85, "source": "groq"})
-        log_audit_event(db, case_b.id, "human_escalation", {"reason": "Policy blocked automatic recovery", "source": "policy"})
+        log_audit_event(db, case_b.id, "failure_detected", {"demo": True, "note": "Synthetic Demo B (Uncertain)"})
+        log_audit_event(db, case_b.id, "ml_prediction", {"recovery_probability": 0.55})
+        log_audit_event(db, case_b.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
+        log_audit_event(db, case_b.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "Recovery probability is uncertain, but a controlled automatic recovery attempt is recommended.", "customer_message": "Please pay.", "confidence": 0.55, "source": "fallback"})
+        execute_recovery(db, case_b, automatic=True)
+
+        log_audit_event(db, case_b_human.id, "failure_detected", {"demo": True, "note": "Synthetic Demo B (Policy Blocked)"})
+        log_audit_event(db, case_b_human.id, "ml_prediction", {"recovery_probability": 0.88})
+        log_audit_event(db, case_b_human.id, "policy_check", {"allowed": False, "reason": "Automatic recovery blocked — Human approval required."})
+        log_audit_event(db, case_b_human.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Policy block.", "confidence": 0.88, "source": "groq"})
+        log_audit_event(db, case_b_human.id, "human_escalation", {"reason": "Policy blocked automatic recovery", "source": "policy"})
 
         log_audit_event(db, case_c.id, "failure_detected", {"demo": True, "note": "Synthetic Demo C"})
         log_audit_event(db, case_c.id, "ml_prediction", {"recovery_probability": 0.92})
@@ -172,10 +184,9 @@ def seed_demo_data(reset: bool = False):
                     log_audit_event(db, case.id, "low_probability_routing", {"message": "Allowing 1 recovery attempt for LOW probability.", "max_retries": 1})
                     _simulate_execution(db, case)
                 elif ml_decision == "UNCERTAIN":
-                    case.status = CaseStatus.HUMAN_REVIEW
-                    case.recovery_action = RecoveryAction.NONE
-                    log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Uncertain recovery probability.", "customer_message": "", "confidence": prob, "source": "fallback"})
-                    log_audit_event(db, case.id, "human_escalation", {"reason": "Uncertain ML probability", "source": "ml_routing"})
+                    log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "Recovery probability is uncertain, but a controlled automatic recovery attempt is recommended.", "customer_message": "Please pay.", "confidence": prob, "source": "fallback"})
+                    log_audit_event(db, case.id, "uncertain_probability_routing", {"message": "Allowing 2 recovery attempts for UNCERTAIN probability.", "max_retries": 2})
+                    _simulate_execution(db, case)
                 else:  # HIGH or COLD_START
                     log_audit_event(db, case.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "High recovery probability or COLD_START.", "customer_message": "Please pay.", "confidence": prob, "source": "fallback"})
                     _simulate_execution(db, case)

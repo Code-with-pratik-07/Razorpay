@@ -140,9 +140,9 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
                 "threshold": ML_UNCERTAIN_THRESHOLD,
             })
         elif ml_decision == "UNCERTAIN":
-            case.status = CaseStatus.HUMAN_REVIEW
-            log_audit_event(db, case.id, "human_escalation", {
-                "reason": "Recovery confidence is below the automatic recovery threshold.",
+            case.status = CaseStatus.HUMAN_REVIEW if original_status == CaseStatus.HUMAN_REVIEW else CaseStatus.FAILED
+            log_audit_event(db, case.id, "uncertain_probability_routing", {
+                "reason": "Recovery confidence is uncertain, but an automatic recovery attempt is permitted.",
                 "recovery_probability": case.recovery_probability,
                 "ml_decision": "UNCERTAIN",
                 "threshold": ML_HIGH_THRESHOLD,
@@ -170,21 +170,6 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
             "payment_link_url": None,
         }
 
-    # Guard: enforce retry limit
-    if case.retry_count >= case.max_retries:
-        if case.status != CaseStatus.ABANDONED:
-            case.status = CaseStatus.ABANDONED
-            db.commit()
-            log_audit_event(db, case.id, "recovery_stopped", {
-                "reason": f"Maximum recovery attempts ({case.max_retries}) exhausted.",
-            })
-        return {
-            "action": "stopped",
-            "status": case.status.value,
-            "message": f"Maximum recovery attempts ({case.max_retries}) reached. No further action permitted.",
-            "payment_link_url": None,
-        }
-
     # Guard: if recovery is already in progress, return immediately without any DB
     # writes, audit events, retry-count increments, or new payment link creation.
     # This makes the backend independently safe regardless of the calling client.
@@ -203,6 +188,21 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
 
         # It's a mock demo link. Treat as FAILED for policy evaluation so we can generate a real link.
         case.status = CaseStatus.FAILED
+
+    # Guard: enforce retry limit
+    if case.retry_count >= case.max_retries:
+        if case.status != CaseStatus.ABANDONED:
+            case.status = CaseStatus.ABANDONED
+            db.commit()
+            log_audit_event(db, case.id, "recovery_stopped", {
+                "reason": f"Maximum recovery attempts ({case.max_retries}) exhausted.",
+            })
+        return {
+            "action": "stopped",
+            "status": case.status.value,
+            "message": f"Maximum recovery attempts ({case.max_retries}) reached. No further action permitted.",
+            "payment_link_url": None,
+        }
 
     # Merchant explicit approval of a HUMAN_REVIEW case:
     # We pass automatic=False so policy_service allows execution even if amount > 20,000

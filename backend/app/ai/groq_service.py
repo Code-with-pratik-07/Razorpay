@@ -44,13 +44,13 @@ def fallback_decision(context: dict[str, Any], permitted_actions: set[str], reas
     is_cold_start = context.get("is_cold_start", False)
     
     if is_cold_start:
-        reasoning = "Customer history is limited, so ML confidence is unavailable. The policy allows a controlled recovery attempt based on the cold-start rule."
+        reasoning = "Customer history is limited. ML confidence is unavailable, so a controlled recovery strategy is being used."
     elif probability >= 0.60:
-        reasoning = "Recovery probability is high and the amount is within the automatic recovery limit. A payment link is the preferred recovery action."
+        reasoning = "High recovery probability. Automatic payment-link recovery is recommended."
     elif probability >= 0.40:
-        reasoning = "Recovery probability is uncertain, so automatic recovery requires merchant review before sending a payment link."
+        reasoning = "Recovery probability is uncertain, but a controlled automatic recovery attempt is recommended."
     else:
-        reasoning = "Recovery probability is low, but the policy allows one controlled recovery attempt. No additional attempt will be made if this attempt fails."
+        reasoning = "Recovery probability is low. One controlled recovery attempt is permitted."
 
     return AIDecision(
         recommended_action=action, confidence=0.5,

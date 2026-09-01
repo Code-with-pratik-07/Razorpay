@@ -88,10 +88,10 @@ class TestAnalyzeCaseRouting:
         assert case.status == CaseStatus.FAILED
         assert result.get("ml_decision") == "HIGH"
 
-    def test_uncertain_probability_sets_human_review(self, monkeypatch):
-        """UNCERTAIN ML → status=HUMAN_REVIEW, no Payment Link."""
+    def test_uncertain_probability_sets_failed_status(self, monkeypatch):
+        """UNCERTAIN ML → status=FAILED (ready for auto execute_recovery of 2 attempts)."""
         case, result = self._run_analyze(monkeypatch, 0.55)
-        assert case.status == CaseStatus.HUMAN_REVIEW
+        assert case.status == CaseStatus.FAILED
         assert result.get("ml_decision") == "UNCERTAIN"
 
     def test_low_probability_sets_failed(self, monkeypatch):
@@ -120,17 +120,17 @@ class TestAnalyzeCaseRouting:
             assert case.policy_check_passed is False
 
     def test_uncertain_audit_event_recorded(self, monkeypatch):
-        """UNCERTAIN routing records a human_escalation audit event with ml_routing source."""
+        """UNCERTAIN routing records an uncertain_probability_routing audit event with ml_routing source."""
         from sqlalchemy import select
         from app.models.audit_event import AuditEvent
 
         case, _ = self._run_analyze(monkeypatch, 0.55)
         with SessionLocal() as db:
             events = list(db.scalars(select(AuditEvent).where(AuditEvent.case_id == case.id)))
-        escalation = next((e for e in events if e.event_type == "human_escalation"), None)
-        assert escalation is not None
-        assert escalation.event_data.get("source") == "ml_routing"
-        assert escalation.event_data.get("ml_decision") == "UNCERTAIN"
+        routing_event = next((e for e in events if e.event_type == "uncertain_probability_routing"), None)
+        assert routing_event is not None
+        assert routing_event.event_data.get("source") == "ml_routing"
+        assert routing_event.event_data.get("ml_decision") == "UNCERTAIN"
 
     def test_low_recovery_routing_audit_event_recorded(self, monkeypatch):
         """LOW routing records a low_probability_routing audit event."""

@@ -32,8 +32,6 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
     ? 'Pending'
     : !policyAllowed
     ? 'BLOCKED — Human Review'
-    : mlDecision === 'UNCERTAIN'
-    ? 'Allowed — Uncertain ML (Human Review)'
     : '✓ Automatic recovery approved';
 
   return (
@@ -48,16 +46,16 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
          </div>
        </div>
 
-       <div className={`pipeline-step ${explanation?.ml ? (mlDecision === 'LOW' ? 'warning' : 'completed') : 'active'}`}>
-         <div className="step-icon">{explanation?.ml ? (mlDecision === 'LOW' ? '↓' : '✓') : '•'}</div>
+       <div className={`pipeline-step ${explanation?.ml ? 'completed' : 'active'}`}>
+         <div className="step-icon">{explanation?.ml ? '✓' : '•'}</div>
          <div className="step-content">
            <div className="step-title">ML PREDICTION</div>
            <div className="step-meta">{mlLabel}</div>
          </div>
        </div>
 
-       <div className={`pipeline-step ${policyDone ? (policyAllowed && mlDecision !== 'UNCERTAIN' && mlDecision !== 'LOW' ? 'completed' : 'warning') : ''}`}>
-         <div className="step-icon">{policyDone ? (policyAllowed && mlDecision !== 'UNCERTAIN' && mlDecision !== 'LOW' ? '✓' : '!') : '•'}</div>
+       <div className={`pipeline-step ${policyDone ? (policyAllowed ? 'completed' : 'warning') : ''}`}>
+         <div className="step-icon">{policyDone ? (policyAllowed ? '✓' : '!') : '•'}</div>
          <div className="step-content">
            <div className="step-title">POLICY ENGINE</div>
            <div className="step-meta">{policyLabel}</div>

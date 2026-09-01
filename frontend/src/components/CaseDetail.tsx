@@ -146,7 +146,27 @@ export function CaseDetail({
                <h4><i/> Policy Enforcement</h4>
                <div className="stat-row"><span>Decision</span> <b>{explanation.policy.allowed ? "APPROVED" : "BLOCKED"}</b></div>
                <div className="stat-row"><span>Reason</span> <b>{title(explanation.policy.reason)}</b></div>
-               <div className="stat-row"><span>Human Review</span> <b>{explanation.policy.requires_human_approval ? "Required" : "Not Required"}</b></div>
+               <div className="stat-row"><span>Human Review</span> <b>{explanation.policy.requires_human_approval ? "Required by policy" : "Not Required"}</b></div>
+             </div>
+
+             <div className="intelligence-card" style={{gridColumn: '1 / -1'}}>
+               <h4><i/> ML Routing</h4>
+               <div className="stat-row"><span>Tier</span> <b>{mlDecision === 'COLD_START' ? 'COLD START' : mlDecision}</b></div>
+               <div className="stat-row"><span>Action</span> <b>
+                 {mlDecision === 'HIGH' ? "Automatic Recovery Permitted" 
+                 : mlDecision === 'UNCERTAIN' ? "Controlled Automatic Recovery (2 Attempts)" 
+                 : mlDecision === 'LOW' ? "Controlled Automatic Recovery (1 Attempt)" 
+                 : "Controlled Workflow (Limited History)"}
+               </b></div>
+               <div className="stat-row" style={{flexDirection: 'column', alignItems: 'flex-start'}}>
+                  <span style={{marginBottom: 4}}>Reason</span> 
+                  <b style={{fontSize: 12}}>
+                    {mlDecision === 'HIGH' ? "Recovery probability is >= 60%, qualifying for automatic execution."
+                    : mlDecision === 'UNCERTAIN' ? "Recovery probability is between 40% and 59.99%. A controlled automatic recovery attempt is permitted."
+                    : mlDecision === 'LOW' ? "Recovery probability is < 40%. A single automatic attempt is permitted."
+                    : "Customer has fewer than 3 historical transactions."}
+                  </b>
+               </div>
              </div>
           </div>
         )}
