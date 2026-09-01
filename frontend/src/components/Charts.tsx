@@ -100,6 +100,11 @@ export function Charts({ stats, cases }: ChartsProps) {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        <div className="chart-summary" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center', fontSize: '12px', color: '#71717A', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #E4E4E7' }}>
+          {unifiedStatusData.map(item => (
+            <span key={item.name}><strong style={{ color: '#3F3F46' }}>{item.name}:</strong> {item.value}</span>
+          ))}
+        </div>
       </div>
 
       <div className="chart-card">
