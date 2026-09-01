@@ -181,7 +181,7 @@ export function CaseDetail({
                 ? <>Payment received successfully.<br/><br/><b>✓ RECOVERY ACTION EXECUTED</b><br/>Payment Link recovery was initiated.</>
                 : (execution?.message || "Payment Link recovery is in progress.")}
             </p>
-            {currentLink && currentLink !== "mock_demo_link" && currentLink !== "mock_demo_real_simulated" && (
+            {currentLink && (currentLink.startsWith("http://") || currentLink.startsWith("https://")) && (
               <>
                 <div className="success-link">{currentLink}</div>
                 <div className="success-actions">
@@ -201,17 +201,21 @@ export function CaseDetail({
                 </div>
               </>
             )}
-            {currentLink === "mock_demo_link" && !execution && (
-               <div className="demo-payment-link">
-                  <b>DEMO PAYMENT LINK</b><br/>
-                  Execute Recovery to generate a real Razorpay Test Mode Payment Link.
-               </div>
-            )}
-            {currentLink === "mock_demo_real_simulated" && (
-               <div className="demo-payment-link">
-                  <b>SIMULATED PAYMENT LINK</b><br/>
-                  This is a safely protected case. It will not execute as a live URL.
-               </div>
+            {currentLink && !(currentLink.startsWith("http://") || currentLink.startsWith("https://")) && (
+              <>
+                <div className="success-link simulated">{currentLink}</div>
+                <div className="success-actions" style={{ marginTop: '1rem' }}>
+                  <button
+                    className="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.location.href = `/simulate-payment/${selected.id}`;
+                    }}
+                  >
+                    Open Simulated Payment ↗
+                  </button>
+                </div>
+              </>
             )}
           </div>
         )}

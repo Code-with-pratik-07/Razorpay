@@ -21,6 +21,9 @@ class SimulateFailureRequest(BaseModel):
     payment_method: str | None = None
     successful_payments: int | None = None
 
+class SimulatePaymentRequest(BaseModel):
+    success: bool
+
 @router.get("/status", response_model=DemoStatus)
 def get_demo_status():
     settings = get_settings()
@@ -62,6 +65,53 @@ def simulate_payment_failure(body: SimulateFailureRequest | None = None):
         successful_payments=req.successful_payments,
     )
     return result
+
+
+@router.post("/simulate-payment/{case_id}")
+def simulate_payment(case_id: str, payload: SimulatePaymentRequest):
+    from sqlalchemy.orm import joinedload
+    from datetime import datetime, timezone
+    from app.db.database import SessionLocal
+    from app.models.payment_case import PaymentCase, CaseStatus, NextActionType
+    from app.services.audit_service import log_audit_event
+    from app.models.customer import Customer
+
+    from sqlalchemy import select
+
+    with SessionLocal() as db:
+        case = db.scalar(
+            select(PaymentCase).options(joinedload(PaymentCase.customer)).where(PaymentCase.id == case_id)
+        )
+        if not case:
+            raise HTTPException(status_code=404, detail="Case not found.")
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        if payload.success:
+            if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
+                return {"message": "Case is already in a terminal state."}
+            
+            case.status = CaseStatus.RECOVERED
+            case.recovered_at = now
+            case.next_action_type = NextActionType.NONE
+            case.next_action_at = None
+
+            if case.customer:
+                case.customer.successful_payments += 1
+                case.customer.lifetime_value += case.amount
+            
+            db.commit()
+            log_audit_event(db, case.id, "payment_success", {"simulated": True, "event": "simulate_payment"})
+            log_audit_event(db, case.id, "case_recovered", {"simulated": True, "order_id": case.razorpay_order_id})
+            
+            return {"message": "Simulated payment successful.", "status": case.status.value}
+        
+        else:
+            # Simulate failure (customer tried to pay but it failed)
+            log_audit_event(db, case.id, "payment_failed_simulated", {"simulated": True, "event": "simulate_payment_failure"})
+            # We don't increment retry_count or change status here, preserving the scheduler's logic.
+            db.commit()
+            return {"message": "Simulated payment failure recorded. Progressive scheduling remains active.", "status": case.status.value}
 
 
 @router.post("/run-experiment", response_model=ExperimentResult)
