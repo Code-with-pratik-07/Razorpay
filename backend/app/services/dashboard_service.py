@@ -17,10 +17,15 @@ def dashboard_stats(db: Session) -> dict[str, int | float]:
     audit_events = list(db.scalars(select(AuditEvent).where(AuditEvent.event_type == "recovery_started")))
     automatic_count = sum(1 for e in audit_events if isinstance(e.event_data, dict) and e.event_data.get("automatic") is True)
 
+    revenue_at_risk = sum(case.amount for case in at_risk)
+    revenue_recovered = sum(case.amount for case in recovered)
+    total_opportunity = revenue_recovered + revenue_at_risk
+    recovery_rate = round((revenue_recovered / total_opportunity) * 100, 1) if total_opportunity > 0 else 0.0
+
     return {
-        "revenue_at_risk": sum(case.amount for case in at_risk),
-        "revenue_recovered": sum(case.amount for case in recovered),
-        "recovery_rate": round(len(recovered) / len(cases), 4) if cases else 0.0,
+        "revenue_at_risk": revenue_at_risk,
+        "revenue_recovered": revenue_recovered,
+        "recovery_rate": recovery_rate,
         "cases_processed": len(processed),
         "human_review_cases": len(human_review),
         "human_review_amount": sum(case.amount for case in human_review),
