@@ -220,6 +220,28 @@ export function CaseDetail({
           </div>
         )}
 
+        {selected.last_payment_status === 'FAILED' && (
+          <div className="alert error" style={{ marginBottom: '1.5rem', backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '1rem', borderRadius: '8px' }}>
+            <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '1.2rem' }}>✕</span> CUSTOMER PAYMENT FAILED
+            </h3>
+            <p style={{ margin: '0.5rem 0' }}>The customer attempted to complete payment using the active recovery link, but the payment was unsuccessful.</p>
+            <p style={{ margin: '0.5rem 0' }}>
+              <b>Failure reason:</b><br/>
+              {selected.last_payment_failure_reason || 'Simulated payment failure'}
+            </p>
+            <p style={{ margin: '0.5rem 0' }}>
+              <b>Recovery workflow:</b><br/>
+              The active payment link and scheduled reminders remain valid according to the recovery lifecycle.
+            </p>
+            {selected.last_payment_attempt_at && (
+              <p style={{ margin: '0.5rem 0', fontSize: '0.9rem', color: '#7f1d1d' }}>
+                <b>Last Payment Attempt:</b> {new Date(selected.last_payment_attempt_at).toLocaleString()}
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="action-panel">
            <div className="action-info">
              {isAbandoned ? (

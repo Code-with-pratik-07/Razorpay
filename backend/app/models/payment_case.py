@@ -61,5 +61,9 @@ class PaymentCase(Base):
     next_action_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     next_action_type: Mapped[NextActionType] = mapped_column(default=NextActionType.NONE, nullable=False)
     last_notification_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_payment_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    last_payment_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_payment_failure_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    
     customer = relationship("Customer", back_populates="payment_cases")
     audit_events = relationship("AuditEvent", back_populates="payment_case")

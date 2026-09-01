@@ -53,7 +53,7 @@ def test_simulate_payment_success():
 
     response = client.post(f"/api/demo/simulate-payment/{case_id}", json={"success": True})
     assert response.status_code == 200
-    assert response.json()["status"] == CaseStatus.RECOVERED.value
+    assert response.json()["case_status"] == CaseStatus.RECOVERED.value
 
     with SessionLocal() as db:
         updated_case = db.get(PaymentCase, case_id)
@@ -63,6 +63,9 @@ def test_simulate_payment_success():
         assert updated_case.recovered_at is not None
         assert updated_case.customer.successful_payments == old_successes + 1
         assert updated_case.customer.lifetime_value == old_ltv + updated_case.amount
+        assert updated_case.last_payment_status == "SUCCESS"
+        assert updated_case.last_payment_attempt_at is not None
+        assert updated_case.last_payment_failure_reason is None
 
 def test_simulate_payment_failure():
     with SessionLocal() as db:
@@ -71,7 +74,7 @@ def test_simulate_payment_failure():
 
     response = client.post(f"/api/demo/simulate-payment/{case_id}", json={"success": False})
     assert response.status_code == 200
-    assert response.json()["status"] == CaseStatus.RECOVERING.value
+    assert response.json()["case_status"] == CaseStatus.RECOVERING.value
 
     with SessionLocal() as db:
         updated_case = db.get(PaymentCase, case_id)
@@ -79,6 +82,25 @@ def test_simulate_payment_failure():
         assert updated_case.status == CaseStatus.RECOVERING
         assert updated_case.retry_count == 1
         assert updated_case.next_action_type == NextActionType.EXPIRY_CHECK
+        assert updated_case.last_payment_status == "FAILED"
+        assert updated_case.last_payment_attempt_at is not None
+        assert updated_case.last_payment_failure_reason == "Simulated payment failure"
+
+def test_duplicate_simulate_failure_requests():
+    with SessionLocal() as db:
+        case = create_mock_case(db)
+        case_id = case.id
+
+    # first failure
+    client.post(f"/api/demo/simulate-payment/{case_id}", json={"success": False})
+    # second failure
+    client.post(f"/api/demo/simulate-payment/{case_id}", json={"success": False})
+    
+    with SessionLocal() as db:
+        updated_case = db.get(PaymentCase, case_id)
+        assert updated_case.status == CaseStatus.RECOVERING
+        assert updated_case.retry_count == 1
+        assert updated_case.last_payment_status == "FAILED"
 
 def test_simulate_payment_already_terminal():
     with SessionLocal() as db:

@@ -32,6 +32,13 @@ class CaseSummary(BaseModel):
     policy_reason: str | None
     notification_status: str | None
     created_at: datetime
+    last_payment_status: str | None = None
+    last_payment_attempt_at: datetime | None = None
+    last_payment_failure_reason: str | None = None
+    payment_link_expires_at: datetime | None = None
+    next_action_at: datetime | None = None
+    next_action_type: str | None = None
+    last_notification_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -29,6 +29,9 @@ export type RecoveryCase = {
   next_action_type: string;
   payment_link_expires_at: string | null;
   last_notification_at: string | null;
+  last_payment_status?: string | null;
+  last_payment_attempt_at?: string | null;
+  last_payment_failure_reason?: string | null;
 };
 
 export type Explanation = RecoveryCase & {

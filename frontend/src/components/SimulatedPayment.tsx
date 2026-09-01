@@ -41,11 +41,9 @@ export const SimulatedPayment = ({ caseId }: { caseId: string }) => {
       });
       if (!response.ok) throw new Error("Failed to process simulated payment.");
       setResult(success ? 'success' : 'failure');
-      if (success) {
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 3000);
-      }
+      setTimeout(() => {
+        window.location.href = '/';
+      }, success ? 3000 : 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment processing failed.");
       setProcessing(false);
@@ -96,9 +94,8 @@ export const SimulatedPayment = ({ caseId }: { caseId: string }) => {
           <div className="payment-result error">
             <div className="error-icon">✗</div>
             <h2>Payment Failed</h2>
-            <p>Your simulated payment attempt was declined.</p>
-            <button className="button" onClick={() => window.location.href = '/'}>Return to Dashboard</button>
-            <button className="button secondary" onClick={() => { setResult(null); setProcessing(false); }} style={{ marginTop: '10px' }}>Try Again</button>
+            <p>The payment failure has been recorded successfully. The recovery workflow will continue according to the scheduled recovery rules.</p>
+            <p className="redirect-text">Redirecting to dashboard...</p>
           </div>
         ) : (
           <>

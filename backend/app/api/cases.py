@@ -19,7 +19,22 @@ def _case(db: Session, case_id: str) -> PaymentCase:
 
 
 def _summary(case: PaymentCase) -> dict:
-    return {"id": case.id, "case_number": case.case_number, "customer_email": case.customer.email, "amount": case.amount, "currency": case.currency, "status": case.status.value, "failure_reason": case.failure_reason, "payment_method": case.payment_method, "recovery_probability": case.recovery_probability, "recovery_action": case.recovery_action.value, "retry_count": case.retry_count, "max_retries": case.max_retries, "policy_check_passed": case.policy_check_passed, "policy_reason": case.policy_reason, "notification_status": case.notification_status, "created_at": case.created_at}
+    return {
+        "id": case.id, "case_number": case.case_number, "customer_email": case.customer.email, 
+        "amount": case.amount, "currency": case.currency, "status": case.status.value, 
+        "failure_reason": case.failure_reason, "payment_method": case.payment_method, 
+        "recovery_probability": case.recovery_probability, "recovery_action": case.recovery_action.value, 
+        "retry_count": case.retry_count, "max_retries": case.max_retries, 
+        "policy_check_passed": case.policy_check_passed, "policy_reason": case.policy_reason, 
+        "notification_status": case.notification_status, "created_at": case.created_at,
+        "payment_link_expires_at": case.payment_link_expires_at,
+        "next_action_at": case.next_action_at,
+        "next_action_type": case.next_action_type.value if hasattr(case.next_action_type, 'value') else case.next_action_type,
+        "last_notification_at": case.last_notification_at,
+        "last_payment_status": case.last_payment_status,
+        "last_payment_attempt_at": case.last_payment_attempt_at,
+        "last_payment_failure_reason": case.last_payment_failure_reason
+    }
 
 
 @router.get("", response_model=list[CaseSummary])

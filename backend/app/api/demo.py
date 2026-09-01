@@ -89,12 +89,16 @@ def simulate_payment(case_id: str, payload: SimulatePaymentRequest):
 
         if payload.success:
             if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
-                return {"message": "Case is already in a terminal state."}
+                return {"success": True, "payment_result": "already_terminal", "case_status": case.status.value, "message": "Case is already in a terminal state."}
             
             case.status = CaseStatus.RECOVERED
             case.recovered_at = now
             case.next_action_type = NextActionType.NONE
             case.next_action_at = None
+            
+            case.last_payment_status = "SUCCESS"
+            case.last_payment_attempt_at = now
+            case.last_payment_failure_reason = None
 
             if case.customer:
                 case.customer.successful_payments += 1
@@ -104,14 +108,33 @@ def simulate_payment(case_id: str, payload: SimulatePaymentRequest):
             log_audit_event(db, case.id, "payment_success", {"simulated": True, "event": "simulate_payment"})
             log_audit_event(db, case.id, "case_recovered", {"simulated": True, "order_id": case.razorpay_order_id})
             
-            return {"message": "Simulated payment successful.", "status": case.status.value}
+            return {"success": True, "payment_result": "success", "case_status": case.status.value, "message": "Simulated payment successful."}
         
         else:
-            # Simulate failure (customer tried to pay but it failed)
-            log_audit_event(db, case.id, "payment_failed_simulated", {"simulated": True, "event": "simulate_payment_failure"})
+            if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
+                return {"success": True, "payment_result": "already_terminal", "case_status": case.status.value, "message": "Case is already in a terminal state."}
+
+            case.last_payment_status = "FAILED"
+            case.last_payment_attempt_at = now
+            case.last_payment_failure_reason = "Simulated payment failure"
+
+            log_audit_event(db, case.id, "payment_failed_simulated", {
+                "source": "simulated_payment_page",
+                "success": False,
+                "payment_method": case.payment_method,
+                "failure_reason": "simulated_payment_failure",
+                "retry_count": case.retry_count,
+                "max_retries": case.max_retries
+            })
+            
             # We don't increment retry_count or change status here, preserving the scheduler's logic.
             db.commit()
-            return {"message": "Simulated payment failure recorded. Progressive scheduling remains active.", "status": case.status.value}
+            return {
+                "success": True, 
+                "payment_result": "failed", 
+                "case_status": case.status.value, 
+                "message": "Payment failure recorded successfully. Recovery will continue according to the scheduled workflow."
+            }
 
 
 @router.post("/run-experiment", response_model=ExperimentResult)

@@ -99,12 +99,26 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
 
        {/* Customer payment step */}
        {(!isAbandoned || selected.retry_count > 0) && (
-         <div className={`pipeline-step ${isRecovered ? 'completed' : isRecovering ? 'active' : isAbandoned ? 'blocked' : ''}`}>
-           <div className="step-icon">{isRecovered ? '✓' : isAbandoned ? '■' : '•'}</div>
+         <div className={`pipeline-step ${isRecovered ? 'completed' : selected.last_payment_status === 'FAILED' ? 'warning' : isRecovering ? 'active' : isAbandoned ? 'blocked' : ''}`}>
+           <div className="step-icon">{isRecovered ? '✓' : selected.last_payment_status === 'FAILED' ? '✕' : isAbandoned ? '■' : '•'}</div>
            <div className="step-content">
              <div className="step-title">CUSTOMER PAYMENT</div>
              <div className="step-meta">
-               {isRecovered ? 'Payment Received' : isAbandoned ? 'Payment Timeout / Exhausted' : isRecovering ? 'Awaiting customer payment' : 'Awaiting recovery action'}
+               {isRecovered ? 'Payment Received' : selected.last_payment_status === 'FAILED' ? 'Payment Attempt Failed' : isAbandoned ? 'Payment Timeout / Exhausted' : isRecovering ? 'Awaiting customer payment' : 'Awaiting recovery action'}
+             </div>
+           </div>
+         </div>
+       )}
+
+       {isRecovering && selected.last_payment_status === 'FAILED' && (
+         <div className="pipeline-step active">
+           <div className="step-icon">→</div>
+           <div className="step-content">
+             <div className="step-title">NEXT ACTION</div>
+             <div className="step-meta">
+               {selected.next_action_type === 'reminder' ? `Reminder scheduled` :
+                selected.next_action_type === 'expiry_check' ? `Waiting for payment link expiry` :
+                `Waiting for scheduled workflow`}
              </div>
            </div>
          </div>
