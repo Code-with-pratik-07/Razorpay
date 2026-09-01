@@ -93,7 +93,7 @@ export function Charts({ stats, cases }: ChartsProps) {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={unifiedStatusData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E4E4E7" />
-              <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="name" interval={0} tick={{ fontSize: 11, fill: '#71717A' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} allowDecimals={false} />
               <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F4F4F5' }} />
               <Bar dataKey="value" fill="var(--color-accent)" radius={[4, 4, 0, 0]} minPointSize={3} />
