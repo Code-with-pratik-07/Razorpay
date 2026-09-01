@@ -1,10 +1,10 @@
 """Tests for the three-way ML routing: HIGH → automatic recovery, UNCERTAIN → HUMAN_REVIEW, LOW → ABANDONED."""
 
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from app.db.database import SessionLocal, init_db
-from app.models.payment_case import CaseStatus, RecoveryAction
+from app.models.payment_case import CaseStatus, RecoveryAction, PaymentCase
 from app.services.recovery_service import (
     ML_HIGH_THRESHOLD,
     ML_UNCERTAIN_THRESHOLD,
@@ -190,13 +190,14 @@ class TestExecuteRecoveryMlRouting:
             assert case.retry_count == 1
             assert case.status == CaseStatus.RECOVERING
             
-            # Simulate failure and retry
+            # Simulate failure and retry with expired link
             case.status = CaseStatus.FAILED
+            case.payment_link_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
             db.commit()
             
-            # Second attempt should be stopped and exhausted
+            # Second attempt should be abandoned and exhausted
             result2 = execute_recovery(db, case, automatic=True)
-            assert result2["action"] == "stopped"
+            assert result2["action"] == "abandoned"
             assert case.status == CaseStatus.ABANDONED
 
     def test_human_review_can_be_manually_executed(self, monkeypatch):

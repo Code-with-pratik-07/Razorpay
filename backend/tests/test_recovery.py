@@ -105,7 +105,7 @@ def test_retry_timing_and_window_remain_blocked(monkeypatch) -> None:
         with SessionLocal() as db:
             case = db.get(__import__("app.models.payment_case", fromlist=["PaymentCase"]).PaymentCase, case_id)
             result = execute_recovery(db, case, automatic=True)["action"]
-            assert result in ("escalate", "stopped")
+            assert result in ("escalate", "stopped", "abandoned")
 
 def test_analyze_case_state_guard(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "")

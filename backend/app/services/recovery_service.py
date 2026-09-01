@@ -1,6 +1,6 @@
 """Policy-controlled recovery orchestration; Groq is advisory only."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 import uuid
 
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.groq_service import GroqRecoveryAdvisor, GroqUnavailableError, fallback_decision
 from app.ml.predict import predict_recovery
-from app.models.payment_case import CaseStatus, PaymentCase, RecoveryAction
+from app.models.payment_case import CaseStatus, PaymentCase, RecoveryAction, NextActionType
 from app.models.recovery_policy import RecoveryPolicy
 from app.schemas.recovery import AIDecision
 from app.services.audit_service import list_audit_events, log_audit_event
@@ -158,101 +158,170 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
     return {"prediction": prediction, "policy": policy_result.to_dict(), "ai": decision, "ml_decision": ml_decision}
 
 
-def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) -> dict[str, Any]:
-    original_status = case.status
+def _schedule_next_action(db: Session, case: PaymentCase, action_type: NextActionType, dt: datetime):
+    case.next_action_type = action_type
+    case.next_action_at = dt
+    db.commit()
+    log_audit_event(db, case.id, "recovery_scheduled", {
+        "next_action_type": action_type.value,
+        "next_action_at": dt.isoformat(),
+    })
 
-    # Guard: case that was stopped due to low ML probability — do not execute.
+def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    # 1. Guard against terminal states
     if case.status == CaseStatus.ABANDONED:
         return {
             "action": "stopped",
             "status": case.status.value,
-            "message": "Recovery probability was too low. No recovery action has been taken.",
+            "message": "Recovery probability was too low or attempts exhausted.",
+            "payment_link_url": None,
+        }
+    if case.status in {CaseStatus.RECOVERED, CaseStatus.CLOSED}:
+        return {
+            "action": "no_action",
+            "status": case.status.value,
+            "message": f"Recovery is already complete for this case. No further actions permitted.",
             "payment_link_url": None,
         }
 
-    # Guard: if recovery is already in progress, return immediately without any DB
-    # writes, audit events, retry-count increments, or new payment link creation.
-    # This makes the backend independently safe regardless of the calling client.
-    if case.status in {CaseStatus.RECOVERING, CaseStatus.RECOVERED}:
+    # 2. Identify if there's a valid active payment link
+    has_active_link = False
+    if case.payment_link_expires_at:
+        if case.payment_link_expires_at > now:
+            has_active_link = True
+    elif case.status == CaseStatus.RECOVERING:
+        has_active_link = True
+        
+        # Check if it's a mocked demo link that we want to override in manual mode
         events = list_audit_events(db, case.id)
         last_link_event = next((e for e in reversed(events) if e.event_type == "payment_link_created"), None)
         is_mock = last_link_event and last_link_event.event_data.get("url") == "mock_demo_link"
+        
+        if is_mock and not automatic:
+            has_active_link = False # allow manual override of a mock link
 
-        if not is_mock or case.status == CaseStatus.RECOVERED:
+    # 3. Active Link Processing (Reminders & Expiry)
+    if has_active_link:
+        # 3a. Are we scheduled for an expiry check but it's not expired yet?
+        # Alternatively, if we don't have an expiry check but it's an active link, it's just no action.
+        if case.next_action_type == NextActionType.EXPIRY_CHECK and case.next_action_at and case.next_action_at > now:
             return {
                 "action": "no_action",
                 "status": case.status.value,
-                "message": f"Recovery is already {'complete' if case.status == CaseStatus.RECOVERED else 'in progress'} for this case. No new action was taken.",
+                "message": "Payment link is active. Waiting for expiry or payment.",
                 "payment_link_url": None,
             }
+        
+        # Guard: if it's RECOVERING but hasn't reached schedule, don't just spam reminders
+        # We'll just return no_action if there's no next_action_at or if it's in the future.
+        if case.next_action_at is None or case.next_action_at > now:
+            return {
+                "action": "no_action",
+                "status": case.status.value,
+                "message": "Recovery is already in progress.",
+                "payment_link_url": None,
+            }
+        
+        # 3b. Send a Reminder
+        # Send a reminder without incrementing retry_count or creating a new link.
+        # Find the URL from the last link event
+        url = "mock_demo_link"
+        events = list_audit_events(db, case.id)
+        last_link_event = next((e for e in reversed(events) if e.event_type == "payment_link_created"), None)
+        if last_link_event:
+            url = last_link_event.event_data.get("url")
 
-        # It's a mock demo link. Treat as FAILED for policy evaluation so we can generate a real link.
-        case.status = CaseStatus.FAILED
+        # Send notification
+        send_recovery_email(db, case, url)
+        case.last_notification_at = now
+        db.commit()
+        log_audit_event(db, case.id, "payment_reminder_sent", {"url": url})
 
-    # Guard: enforce retry limit
-    if case.retry_count >= case.max_retries:
-        if case.status != CaseStatus.ABANDONED:
-            case.status = CaseStatus.ABANDONED
-            db.commit()
-            log_audit_event(db, case.id, "recovery_stopped", {
-                "reason": f"Maximum recovery attempts ({case.max_retries}) exhausted.",
-            })
+        # Calculate next schedule
+        # Attempt 1 -> Reminder 1 (+24h). Reminder 1 -> Reminder 2 (+72h).
+        reminder_count = sum(1 for e in events if e.event_type == "payment_reminder_sent")
+        if reminder_count == 0:
+            # We just sent Reminder 1. Schedule Reminder 2 at last_retry_at + 72h
+            next_t = (case.last_retry_at or now) + timedelta(hours=72)
+            if case.payment_link_expires_at and next_t > case.payment_link_expires_at:
+                _schedule_next_action(db, case, NextActionType.EXPIRY_CHECK, case.payment_link_expires_at)
+            else:
+                _schedule_next_action(db, case, NextActionType.REMINDER, next_t)
+        else:
+            # We just sent Reminder 2. Wait for expiry.
+            if case.payment_link_expires_at:
+                _schedule_next_action(db, case, NextActionType.EXPIRY_CHECK, case.payment_link_expires_at)
+
         return {
-            "action": "stopped",
+            "action": "reminder",
             "status": case.status.value,
-            "message": f"Maximum recovery attempts ({case.max_retries}) reached. No further action permitted.",
+            "message": "Reminder sent for active payment link.",
+            "payment_link_url": url,
+        }
+
+    # 4. No active link. Are we abandoning?
+    if case.retry_count >= case.max_retries:
+        case.status = CaseStatus.ABANDONED
+        case.next_action_type = NextActionType.NONE
+        db.commit()
+        log_audit_event(db, case.id, "recovery_abandoned", {
+            "reason": f"Maximum recovery attempts ({case.max_retries}) exhausted and final link expired/failed."
+        })
+        return {
+            "action": "abandoned",
+            "status": case.status.value,
+            "message": "Recovery abandoned. All attempts exhausted.",
             "payment_link_url": None,
         }
 
-    # Merchant explicit approval of a HUMAN_REVIEW case:
-    # We pass automatic=False so policy_service allows execution even if amount > 20,000
-    # and bypasses the strict HUMAN_REVIEW block.
+    # 5. Execute new recovery attempt (Policy check)
+    original_status = case.status
     policy_result = check_recovery_policy(case, _policy(db), automatic=automatic)
-    case.policy_check_passed, case.policy_reason = policy_result.allowed, policy_result.reason
-    db.commit(); log_audit_event(db, case.id, "policy_check", policy_result.to_dict())
+    case.policy_check_passed = policy_result.allowed
+    case.policy_reason = policy_result.reason
+    db.commit()
+    log_audit_event(db, case.id, "policy_check", policy_result.to_dict())
+
     if not policy_result.allowed:
-        case.status, case.recovery_action = CaseStatus.HUMAN_REVIEW, RecoveryAction.ESCALATE
-        db.commit(); log_audit_event(db, case.id, "human_escalation", {"reason": policy_result.reason, "source": "policy"})
+        case.status = CaseStatus.HUMAN_REVIEW
+        case.recovery_action = RecoveryAction.ESCALATE
+        case.next_action_type = NextActionType.NONE
+        db.commit()
+        log_audit_event(db, case.id, "human_escalation", {"reason": policy_result.reason, "source": "policy"})
         return {"action": "escalate", "status": case.status.value, "message": policy_result.reason, "payment_link_url": None}
 
-    # For explicit manual executions on HUMAN_REVIEW cases (merchant approval), we no longer
-    # block LOW-probability cases here. They are allowed 1 attempt just like automatic execution.
-
+    # Decide Action
     decision = _last_ai_decision(db, case.id) or fallback_decision(
-    {"recovery_probability": case.recovery_probability},
-    {"payment_link", "retry"},
-)
+        {"recovery_probability": case.recovery_probability},
+        {"payment_link", "retry"},
+    )
     requested = decision.recommended_action
     
     if not automatic:
         action = "payment_link"
     elif requested == "retry":
-        # Razorpay does not expose an API to retry a failed payment. Convert only this unsupported request to a Payment Link.
         action = "payment_link"
     elif requested in {"payment_link", "escalate", "message"}:
         action = requested
     else:
         action = "escalate"
-        log_audit_event(
-            db,
-            case.id,
-            "error",
-            {
-                "operation": "recovery_action_validation",
-                "safe_message": "Invalid recovery action; escalated.",
-            },
-        )
+        log_audit_event(db, case.id, "error", {"operation": "recovery_action_validation", "safe_message": "Invalid recovery action; escalated."})
+    
     log_audit_event(db, case.id, "recovery_started", {"advisory_action": requested, "executed_action": action, "automatic": automatic})
 
     if action == "escalate":
-        case.status, case.recovery_action = CaseStatus.HUMAN_REVIEW, RecoveryAction.ESCALATE
-        db.commit(); log_audit_event(db, case.id, "human_escalation", {"reason": "Advisory escalation"})
+        case.status = CaseStatus.HUMAN_REVIEW
+        case.recovery_action = RecoveryAction.ESCALATE
+        case.next_action_type = NextActionType.NONE
+        db.commit()
+        log_audit_event(db, case.id, "human_escalation", {"reason": "Advisory escalation"})
         return {"action": action, "status": case.status.value, "message": "Escalated to human review.", "payment_link_url": None}
 
-    # Fix: handle Groq 'message' recommendation explicitly — record advisory message,
-    # do NOT create a Payment Link or charge the customer.
     if action == "message":
         case.recovery_action = RecoveryAction.MESSAGE
+        case.next_action_type = NextActionType.NONE
         db.commit()
         log_audit_event(db, case.id, "recovery_message_generated", {
             "channel": "advisory",
@@ -266,6 +335,7 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
             "payment_link_url": None,
         }
 
+    # Execute Payment Link
     updated = db.query(PaymentCase).filter(
         PaymentCase.id == case.id,
         PaymentCase.status == case.status
@@ -275,6 +345,10 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
         db.rollback()
         return {"action": "no_action", "status": case.status.value, "message": "Concurrent recovery blocked.", "payment_link_url": None}
     db.commit()
+
+    # Razorpay expiry: 7 days
+    expiry_time = now + timedelta(days=7)
+    expires_unix = int(expiry_time.timestamp())
 
     try:
         payload = {
@@ -287,7 +361,8 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
                 "name": "Customer",
                 "email": case.customer.email,
                 "contact": "9999999999"
-            }
+            },
+            "expire_by": expires_unix,
         }
         link = RazorpayService().create_payment_link(payload)
     except RazorpayServiceError as exc:
@@ -295,8 +370,24 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
         db.commit()
         log_audit_event(db, case.id, "error", {"operation": "payment_link", "safe_message": "Payment Link creation failed.", "provider_error": str(exc)})
         return {"action": "error", "status": case.status.value, "message": str(exc), "payment_link_url": None}
+
     case.recovery_action = RecoveryAction.PAYMENT_LINK
-    case.retry_count += 1; case.last_retry_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    db.commit(); log_audit_event(db, case.id, "payment_link_created", {"payment_link_id": link.get("id"), "url": link.get("short_url")})
+    case.retry_count += 1
+    case.last_retry_at = now
+    case.payment_link_expires_at = expiry_time
+    
+    # Schedule first reminder at +24h
+    next_t = now + timedelta(hours=24)
+    if next_t > expiry_time:
+        case.next_action_type = NextActionType.EXPIRY_CHECK
+        case.next_action_at = expiry_time
+    else:
+        case.next_action_type = NextActionType.REMINDER
+        case.next_action_at = next_t
+        
+    db.commit()
+    log_audit_event(db, case.id, "payment_link_created", {"payment_link_id": link.get("id"), "url": link.get("short_url"), "expires_at": expiry_time.isoformat()})
+    
     send_recovery_email(db, case, link.get("short_url"))
+    
     return {"action": "payment_link", "status": case.status.value, "message": "Payment Link created.", "payment_link_url": link.get("short_url")}

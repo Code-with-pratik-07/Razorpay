@@ -26,6 +26,13 @@ class RecoveryAction(str, enum.Enum):
     NONE = "none"
 
 
+class NextActionType(str, enum.Enum):
+    REMINDER = "reminder"
+    EXPIRY_CHECK = "expiry_check"
+    RECOVERY_ATTEMPT = "recovery_attempt"
+    NONE = "none"
+
+
 class PaymentCase(Base):
     __tablename__ = "payment_cases"
 
@@ -50,5 +57,9 @@ class PaymentCase(Base):
     policy_check_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     policy_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     notification_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    payment_link_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_action_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_action_type: Mapped[NextActionType] = mapped_column(default=NextActionType.NONE, nullable=False)
+    last_notification_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     customer = relationship("Customer", back_populates="payment_cases")
     audit_events = relationship("AuditEvent", back_populates="payment_case")

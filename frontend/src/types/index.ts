@@ -25,6 +25,10 @@ export type RecoveryCase = {
   policy_reason: string | null;
   notification_status: string | null;
   created_at: string;
+  next_action_at: string | null;
+  next_action_type: string;
+  payment_link_expires_at: string | null;
+  last_notification_at: string | null;
 };
 
 export type Explanation = RecoveryCase & {

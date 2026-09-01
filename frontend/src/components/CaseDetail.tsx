@@ -220,7 +220,8 @@ export function CaseDetail({
            <div className="action-info">
              {isAbandoned ? (
                <span style={{color:'#f87171'}}>
-                 <b>STOPPED</b><br/>Low recovery probability or max attempts reached.
+                 <b>Recovery abandoned</b><br/>
+                 Recovery attempts exhausted — waiting for final link expiry.
                </span>
              ) : isRecovered ? (
                <span>
@@ -235,9 +236,22 @@ export function CaseDetail({
              ) : (
                <span>
                  <b>Recovery:</b> {executionMode || 'AUTOMATIC'}<br/>
-                 <b>Payment Link:</b> {currentLink ? 'CREATED' : explanation?.execution_error ? 'FAILED TO CREATE' : (selected.status === 'failed' ? 'FAILED / PENDING' : 'PENDING')}<br/>
-                 <b>Customer Payment:</b> AWAITING PAYMENT<br/>
-                 <b>Notification:</b> {selected.notification_status === 'SENT' ? 'EMAIL SENT' : selected.notification_status === 'MOCKED' ? 'EMAIL MOCKED' : selected.notification_status === 'FAILED' ? 'EMAIL FAILED' : 'NOT AVAILABLE'}
+                 <b>Attempts Used:</b> {selected.retry_count} / {selected.max_retries}<br/>
+                 <b>Active Payment Link:</b> {(selected.payment_link_expires_at && new Date(selected.payment_link_expires_at).getTime() > Date.now()) ? 'Yes' : 'No'}<br/>
+                 {selected.payment_link_expires_at && (
+                    <><b>Payment Link Expiry:</b> {new Date(selected.payment_link_expires_at).toLocaleString()}<br/></>
+                 )}
+                 {selected.last_notification_at && (
+                    <><b>Last Notification:</b> {new Date(selected.last_notification_at).toLocaleString()}<br/></>
+                 )}
+                 <b>Next Scheduled Action:</b> {
+                    selected.next_action_type === 'reminder' ? `Reminder scheduled for ${new Date(selected.next_action_at || '').toLocaleString()}` :
+                    selected.next_action_type === 'expiry_check' ? `Waiting for payment link expiry at ${new Date(selected.next_action_at || '').toLocaleString()}` :
+                    selected.next_action_type === 'recovery_attempt' ? `Next recovery attempt eligible after expiry` :
+                    selected.retry_count >= selected.max_retries ? `Recovery attempts exhausted — waiting for final link expiry` :
+                    currentLink ? 'Waiting for customer payment' :
+                    (explanation?.execution_error ? 'FAILED TO CREATE' : 'Pending')
+                 }
                </span>
              )}
            </div>

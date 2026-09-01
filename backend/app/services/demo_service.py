@@ -71,9 +71,10 @@ def seed_demo_data(reset: bool = False):
         )
         case_d = PaymentCase(
             case_number="DEMO-D-STOPPED", customer_id=customers[3].id, razorpay_payment_id="pay_demo_stopped", razorpay_order_id="order_demo_stopped",
-            amount=30000, currency="INR", status=CaseStatus.FAILED, failure_reason="bank_declined", payment_method="card",
-            recovery_probability=0.25, recovery_action=RecoveryAction.NONE, created_at=now - timedelta(hours=1),
-            policy_check_passed=True, policy_reason="Automatic recovery approved.", notification_status="PENDING", max_retries=1
+            amount=30000, currency="INR", status=CaseStatus.ABANDONED, failure_reason="bank_declined", payment_method="card",
+            recovery_probability=0.25, recovery_action=RecoveryAction.NONE, created_at=now - timedelta(days=2),
+            policy_check_passed=True, policy_reason="Automatic recovery approved.", notification_status="SENT", max_retries=1, retry_count=1,
+            payment_link_expires_at=now - timedelta(hours=2)
         )
         db.add_all([case_a, case_b, case_b_human, case_c, case_d])
         db.flush()
