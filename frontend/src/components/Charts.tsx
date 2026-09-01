@@ -96,14 +96,9 @@ export function Charts({ stats, cases }: ChartsProps) {
               <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} allowDecimals={false} />
               <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F4F4F5' }} />
-              <Bar dataKey="value" fill="var(--color-accent)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="value" fill="var(--color-accent)" radius={[4, 4, 0, 0]} minPointSize={3} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
-        <div className="chart-summary" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center', fontSize: '12px', color: '#71717A', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #E4E4E7' }}>
-          {unifiedStatusData.map(item => (
-            <span key={item.name}><strong style={{ color: '#3F3F46' }}>{item.name}:</strong> {item.value}</span>
-          ))}
         </div>
       </div>
 
