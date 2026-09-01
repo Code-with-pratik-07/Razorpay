@@ -90,3 +90,76 @@ def test_recovery_rate_zero_total():
         assert stats["revenue_recovered"] == 0
         assert stats["revenue_at_risk"] == 0
         assert stats["recovery_rate"] == 0.0
+
+def test_customer_payment_status_awaiting_payment():
+    with SessionLocal() as db:
+        db.query(PaymentCase).delete()
+        db.commit()
+
+        case = _create_case(db, CaseStatus.RECOVERING, 1000)
+        
+        stats = dashboard_stats(db)
+        cps = stats["customer_payment_status"]
+        assert cps["awaiting_payment"] == 1
+        assert cps["payment_failed"] == 0
+        assert cps["payment_successful"] == 0
+
+def test_customer_payment_status_payment_failure():
+    with SessionLocal() as db:
+        db.query(PaymentCase).delete()
+        db.commit()
+
+        case = _create_case(db, CaseStatus.RECOVERING, 1000)
+        case.last_payment_status = "FAILED"
+        db.commit()
+        
+        stats = dashboard_stats(db)
+        cps = stats["customer_payment_status"]
+        assert cps["awaiting_payment"] == 0
+        assert cps["payment_failed"] == 1
+        assert cps["payment_successful"] == 0
+
+def test_customer_payment_status_payment_success():
+    with SessionLocal() as db:
+        db.query(PaymentCase).delete()
+        db.commit()
+
+        case = _create_case(db, CaseStatus.RECOVERED, 1000)
+        case.last_payment_status = "SUCCESS"
+        db.commit()
+        
+        stats = dashboard_stats(db)
+        cps = stats["customer_payment_status"]
+        assert cps["awaiting_payment"] == 0
+        assert cps["payment_failed"] == 0
+        assert cps["payment_successful"] == 1
+
+def test_customer_payment_status_failed_then_successful():
+    with SessionLocal() as db:
+        db.query(PaymentCase).delete()
+        db.commit()
+
+        case = _create_case(db, CaseStatus.RECOVERED, 1000)
+        case.last_payment_status = "SUCCESS"
+        # The logic dictates if RECOVERED or SUCCESS it counts as success, overwriting failed.
+        db.commit()
+        
+        stats = dashboard_stats(db)
+        cps = stats["customer_payment_status"]
+        assert cps["awaiting_payment"] == 0
+        assert cps["payment_failed"] == 0
+        assert cps["payment_successful"] == 1
+
+def test_customer_payment_status_zero_categories():
+    with SessionLocal() as db:
+        db.query(PaymentCase).delete()
+        db.commit()
+
+        # A case that hasn't reached payment stage
+        _create_case(db, CaseStatus.ANALYZING, 1000)
+        
+        stats = dashboard_stats(db)
+        cps = stats["customer_payment_status"]
+        assert cps["awaiting_payment"] == 0
+        assert cps["payment_failed"] == 0
+        assert cps["payment_successful"] == 0

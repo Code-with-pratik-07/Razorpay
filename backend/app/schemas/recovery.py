@@ -68,6 +68,7 @@ class DashboardStats(BaseModel):
     human_review_cases: int
     human_review_amount: int
     automatic_recoveries: int
+    customer_payment_status: dict[str, int]
 
 
 class ExperimentResult(BaseModel):

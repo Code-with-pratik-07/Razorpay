@@ -77,6 +77,7 @@ export type DashboardStats = {
   human_review_cases: number;
   human_review_amount: number;
   automatic_recoveries: number;
+  customer_payment_status: Record<string, number>;
 };
 
 export const formatINR = (paise: number) =>

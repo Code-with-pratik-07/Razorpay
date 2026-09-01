@@ -42,6 +42,22 @@ export function Charts({ stats, cases }: ChartsProps) {
     }));
   }, [cases]);
 
+  const customerPaymentData = useMemo(() => {
+    if (!stats || !stats.customer_payment_status) {
+      return [
+        { name: "Awaiting Payment", value: 0 },
+        { name: "Payment Failed", value: 0 },
+        { name: "Payment Successful", value: 0 },
+      ];
+    }
+    const { awaiting_payment = 0, payment_failed = 0, payment_successful = 0 } = stats.customer_payment_status;
+    return [
+      { name: "Awaiting Payment", value: awaiting_payment },
+      { name: "Payment Failed", value: payment_failed },
+      { name: "Payment Successful", value: payment_successful },
+    ];
+  }, [stats]);
+
   const failureData = useMemo(() => {
     const counts = cases.reduce((acc, curr) => {
       const reason = curr.failure_reason || "unknown";
@@ -83,6 +99,24 @@ export function Charts({ stats, cases }: ChartsProps) {
               <YAxis tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} />
               <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F4F4F5' }} />
               <Bar dataKey="value" fill="var(--color-accent)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="chart-card">
+        <div className="chart-header">
+          <p className="eyebrow">Customer Actions</p>
+          <h3>Customer Payment Status Breakdown</h3>
+        </div>
+        <div className="chart-container">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={customerPaymentData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E4E4E7" />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F4F4F5' }} />
+              <Bar dataKey="value" fill="#3B82F6" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
