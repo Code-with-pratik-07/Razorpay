@@ -49,3 +49,32 @@ def test_retry_limit_and_cooldown_are_enforced(policy: RecoveryPolicy) -> None:
 def test_expired_and_terminal_cases_are_blocked(policy: RecoveryPolicy) -> None:
     assert not _check(policy, created_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=8)).allowed
     assert not _check(policy, status=CaseStatus.HUMAN_REVIEW).allowed
+
+
+from app.ai.groq_service import fallback_decision
+
+def test_fallback_decision_policy_blocked_high():
+    decision = fallback_decision({"recovery_probability": 0.88}, set())
+    assert decision.recommended_action == "escalate"
+    assert "Recovery probability is high, but automatic recovery is blocked by policy." in decision.reasoning
+    assert "Please wait while we review" in decision.customer_message
+
+def test_fallback_decision_policy_blocked_uncertain():
+    decision = fallback_decision({"recovery_probability": 0.55}, set())
+    assert decision.recommended_action == "escalate"
+    assert "Recovery probability is uncertain, and automatic recovery is blocked by policy." in decision.reasoning
+
+def test_fallback_decision_policy_blocked_low():
+    decision = fallback_decision({"recovery_probability": 0.25}, set())
+    assert decision.recommended_action == "escalate"
+    assert "Recovery probability is low, and automatic recovery is blocked by policy." in decision.reasoning
+
+def test_fallback_decision_policy_blocked_cold_start():
+    decision = fallback_decision({"recovery_probability": 0.95, "is_cold_start": True}, set())
+    assert decision.recommended_action == "escalate"
+    assert "Customer history is limited, and automatic recovery is blocked by policy." in decision.reasoning
+
+def test_fallback_decision_automatic_permitted_high():
+    decision = fallback_decision({"recovery_probability": 0.88}, {"payment_link"})
+    assert decision.recommended_action == "payment_link"
+    assert "High recovery probability. Automatic payment-link recovery is recommended." in decision.reasoning

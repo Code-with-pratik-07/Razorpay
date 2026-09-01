@@ -35,13 +35,33 @@ def groq_structured_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
 def fallback_decision(context: dict[str, Any], permitted_actions: set[str], reason: str = "Deterministic fallback") -> AIDecision:
     probability = float(context.get("recovery_probability") or 0)
-    action = "payment_link" if "payment_link" in permitted_actions else "message"
-    if not permitted_actions:
-        action = "escalate"
-    elif action not in permitted_actions:
-        action = next(iter(sorted(permitted_actions)))
-    
     is_cold_start = context.get("is_cold_start", False)
+    
+    if not permitted_actions:
+        # Policy is blocking automatic execution
+        action = "escalate"
+        customer_message = "Your payment could not be completed. Please wait while we review the available recovery options."
+        
+        if is_cold_start:
+            reasoning = "Customer history is limited, and automatic recovery is blocked by policy. Human approval is required before creating a payment link."
+        elif probability >= 0.60:
+            reasoning = "Recovery probability is high, but automatic recovery is blocked by policy. Human approval is required before creating a payment link."
+        elif probability >= 0.40:
+            reasoning = "Recovery probability is uncertain, and automatic recovery is blocked by policy. Human approval is required before creating a payment link."
+        else:
+            reasoning = "Recovery probability is low, and automatic recovery is blocked by policy. Human approval is required before creating a payment link."
+            
+        return AIDecision(
+            recommended_action=action, confidence=0.5,
+            reasoning=reasoning,
+            customer_message=customer_message,
+            source="fallback",
+        )
+
+    # Automatic execution permitted
+    action = "payment_link" if "payment_link" in permitted_actions else "message"
+    if action not in permitted_actions:
+        action = next(iter(sorted(permitted_actions)))
     
     if is_cold_start:
         reasoning = "Customer history is limited. ML confidence is unavailable, so a controlled recovery strategy is being used."
