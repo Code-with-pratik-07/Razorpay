@@ -68,7 +68,11 @@ export function Charts({ stats, cases }: ChartsProps) {
   }, [cases]);
 
   return (
-    <div className="charts-grid">
+    <>
+      <div className="alert info" style={{ marginBottom: '24px', backgroundColor: '#eff6ff', color: '#1e3a8a', border: '1px solid #bfdbfe', padding: '16px', borderRadius: '8px' }}>
+        <strong>Note:</strong> Recovery Pipeline Status and Payment Attempt Status track different stages of the recovery process. A customer payment attempt can fail while the recovery case remains active.
+      </div>
+      <div className="charts-grid">
       <div className="chart-card">
         <div className="chart-header">
           <p className="eyebrow">Financial Impact</p>
@@ -88,8 +92,9 @@ export function Charts({ stats, cases }: ChartsProps) {
 
       <div className="chart-card">
         <div className="chart-header">
-          <p className="eyebrow">Case Volume</p>
-          <h3>Case Status Breakdown</h3>
+          <p className="eyebrow">Recovery Pipeline</p>
+          <h3>Recovery Pipeline Status</h3>
+          <p className="chart-desc" style={{ fontSize: '13px', color: '#71717A', marginTop: '4px' }}>Track the current stage of each payment recovery case.</p>
         </div>
         <div className="chart-container">
           <ResponsiveContainer width="100%" height="100%">
@@ -106,8 +111,9 @@ export function Charts({ stats, cases }: ChartsProps) {
 
       <div className="chart-card">
         <div className="chart-header">
-          <p className="eyebrow">Customer Actions</p>
-          <h3>Customer Payment Status Breakdown</h3>
+          <p className="eyebrow">Customer Payment Outcome</p>
+          <h3>Payment Attempt Status</h3>
+          <p className="chart-desc" style={{ fontSize: '13px', color: '#71717A', marginTop: '4px' }}>Track the outcome of the customer's latest interaction with a recovery payment link.</p>
         </div>
         <div className="chart-container">
           <ResponsiveContainer width="100%" height="100%">
@@ -140,5 +146,6 @@ export function Charts({ stats, cases }: ChartsProps) {
         </div>
       </div>
     </div>
+    </>
   );
 }
