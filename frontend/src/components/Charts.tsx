@@ -30,33 +30,31 @@ export function Charts({ stats, cases }: ChartsProps) {
     ];
   }, [stats]);
 
-  const statusData = useMemo(() => {
-    const counts = cases.reduce((acc, curr) => {
-      acc[curr.status] = (acc[curr.status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    const STATUS_ORDER = ["failed", "recovering", "recovered", "abandoned"];
-    return STATUS_ORDER.map((status) => ({
-      name: title(status),
-      value: counts[status] || 0,
-    }));
-  }, [cases]);
+  const unifiedStatusData = useMemo(() => {
+    let recovering = 0;
+    let paymentFailed = 0;
+    let recovered = 0;
+    let abandoned = 0;
 
-  const customerPaymentData = useMemo(() => {
-    if (!stats || !stats.customer_payment_status) {
-      return [
-        { name: "Awaiting Payment", value: 0 },
-        { name: "Payment Failed", value: 0 },
-        { name: "Payment Successful", value: 0 },
-      ];
-    }
-    const { awaiting_payment = 0, payment_failed = 0, payment_successful = 0 } = stats.customer_payment_status;
+    cases.forEach((curr) => {
+      if (curr.status === "recovered" || curr.last_payment_status === "SUCCESS") {
+        recovered++;
+      } else if (curr.status === "abandoned") {
+        abandoned++;
+      } else if (curr.last_payment_status === "FAILED") {
+        paymentFailed++;
+      } else if (curr.status === "recovering") {
+        recovering++;
+      }
+    });
+
     return [
-      { name: "Awaiting Payment", value: awaiting_payment },
-      { name: "Payment Failed", value: payment_failed },
-      { name: "Payment Successful", value: payment_successful },
+      { name: "Recovering", value: recovering },
+      { name: "Payment Failed", value: paymentFailed },
+      { name: "Recovered", value: recovered },
+      { name: "Abandoned", value: abandoned },
     ];
-  }, [stats]);
+  }, [cases]);
 
   const failureData = useMemo(() => {
     const counts = cases.reduce((acc, curr) => {
@@ -68,11 +66,7 @@ export function Charts({ stats, cases }: ChartsProps) {
   }, [cases]);
 
   return (
-    <>
-      <div className="alert info" style={{ marginBottom: '24px', backgroundColor: '#eff6ff', color: '#1e3a8a', border: '1px solid #bfdbfe', padding: '16px', borderRadius: '8px' }}>
-        <strong>Note:</strong> Recovery Pipeline Status and Payment Attempt Status track different stages of the recovery process. A customer payment attempt can fail while the recovery case remains active.
-      </div>
-      <div className="charts-grid">
+    <div className="charts-grid">
       <div className="chart-card">
         <div className="chart-header">
           <p className="eyebrow">Financial Impact</p>
@@ -89,40 +83,20 @@ export function Charts({ stats, cases }: ChartsProps) {
           </ResponsiveContainer>
         </div>
       </div>
-
       <div className="chart-card">
         <div className="chart-header">
-          <p className="eyebrow">Recovery Pipeline</p>
-          <h3>Recovery Pipeline Status</h3>
-          <p className="chart-desc" style={{ fontSize: '13px', color: '#71717A', marginTop: '4px' }}>Track the current stage of each payment recovery case.</p>
+          <p className="eyebrow">Case Volume</p>
+          <h3>Recovery Status</h3>
+          <p className="chart-desc" style={{ fontSize: '13px', color: '#71717A', marginTop: '4px' }}>Overview of the current recovery and payment outcomes.</p>
         </div>
         <div className="chart-container">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={statusData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E4E4E7" />
-              <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} />
-              <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F4F4F5' }} />
-              <Bar dataKey="value" fill="var(--color-accent)" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="chart-card">
-        <div className="chart-header">
-          <p className="eyebrow">Customer Payment Outcome</p>
-          <h3>Payment Attempt Status</h3>
-          <p className="chart-desc" style={{ fontSize: '13px', color: '#71717A', marginTop: '4px' }}>Track the outcome of the customer's latest interaction with a recovery payment link.</p>
-        </div>
-        <div className="chart-container">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={customerPaymentData}>
+            <BarChart data={unifiedStatusData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E4E4E7" />
               <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} allowDecimals={false} />
               <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F4F4F5' }} />
-              <Bar dataKey="value" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="value" fill="var(--color-accent)" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -146,6 +120,5 @@ export function Charts({ stats, cases }: ChartsProps) {
         </div>
       </div>
     </div>
-    </>
   );
 }
