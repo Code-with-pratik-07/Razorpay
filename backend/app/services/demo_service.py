@@ -33,6 +33,7 @@ def seed_demo_data(reset: bool = False):
             suffix = uuid.uuid4().hex[:6]
             c = Customer(
                 email=f"demo_user_{suffix}@example.com",
+                phone=f"+91 98765 {random.randint(10000, 99999)}",
                 razorpay_customer_id=f"cust_demo_{suffix}",
                 successful_payments=random.randint(0, 5),
                 failed_payments=random.randint(1, 3),

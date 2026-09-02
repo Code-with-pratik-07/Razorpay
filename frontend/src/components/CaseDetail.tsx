@@ -85,6 +85,8 @@ export function CaseDetail({
           <div className="details-meta email-status">
             <strong>Notification: </strong>
             {selected.notification_status === 'SENT' ? "✓ Recovery email sent to customer." :
+             selected.notification_status === 'WHATSAPP_SIMULATED' ? "✓ WhatsApp notification (Simulated for Demo)" :
+             selected.notification_status === 'SMS_SIMULATED' ? "✓ SMS notification (Simulated for Demo)" :
              selected.notification_status === 'NOT_AVAILABLE' ? "No customer email available." :
              selected.notification_status === 'FAILED' ? "Payment Link exists, but email delivery failed." :
              selected.notification_status === 'MOCKED' ? "Email mocked — " : "Pending"}
@@ -168,7 +170,66 @@ export function CaseDetail({
                   </b>
                </div>
              </div>
-          </div>
+
+              {explanation.channel_intelligence && (
+                <div className="intelligence-card communication-intelligence-card" style={{gridColumn: '1 / -1'}}>
+                  <div className="comm-card-header">
+                    <h4><i/> COMMUNICATION INTELLIGENCE</h4>
+                    <span className={`channel-status-pill status-${explanation.channel_intelligence.status.toLowerCase()}`}>
+                      {explanation.channel_intelligence.status === 'RECOMMENDED' ? 'Recommended for recovery' :
+                       explanation.channel_intelligence.status === 'SIMULATED' ? 'Simulated for Demo' :
+                       explanation.channel_intelligence.status === 'SENT' ? 'Dispatched' :
+                       explanation.channel_intelligence.status === 'POLICY_BLOCKED' ? 'Policy Blocked' :
+                       explanation.channel_intelligence.status === 'COMPLETED' ? 'Recovery Complete' :
+                       explanation.channel_intelligence.status === 'ATTEMPT_LIMIT_REACHED' ? 'Attempt Limit Reached' :
+                       explanation.channel_intelligence.status}
+                    </span>
+                  </div>
+
+                  <div className="comm-stats-grid">
+                    <div className="comm-stat-box">
+                      <span className="comm-box-label">Recommended Channel</span>
+                      <div className="comm-channel-badge">
+                        <span className="comm-channel-icon">
+                          {explanation.channel_intelligence.recommended_channel === 'whatsapp' ? '💬' :
+                           explanation.channel_intelligence.recommended_channel === 'sms' ? '📱' : '✉️'}
+                        </span>
+                        <b className="comm-channel-name">{title(explanation.channel_intelligence.recommended_channel)}</b>
+                      </div>
+                    </div>
+
+                    <div className="comm-stat-box">
+                      <span className="comm-box-label">Channel Suitability Score</span>
+                      <b className="comm-suitability-val">
+                        {(explanation.channel_intelligence.suitability_score * 100).toFixed(0)}%
+                      </b>
+                    </div>
+
+                    <div className="comm-stat-box comm-stat-wide">
+                      <span className="comm-box-label">Alternatives</span>
+                      <div className="comm-alt-list">
+                        {explanation.channel_intelligence.alternatives.map((alt) => {
+                          const altScore = explanation.channel_intelligence?.channel_scores[alt] ?? 0;
+                          return (
+                            <span key={alt} className="comm-alt-chip">
+                              <span className="comm-alt-icon">
+                                {alt === 'whatsapp' ? '💬' : alt === 'sms' ? '📱' : '✉️'}
+                              </span>
+                              {title(alt)} — <b>{(altScore * 100).toFixed(0)}%</b>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="comm-reason-box">
+                    <span className="comm-reason-label">Why this channel?</span>
+                    <p className="comm-reason-text">{explanation.channel_intelligence.reason}</p>
+                  </div>
+                </div>
+              )}
+           </div>
         )}
 
         {explanation?.ai && <AIAdvisorCard explanation={explanation} />}

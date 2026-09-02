@@ -39,8 +39,21 @@ class CaseSummary(BaseModel):
     next_action_at: UTCDateTime | None = None
     next_action_type: str | None = None
     last_notification_at: UTCDateTime | None = None
+    selected_channel: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ChannelIntelligence(BaseModel):
+    recommended_channel: str
+    suitability_score: float
+    channel_scores: dict[str, float]
+    reason: str
+    alternatives: list[str]
+    status: str
+    attempts_count: int = 0
+    last_channel_used: str | None = None
+    last_communicated_at: UTCDateTime | None = None
 
 
 class CaseExplanation(CaseSummary):
@@ -51,6 +64,7 @@ class CaseExplanation(CaseSummary):
     ml_decision: str | None = None  # "HIGH" | "UNCERTAIN" | "LOW" | "COLD_START" | None
     execution_error: str | None = None
     manual_execution: bool = False
+    channel_intelligence: ChannelIntelligence | None = None
 
 
 class ExecuteRecoveryResponse(BaseModel):

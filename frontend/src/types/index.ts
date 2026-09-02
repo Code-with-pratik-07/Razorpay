@@ -32,6 +32,19 @@ export type RecoveryCase = {
   last_payment_status?: string | null;
   last_payment_attempt_at?: string | null;
   last_payment_failure_reason?: string | null;
+  selected_channel?: string | null;
+};
+
+export type ChannelIntelligence = {
+  recommended_channel: "email" | "sms" | "whatsapp" | string;
+  suitability_score: number;
+  channel_scores: Record<string, number>;
+  reason: string;
+  alternatives: string[];
+  status: string;
+  attempts_count: number;
+  last_channel_used?: string | null;
+  last_communicated_at?: string | null;
 };
 
 export type Explanation = RecoveryCase & {
@@ -54,6 +67,7 @@ export type Explanation = RecoveryCase & {
   ml_decision: "HIGH" | "UNCERTAIN" | "LOW" | "COLD_START" | null;
   execution_error?: string | null;
   manual_execution: boolean;
+  channel_intelligence?: ChannelIntelligence | null;
 };
 
 export type AuditEvent = {

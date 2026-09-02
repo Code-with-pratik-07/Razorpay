@@ -7,6 +7,7 @@ from app.models.payment_case import PaymentCase
 from app.schemas.recovery import CaseExplanation, CaseSummary, ExecuteRecoveryResponse
 from app.services.recovery_service import _features, _last_ai_decision, _policy, analyze_case, execute_recovery, ml_routing_decision
 from app.services.audit_service import list_audit_events
+from app.services.channel_service import get_case_channel_intelligence
 from app.services.policy_service import check_recovery_policy
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
@@ -33,7 +34,8 @@ def _summary(case: PaymentCase) -> dict:
         "last_notification_at": case.last_notification_at,
         "last_payment_status": case.last_payment_status,
         "last_payment_attempt_at": case.last_payment_attempt_at,
-        "last_payment_failure_reason": case.last_payment_failure_reason
+        "last_payment_failure_reason": case.last_payment_failure_reason,
+        "selected_channel": getattr(case, "selected_channel", None),
     }
 
 
@@ -84,6 +86,8 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
     
     manual_execution = any(e.event_type == "recovery_started" and e.event_data.get("automatic") is False for e in events)
     
+    channel_intelligence = get_case_channel_intelligence(db, case)
+
     return CaseExplanation(
         **_summary(case),
         ml={"recovery_probability": case.recovery_probability, "features": _features(case)},
@@ -93,6 +97,7 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
         ml_decision=ml_routing_decision(case.recovery_probability, is_cold_start),
         execution_error=execution_error,
         manual_execution=manual_execution,
+        channel_intelligence=channel_intelligence,
     )
 
 

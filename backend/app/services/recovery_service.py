@@ -13,6 +13,7 @@ from app.models.payment_case import CaseStatus, PaymentCase, RecoveryAction, Nex
 from app.models.recovery_policy import RecoveryPolicy
 from app.schemas.recovery import AIDecision
 from app.services.audit_service import list_audit_events, log_audit_event
+from app.services.channel_service import dispatch_channel_communication, evaluate_channel_suitability
 from app.services.notification_service import send_recovery_email
 from app.services.policy_service import check_recovery_policy
 from app.services.razorpay_service import RazorpayService, RazorpayServiceError
@@ -154,8 +155,26 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
         else:  # HIGH
             case.status = CaseStatus.HUMAN_REVIEW if original_status == CaseStatus.HUMAN_REVIEW else CaseStatus.FAILED
 
+    # -----------------------------------------------------------------
+    # Channel Intelligence evaluation
+    # -----------------------------------------------------------------
+    channel_rec = evaluate_channel_suitability(case, case.customer)
+    log_audit_event(db, case.id, "channel_intelligence_evaluated", {
+        "recommended_channel": channel_rec.recommended_channel,
+        "suitability_score": channel_rec.suitability_score,
+        "channel_scores": channel_rec.channel_scores,
+        "reason": channel_rec.reason,
+        "alternatives": channel_rec.alternatives,
+    })
+
     db.commit()
-    return {"prediction": prediction, "policy": policy_result.to_dict(), "ai": decision, "ml_decision": ml_decision}
+    return {
+        "prediction": prediction,
+        "policy": policy_result.to_dict(),
+        "ai": decision,
+        "ml_decision": ml_decision,
+        "channel_intelligence": channel_rec,
+    }
 
 
 def _schedule_next_action(db: Session, case: PaymentCase, action_type: NextActionType, dt: datetime):
@@ -233,10 +252,8 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
         if last_link_event:
             url = last_link_event.event_data.get("url")
 
-        # Send notification
-        send_recovery_email(db, case, url)
-        case.last_notification_at = now
-        db.commit()
+        # Send notification via Channel Intelligence
+        dispatch_channel_communication(db, case, url, automatic=automatic)
         log_audit_event(db, case.id, "payment_reminder_sent", {"url": url})
 
         # Calculate next schedule
@@ -388,6 +405,6 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
     db.commit()
     log_audit_event(db, case.id, "payment_link_created", {"payment_link_id": link.get("id"), "url": link.get("short_url"), "expires_at": expiry_time.isoformat()})
     
-    send_recovery_email(db, case, link.get("short_url"))
+    dispatch_channel_communication(db, case, link.get("short_url"), automatic=automatic)
     
     return {"action": "payment_link", "status": case.status.value, "message": "Payment Link created.", "payment_link_url": link.get("short_url")}

@@ -29,6 +29,16 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    from app.models import audit_event, customer, payment_case, recovery_policy, webhook_log  # noqa: F401
+    from app.models import audit_event, communication_record, customer, payment_case, recovery_policy, webhook_log  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+
+    # Safe backward-compatible column migration for existing SQLite / Postgres tables
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE payment_cases ADD COLUMN selected_channel VARCHAR(30)"))
+            conn.commit()
+    except Exception:
+        # Column already exists or table freshly created
+        pass

@@ -1132,3 +1132,172 @@ h1, h2, h3, h4, p { margin: 0; }
 .email-preview-content .button * {
   color: #ffffff;
 }
+
+/* ---------------------------------------------------------------------------
+   COMMUNICATION INTELLIGENCE SECTION
+--------------------------------------------------------------------------- */
+.communication-intelligence-card {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+}
+
+.comm-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.comm-card-header h4 {
+  margin: 0;
+  color: #818cf8;
+}
+
+.channel-status-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.channel-status-pill.status-recommended {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+}
+
+.channel-status-pill.status-simulated {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+}
+
+.channel-status-pill.status-sent {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.channel-status-pill.status-policy_blocked {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.channel-status-pill.status-completed {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.channel-status-pill.status-attempt_limit_reached {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.comm-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.comm-stat-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.comm-stat-wide {
+  grid-column: span 1;
+}
+
+.comm-box-label {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.comm-channel-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.comm-channel-icon {
+  font-size: 1.25rem;
+}
+
+.comm-channel-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.comm-suitability-val {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #34d399;
+}
+
+.comm-alt-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.comm-alt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+}
+
+.comm-alt-chip b {
+  color: #818cf8;
+}
+
+.comm-alt-icon {
+  font-size: 0.85rem;
+}
+
+.comm-reason-box {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.comm-reason-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #818cf8;
+  letter-spacing: 0.05em;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.comm-reason-text {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #e2e8f0;
+  line-height: 1.45;
+}
