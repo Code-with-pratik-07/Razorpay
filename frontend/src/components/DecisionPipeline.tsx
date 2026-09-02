@@ -70,7 +70,7 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
          </div>
        </div>
 
-       {/* Recovery step */}
+       {/* Recovery steps */}
        {isAbandoned && selected.retry_count === 0 ? (
          <div className="pipeline-step blocked">
            <div className="step-icon">■</div>
@@ -79,22 +79,28 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
              <div className="step-meta">No recovery action permitted</div>
            </div>
          </div>
-       ) : isHumanReview ? (
-         <div className="pipeline-step warning">
-           <div className="step-icon">→</div>
-           <div className="step-content">
-             <div className="step-title">HUMAN REVIEW REQUIRED</div>
-             <div className="step-meta">{!policyAllowed ? 'Policy blocked automatic recovery' : 'Below automatic recovery threshold'}</div>
-           </div>
-         </div>
        ) : (
-         <div className={`pipeline-step ${isRecovered || isRecovering || selected.retry_count > 0 ? 'completed' : explanation?.execution_error ? 'warning' : policyDone && !policyAllowed ? 'blocked' : ''}`}>
-          <div className="step-icon">{isRecovered || isRecovering || selected.retry_count > 0 ? '✓' : explanation?.execution_error ? '!' : policyDone && !policyAllowed ? '—' : '•'}</div>
-          <div className="step-content">
-            <div className="step-title">RECOVERY</div>
-            <div className="step-meta">{isRecovered || isRecovering || selected.retry_count > 0 ? 'Payment Link created' : explanation?.execution_error ? `Execution Failed: ${explanation.execution_error}` : policyDone ? 'Not executed' : 'Pending'}</div>
-          </div>
-        </div>
+         <>
+           {(!policyAllowed && policyDone) && (
+             <div className={`pipeline-step ${explanation?.manual_execution ? 'completed' : 'warning'}`}>
+               <div className="step-icon">{explanation?.manual_execution ? '✓' : '→'}</div>
+               <div className="step-content">
+                 <div className="step-title">HUMAN REVIEW</div>
+                 <div className="step-meta">{explanation?.manual_execution ? 'Manual review approved' : 'Policy blocked automatic recovery'}</div>
+               </div>
+             </div>
+           )}
+
+           {(!policyDone || policyAllowed || explanation?.manual_execution) && (
+             <div className={`pipeline-step ${isRecovered || isRecovering || selected.retry_count > 0 ? 'completed' : explanation?.execution_error ? 'warning' : ''}`}>
+              <div className="step-icon">{isRecovered || isRecovering || selected.retry_count > 0 ? '✓' : explanation?.execution_error ? '!' : '•'}</div>
+              <div className="step-content">
+                <div className="step-title">{explanation?.manual_execution ? 'MANUAL RECOVERY' : 'AUTOMATIC RECOVERY'}</div>
+                <div className="step-meta">{isRecovered || isRecovering || selected.retry_count > 0 ? 'Payment Link created' : explanation?.execution_error ? `Execution Failed: ${explanation.execution_error}` : 'Pending'}</div>
+              </div>
+            </div>
+           )}
+         </>
        )}
 
        {/* Customer payment step */}

@@ -61,17 +61,28 @@ def explanation(case_id: str, db: Session = Depends(get_db)) -> CaseExplanation:
 
 
 def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
-    if case.policy_reason:
+    events = list_audit_events(db, case.id)
+    
+    first_policy_check = next((e for e in events if e.event_type == "policy_check"), None)
+    if first_policy_check:
+        policy = {
+            "allowed": first_policy_check.event_data.get("allowed"), 
+            "reason": first_policy_check.event_data.get("reason"), 
+            "requires_human_approval": not first_policy_check.event_data.get("allowed")
+        }
+    elif case.policy_reason:
         policy = {"allowed": case.policy_check_passed, "reason": case.policy_reason, "requires_human_approval": not case.policy_check_passed}
     else:
         policy = check_recovery_policy(case, _policy(db)).to_dict()
+        
     history = {"lifetime_value": case.customer.lifetime_value, "successful_payments": case.customer.successful_payments, "failed_payments": case.customer.failed_payments}
     
     is_cold_start = (case.customer.successful_payments + case.customer.failed_payments) < 3
     
-    events = list_audit_events(db, case.id)
     error_event = next((e for e in reversed(events) if e.event_type == "error" and e.event_data.get("operation") == "payment_link"), None)
     execution_error = error_event.event_data.get("provider_error") if error_event else None
+    
+    manual_execution = any(e.event_type == "recovery_started" and e.event_data.get("automatic") is False for e in events)
     
     return CaseExplanation(
         **_summary(case),
@@ -81,6 +92,7 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
         customer_history=history,
         ml_decision=ml_routing_decision(case.recovery_probability, is_cold_start),
         execution_error=execution_error,
+        manual_execution=manual_execution,
     )
 
 

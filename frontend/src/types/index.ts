@@ -53,6 +53,7 @@ export type Explanation = RecoveryCase & {
   };
   ml_decision: "HIGH" | "UNCERTAIN" | "LOW" | "COLD_START" | null;
   execution_error?: string | null;
+  manual_execution: boolean;
 };
 
 export type AuditEvent = {

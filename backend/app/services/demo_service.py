@@ -97,7 +97,7 @@ def seed_demo_data(reset: bool = False):
         log_audit_event(db, case_b_human.id, "failure_detected", {"demo": True, "note": "Synthetic Demo B (Policy Blocked)"})
         log_audit_event(db, case_b_human.id, "ml_prediction", {"recovery_probability": 0.88})
         log_audit_event(db, case_b_human.id, "policy_check", {"allowed": False, "reason": "Automatic recovery blocked — Human approval required."})
-        log_audit_event(db, case_b_human.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Recovery probability is high, but automatic recovery is blocked by policy. Human approval is required before creating a payment link.", "confidence": 0.88, "source": "fallback"})
+        log_audit_event(db, case_b_human.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Recovery probability is high, but automatic recovery is blocked by policy. Human approval is required before creating a payment link.", "confidence": 0.88, "source": "fallback", "customer_message": "N/A - Escalated for manual review"})
         log_audit_event(db, case_b_human.id, "human_escalation", {"reason": "Policy blocked automatic recovery", "source": "policy"})
 
         log_audit_event(db, case_c.id, "failure_detected", {"demo": True, "note": "Synthetic Demo C"})

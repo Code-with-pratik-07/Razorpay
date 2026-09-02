@@ -50,6 +50,7 @@ class CaseExplanation(CaseSummary):
     customer_history: dict[str, object]
     ml_decision: str | None = None  # "HIGH" | "UNCERTAIN" | "LOW" | "COLD_START" | None
     execution_error: str | None = None
+    manual_execution: bool = False
 
 
 class ExecuteRecoveryResponse(BaseModel):

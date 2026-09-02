@@ -283,10 +283,12 @@ export function CaseDetail({
            </div>
 
            <div className="action-buttons">
-             <button id="view-analysis-btn" className="button secondary" onClick={() => void analyze()} disabled={actionLoading !== null}>
-               {actionLoading === 'analyze' ? <span className="spinner"/> : null}
-               View Analysis
-             </button>
+             {!explanation?.ml && (
+               <button id="view-analysis-btn" className="button secondary" onClick={() => void analyze()} disabled={actionLoading !== null}>
+                 {actionLoading === 'analyze' ? <span className="spinner"/> : null}
+                 Generate Analysis
+               </button>
+             )}
 
              {/* Approve Recovery — only for HUMAN_REVIEW with NOT LOW */}
              {canApproveRecovery && !isRecovered && (
