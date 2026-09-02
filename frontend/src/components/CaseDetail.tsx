@@ -1,5 +1,5 @@
 import React from 'react';
-import { RecoveryCase, Explanation, AuditEvent, Execution, formatINR, title } from '../types';
+import { RecoveryCase, Explanation, AuditEvent, Execution, formatINR, title, formatDate } from '../types';
 import { Badge } from './Badge';
 import { DecisionPipeline } from './DecisionPipeline';
 import { AIAdvisorCard } from './AIAdvisorCard';
@@ -236,7 +236,7 @@ export function CaseDetail({
             </p>
             {selected.last_payment_attempt_at && (
               <p style={{ margin: '0.5rem 0', fontSize: '0.9rem', color: '#7f1d1d' }}>
-                <b>Last Payment Attempt:</b> {new Date(selected.last_payment_attempt_at).toLocaleString()}
+                <b>Last Payment Attempt:</b> {formatDate(selected.last_payment_attempt_at)}
               </p>
             )}
           </div>
@@ -265,14 +265,14 @@ export function CaseDetail({
                  <b>Attempts Used:</b> {selected.retry_count} / {selected.max_retries}<br/>
                  <b>Active Payment Link:</b> {(selected.payment_link_expires_at && new Date(selected.payment_link_expires_at).getTime() > Date.now()) ? 'Yes' : 'No'}<br/>
                  {selected.payment_link_expires_at && (
-                    <><b>Payment Link Expiry:</b> {new Date(selected.payment_link_expires_at).toLocaleString()}<br/></>
+                    <><b>Payment Link Expiry:</b> {formatDate(selected.payment_link_expires_at)}<br/></>
                  )}
                  {selected.last_notification_at && (
-                    <><b>Last Notification:</b> {new Date(selected.last_notification_at).toLocaleString()}<br/></>
+                    <><b>Last Notification:</b> {formatDate(selected.last_notification_at)}<br/></>
                  )}
                  <b>Next Scheduled Action:</b> {
-                    selected.next_action_type === 'reminder' ? `Reminder scheduled for ${new Date(selected.next_action_at || '').toLocaleString()}` :
-                    selected.next_action_type === 'expiry_check' ? `Waiting for payment link expiry at ${new Date(selected.next_action_at || '').toLocaleString()}` :
+                    selected.next_action_type === 'reminder' ? `Reminder scheduled for ${formatDate(selected.next_action_at)}` :
+                    selected.next_action_type === 'expiry_check' ? `Waiting for payment link expiry at ${formatDate(selected.next_action_at)}` :
                     selected.next_action_type === 'recovery_attempt' ? `Next recovery attempt eligible after expiry` :
                     selected.retry_count >= selected.max_retries ? `Recovery attempt limit has been reached. The existing payment link remains available until its scheduled expiry.` :
                     currentLink ? 'Waiting for customer payment' :

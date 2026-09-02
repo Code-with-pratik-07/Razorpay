@@ -85,3 +85,17 @@ export const formatINR = (paise: number) =>
 
 export const title = (value: string | null) =>
   value ? value.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()) : "—";
+
+export const formatDate = (timestamp: string | null | undefined): string => {
+  if (!timestamp) return "—";
+  return new Date(timestamp).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+    timeZoneName: "short"
+  }).toUpperCase();
+};

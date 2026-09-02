@@ -1,5 +1,5 @@
 import React from 'react';
-import { AuditEvent, title } from '../types';
+import { AuditEvent, title, formatDate } from '../types';
 
 interface AuditTimelineProps {
   audit: AuditEvent[];
@@ -38,7 +38,7 @@ export function AuditTimeline({ audit }: AuditTimelineProps) {
              return (
                <div key={event.id} className={`timeline-event ${kind}`}>
                   <div className="timeline-dot" />
-                  <div className="timeline-time">{new Date(event.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}</div>
+                  <div className="timeline-time">{formatDate(event.timestamp)}</div>
                   <div className="timeline-content">
                      <b>{label}</b>
                      <pre>{JSON.stringify(event.event_data, null, 2)}</pre>

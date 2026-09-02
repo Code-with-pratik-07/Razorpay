@@ -1,7 +1,7 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from app.schemas.common import UTCDateTime
 
 
 AllowedAIAction = Literal["retry", "payment_link", "message", "escalate"]
@@ -31,14 +31,14 @@ class CaseSummary(BaseModel):
     policy_check_passed: bool | None
     policy_reason: str | None
     notification_status: str | None
-    created_at: datetime
+    created_at: UTCDateTime
     last_payment_status: str | None = None
-    last_payment_attempt_at: datetime | None = None
+    last_payment_attempt_at: UTCDateTime | None = None
     last_payment_failure_reason: str | None = None
-    payment_link_expires_at: datetime | None = None
-    next_action_at: datetime | None = None
+    payment_link_expires_at: UTCDateTime | None = None
+    next_action_at: UTCDateTime | None = None
     next_action_type: str | None = None
-    last_notification_at: datetime | None = None
+    last_notification_at: UTCDateTime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
