@@ -88,7 +88,7 @@ export function CaseDetail({
              selected.notification_status === 'NOT_AVAILABLE' ? "No customer email available." :
              selected.notification_status === 'FAILED' ? "Payment Link exists, but email delivery failed." :
              selected.notification_status === 'MOCKED' ? "Email mocked — " : "Pending"}
-            {selected.notification_status === 'MOCKED' && emailHtmlPreview && (
+            {emailHtmlPreview && (
               <button
                 id="view-email-preview-btn"
                 className="button secondary"
@@ -105,9 +105,9 @@ export function CaseDetail({
               borderRadius: 8, maxHeight: 320, overflowY: 'auto'
             }}>
               <div style={{marginBottom: 8, color: '#64748b', fontSize: '0.75rem'}}>
-                📧 MOCKED EMAIL PREVIEW — not actually sent
+                📧 {selected.notification_status === 'MOCKED' ? 'MOCKED EMAIL PREVIEW — not actually sent' : 'GENERATED EMAIL PREVIEW'}
               </div>
-              <div dangerouslySetInnerHTML={{ __html: emailHtmlPreview }} />
+              <div className="email-preview-content" dangerouslySetInnerHTML={{ __html: emailHtmlPreview }} />
             </div>
           )}
         </div>
