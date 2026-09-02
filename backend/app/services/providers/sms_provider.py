@@ -50,7 +50,7 @@ class SimulatedSMSProvider(BaseCommunicationProvider):
             channel="sms",
             status="SIMULATED",
             recipient=recipient,
-            message_snippet=sms_body[:100] + ("..." if len(sms_body) > 100 else ""),
+            message_snippet=sms_body[:300] + ("..." if len(sms_body) > 300 else ""),
             provider="simulated_sms",
             simulated=True,
             details={"message": sms_body},

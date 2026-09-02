@@ -137,7 +137,39 @@ def seed_demo_data(reset: bool = False):
             message_snippet="Payment recovery notice delivered via SMS",
             created_at=now - timedelta(hours=2),
         )
-        db.add(comm_c_1)
+        case_c_prior = PaymentCase(
+            case_number="HIST-C-PREV", customer_id=customers[2].id, razorpay_payment_id="pay_demo_hist_c", razorpay_order_id="order_demo_hist_c",
+            amount=100000, currency="INR", status=CaseStatus.RECOVERED, created_at=now - timedelta(days=30),
+            policy_check_passed=True, notification_status="SENT", max_retries=3
+        )
+        db.add(case_c_prior)
+        db.flush()
+
+        comm_c_prior1 = CommunicationRecord(
+            case_id=case_c_prior.id,
+            channel="sms",
+            status="SENT",
+            suitability_score=0.85,
+            attempt_number=1,
+            outcome="PAYMENT_COMPLETED",
+            recovery_attributed=True,
+            recipient=customers[2].phone,
+            message_snippet="Payment recovery notice delivered via SMS",
+            created_at=now - timedelta(days=30),
+        )
+        comm_c_prior2 = CommunicationRecord(
+            case_id=case_c_prior.id,
+            channel="sms",
+            status="SENT",
+            suitability_score=0.85,
+            attempt_number=1,
+            outcome="PAYMENT_COMPLETED",
+            recovery_attributed=True,
+            recipient=customers[2].phone,
+            message_snippet="Payment recovery notice delivered via SMS",
+            created_at=now - timedelta(days=15),
+        )
+        db.add_all([comm_c_prior1, comm_c_prior2, comm_c_1])
         case_c.selected_channel = "sms"
         log_audit_event(db, case_c.id, "recovery_attribution_recorded", {
             "channel": "sms",
@@ -185,6 +217,7 @@ def seed_demo_data(reset: bool = False):
         )
         db.add_all([comm_d_1, comm_d_2])
         case_d.selected_channel = "sms"
+        case_d.notification_status = "SMS_SIMULATED"
 
         print("Seeding synthetic demo cases...")
         features, _ = generate_training_data(samples=50)

@@ -12,6 +12,7 @@ from app.services.demo_service import seed_demo_data, simulate_failure_event
 
 router = APIRouter(prefix="/api/demo", tags=["demo"])
 
+
 class DemoStatus(BaseModel):
     demo_mode_enabled: bool
 

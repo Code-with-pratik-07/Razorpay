@@ -54,7 +54,7 @@ class SimulatedWhatsAppProvider(BaseCommunicationProvider):
             channel="whatsapp",
             status="SIMULATED",
             recipient=recipient,
-            message_snippet=wa_body[:100] + ("..." if len(wa_body) > 100 else ""),
+            message_snippet=wa_body[:300] + ("..." if len(wa_body) > 300 else ""),
             provider="simulated_whatsapp",
             simulated=True,
             details={"message": wa_body},
