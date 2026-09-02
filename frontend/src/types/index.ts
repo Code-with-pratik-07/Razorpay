@@ -3,7 +3,7 @@ export type Status = "failed" | "abandoned" | "analyzing" | "recovering" | "reco
 export type AI = {
   recommended_action: string;
   reasoning: string;
-  customer_message: string;
+  customer_message: string | null;
   confidence: number;
   source: "groq" | "fallback";
 };

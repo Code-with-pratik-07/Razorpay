@@ -10,7 +10,7 @@ AllowedAIAction = Literal["retry", "payment_link", "message", "escalate"]
 class AIDecision(BaseModel):
     recommended_action: AllowedAIAction
     reasoning: str = Field(min_length=1, max_length=2000)
-    customer_message: str = Field(min_length=1, max_length=1000)
+    customer_message: str | None = Field(default=None, max_length=1000)
     confidence: float = Field(ge=0, le=1)
     source: Literal["groq", "fallback", "demo"] = "fallback"
 
