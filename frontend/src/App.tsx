@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { RecoveryCase, Explanation, AuditEvent, Execution, DashboardStats } from "./types";
 import { TopNav } from "./components/TopNav";
 import { DemoControlCenter } from "./components/DemoControlCenter";
-import { HowItWorks } from "./components/HowItWorks";
 import { MetricsGrid } from "./components/MetricsGrid";
 import { Charts } from "./components/Charts";
 import { RecoveryQueue } from "./components/RecoveryQueue";
@@ -227,7 +226,6 @@ export default function App() {
           selectedId={selectedId}
         />
 
-        {demoMode && <HowItWorks />}
 
         {error && <div className="alert error">{error}</div>}
         {notice && <div className="alert success">{notice}</div>}
