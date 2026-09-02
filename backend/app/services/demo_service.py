@@ -114,14 +114,77 @@ def seed_demo_data(reset: bool = False):
         log_audit_event(db, case_d.id, "failure_detected", {"demo": True, "note": "Synthetic Demo D"})
         log_audit_event(db, case_d.id, "ml_prediction", {"recovery_probability": 0.25})
         log_audit_event(db, case_d.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
-        log_audit_event(db, case_d.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "The recovery probability is low. Only one recovery attempt is permitted.", "confidence": 0.80, "source": "fallback", "customer_message": "Please pay."})
-        
+        # Customer 4 opts out of SMS for Scenario E
+        customers[4].opted_out_channels = "sms"
+        db.commit()
+
+        from app.models.communication_record import CommunicationRecord
+
+        # Seed established communication history with attribution for DEMO-C (Scenario C)
+        comm_c_1 = CommunicationRecord(
+            case_id=case_c.id,
+            channel="sms",
+            status="SENT",
+            suitability_score=0.82,
+            channel_scores={"sms": 0.82, "whatsapp": 0.65, "email": 0.58},
+            reason="The customer previously engaged with SMS notifications and completed recovery after SMS communication.",
+            attempt_number=1,
+            simulated=False,
+            outcome="PAYMENT_COMPLETED",
+            delivery_status="DELIVERED",
+            recovery_attributed=True,
+            recipient=customers[2].phone,
+            message_snippet="Payment recovery notice delivered via SMS",
+            created_at=now - timedelta(hours=2),
+        )
+        db.add(comm_c_1)
+        case_c.selected_channel = "sms"
+        log_audit_event(db, case_c.id, "recovery_attribution_recorded", {
+            "channel": "sms",
+            "attempt_number": 1,
+            "signal": "Attributed recovery signal: Customer completed payment following SMS reminder.",
+        })
+
         # Execute first attempt to create real link
         execute_recovery(db, case_d, automatic=True)
         # Simulate payment failing/timeout by resetting to FAILED, then attempting again to trigger exhaustion
         case_d.status = CaseStatus.FAILED
         db.commit()
         execute_recovery(db, case_d, automatic=True)
+
+        # Seed Escalation communication records for DEMO-D (Scenario D)
+        comm_d_1 = CommunicationRecord(
+            case_id=case_d.id,
+            channel="whatsapp",
+            status="SIMULATED",
+            suitability_score=0.75,
+            channel_scores={"whatsapp": 0.75, "sms": 0.68, "email": 0.55},
+            reason="Initial attempt selected WhatsApp based on mobile availability.",
+            attempt_number=1,
+            simulated=True,
+            outcome="IGNORED",
+            delivery_status="DELIVERED",
+            recipient=customers[3].phone,
+            message_snippet="WhatsApp reminder delivered",
+            created_at=now - timedelta(days=2),
+        )
+        comm_d_2 = CommunicationRecord(
+            case_id=case_d.id,
+            channel="sms",
+            status="SIMULATED",
+            suitability_score=0.72,
+            channel_scores={"sms": 0.72, "email": 0.60, "whatsapp": 0.40},
+            reason="The previous WHATSAPP notification was delivered but received no engagement. The system has deprioritized WHATSAPP and selected the next best available channel (SMS).",
+            attempt_number=2,
+            simulated=True,
+            outcome="DELIVERED",
+            delivery_status="DELIVERED",
+            recipient=customers[3].phone,
+            message_snippet="SMS escalation reminder delivered",
+            created_at=now - timedelta(days=1),
+        )
+        db.add_all([comm_d_1, comm_d_2])
+        case_d.selected_channel = "sms"
 
         print("Seeding synthetic demo cases...")
         features, _ = generate_training_data(samples=50)

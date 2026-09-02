@@ -18,4 +18,6 @@ class Customer(Base):
     lifetime_value: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     successful_payments: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     failed_payments: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    preferred_channel: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    opted_out_channels: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="Comma-separated channels e.g. 'sms'")
     payment_cases = relationship("PaymentCase", back_populates="customer")

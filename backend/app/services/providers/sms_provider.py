@@ -14,7 +14,20 @@ class SimulatedSMSProvider(BaseCommunicationProvider):
         payment_link_url: str,
         message: str | None = None,
     ) -> ProviderResult:
-        recipient = (case.customer.phone if case.customer and case.customer.phone else "9999999999")
+        if not (case.customer and case.customer.phone):
+            case.notification_status = "NOT_AVAILABLE"
+            db.commit()
+            return ProviderResult(
+                success=False,
+                channel="sms",
+                status="NOT_AVAILABLE",
+                recipient=None,
+                message_snippet="No customer phone number available for SMS.",
+                provider="simulated_sms",
+                simulated=True,
+            )
+
+        recipient = case.customer.phone
         order_ref = case.razorpay_order_id or case.case_number
         amount_fmt = f"₹{case.amount / 100:,.2f}" if case.currency == "INR" else f"{case.currency} {case.amount / 100:,.2f}"
 

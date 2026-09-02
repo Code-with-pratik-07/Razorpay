@@ -44,16 +44,46 @@ class CaseSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DecisionBasisItem(BaseModel):
+    factor: str
+    impact: Literal["positive", "negative", "neutral"]
+    description: str
+
+
+class DecisionFactorSummary(BaseModel):
+    name: str
+    status: str
+    score: float  # 0.0 to 1.0 for UI progress bars
+
+
+class CommunicationAttemptSummary(BaseModel):
+    attempt_number: int
+    channel: str
+    status: str
+    outcome: str
+    simulated: bool
+    created_at: UTCDateTime | None = None
+
+
 class ChannelIntelligence(BaseModel):
+    communication_maturity: Literal["COLD_START", "LEARNING", "ESTABLISHED"] = "COLD_START"
+    maturity_description: str = "Learning communication preferences"
     recommended_channel: str
     suitability_score: float
-    channel_scores: dict[str, float]
+    confidence: Literal["low", "medium", "high"] = "medium"
+    confidence_score: float = 0.55
     reason: str
+    decision_basis: list[DecisionBasisItem] = Field(default_factory=list)
+    decision_factors: list[DecisionFactorSummary] = Field(default_factory=list)
+    channel_scores: dict[str, float]
     alternatives: list[str]
     status: str
     attempts_count: int = 0
     last_channel_used: str | None = None
     last_communicated_at: UTCDateTime | None = None
+    communication_journey: list[CommunicationAttemptSummary] = Field(default_factory=list)
+    opted_out_channels: list[str] = Field(default_factory=list)
+    attributed_channel: str | None = None
 
 
 class CaseExplanation(CaseSummary):

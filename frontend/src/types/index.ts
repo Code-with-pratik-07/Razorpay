@@ -35,16 +35,46 @@ export type RecoveryCase = {
   selected_channel?: string | null;
 };
 
+export type DecisionBasisItem = {
+  factor: string;
+  impact: "positive" | "negative" | "neutral";
+  description: string;
+};
+
+export type DecisionFactorSummary = {
+  name: string;
+  status: string;
+  score: number;
+};
+
+export type CommunicationAttemptSummary = {
+  attempt_number: number;
+  channel: string;
+  status: string;
+  outcome: string;
+  simulated: boolean;
+  created_at: string | null;
+};
+
 export type ChannelIntelligence = {
+  communication_maturity: "COLD_START" | "LEARNING" | "ESTABLISHED";
+  maturity_description: string;
   recommended_channel: "email" | "sms" | "whatsapp" | string;
   suitability_score: number;
-  channel_scores: Record<string, number>;
+  confidence: "low" | "medium" | "high";
+  confidence_score: number;
   reason: string;
+  decision_basis: DecisionBasisItem[];
+  decision_factors: DecisionFactorSummary[];
+  channel_scores: Record<string, number>;
   alternatives: string[];
   status: string;
   attempts_count: number;
   last_channel_used?: string | null;
   last_communicated_at?: string | null;
+  communication_journey: CommunicationAttemptSummary[];
+  opted_out_channels: string[];
+  attributed_channel?: string | null;
 };
 
 export type Explanation = RecoveryCase & {

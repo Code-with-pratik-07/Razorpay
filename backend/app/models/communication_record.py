@@ -17,11 +17,14 @@ class CommunicationRecord(Base):
     status: Mapped[str] = mapped_column(String(50), nullable=False)  # "RECOMMENDED", "SENT", "SIMULATED", "POLICY_BLOCKED", "COMPLETED", "ATTEMPT_LIMIT_REACHED", "FAILED"
     suitability_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     channel_scores: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
-    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     attempt_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     simulated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     recipient: Mapped[str | None] = mapped_column(String(255), nullable=True)
     message_snippet: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(50), nullable=False, default="SENT")  # PENDING, SENT, DELIVERED, OPENED, CLICKED, RESPONDED, PAYMENT_COMPLETED, FAILED, IGNORED, OPTED_OUT
+    delivery_status: Mapped[str] = mapped_column(String(50), nullable=False, default="DELIVERED")
+    recovery_attributed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),

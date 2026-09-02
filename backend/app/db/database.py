@@ -37,8 +37,19 @@ def init_db() -> None:
     try:
         from sqlalchemy import text
         with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE payment_cases ADD COLUMN selected_channel VARCHAR(30)"))
-            conn.commit()
+            # payment_cases migrations
+            for col_stmt in [
+                "ALTER TABLE payment_cases ADD COLUMN selected_channel VARCHAR(30)",
+                "ALTER TABLE customers ADD COLUMN preferred_channel VARCHAR(30)",
+                "ALTER TABLE customers ADD COLUMN opted_out_channels VARCHAR(100)",
+                "ALTER TABLE communication_records ADD COLUMN outcome VARCHAR(50) DEFAULT 'SENT'",
+                "ALTER TABLE communication_records ADD COLUMN delivery_status VARCHAR(50) DEFAULT 'DELIVERED'",
+                "ALTER TABLE communication_records ADD COLUMN recovery_attributed BOOLEAN DEFAULT 0",
+            ]:
+                try:
+                    conn.execute(text(col_stmt))
+                    conn.commit()
+                except Exception:
+                    pass
     except Exception:
-        # Column already exists or table freshly created
         pass

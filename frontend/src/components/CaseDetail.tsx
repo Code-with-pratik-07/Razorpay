@@ -173,8 +173,17 @@ export function CaseDetail({
 
               {explanation.channel_intelligence && (
                 <div className="intelligence-card communication-intelligence-card" style={{gridColumn: '1 / -1'}}>
+                  {/* Card Header & Maturity Profile */}
                   <div className="comm-card-header">
-                    <h4><i/> COMMUNICATION INTELLIGENCE</h4>
+                    <div>
+                      <h4><i/> COMMUNICATION INTELLIGENCE</h4>
+                      <div className="comm-maturity-row">
+                        <span className={`comm-maturity-badge maturity-${explanation.channel_intelligence.communication_maturity.toLowerCase()}`}>
+                          ● {explanation.channel_intelligence.communication_maturity.replace('_', ' ')}
+                        </span>
+                        <span className="comm-maturity-subtext">{explanation.channel_intelligence.maturity_description}</span>
+                      </div>
+                    </div>
                     <span className={`channel-status-pill status-${explanation.channel_intelligence.status.toLowerCase()}`}>
                       {explanation.channel_intelligence.status === 'RECOMMENDED' ? 'Recommended for recovery' :
                        explanation.channel_intelligence.status === 'SIMULATED' ? 'Simulated for Demo' :
@@ -186,6 +195,7 @@ export function CaseDetail({
                     </span>
                   </div>
 
+                  {/* Top Stats Grid: Recommended Channel, Suitability, Confidence, Alternatives */}
                   <div className="comm-stats-grid">
                     <div className="comm-stat-box">
                       <span className="comm-box-label">Recommended Channel</span>
@@ -194,19 +204,35 @@ export function CaseDetail({
                           {explanation.channel_intelligence.recommended_channel === 'whatsapp' ? '💬' :
                            explanation.channel_intelligence.recommended_channel === 'sms' ? '📱' : '✉️'}
                         </span>
-                        <b className="comm-channel-name">{title(explanation.channel_intelligence.recommended_channel)}</b>
+                        <div>
+                          <b className="comm-channel-name">{title(explanation.channel_intelligence.recommended_channel)}</b>
+                          {explanation.channel_intelligence.recommended_channel !== 'email' && (
+                            <span className="comm-sim-tag">Simulated for Demo</span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
                     <div className="comm-stat-box">
-                      <span className="comm-box-label">Channel Suitability Score</span>
+                      <span className="comm-box-label">Suitability Score</span>
                       <b className="comm-suitability-val">
                         {(explanation.channel_intelligence.suitability_score * 100).toFixed(0)}%
                       </b>
+                      <span className="comm-suitability-hint">Channel Suitability (not recovery prob.)</span>
+                    </div>
+
+                    <div className="comm-stat-box">
+                      <span className="comm-box-label">Decision Confidence</span>
+                      <div className="comm-confidence-badge-wrap">
+                        <span className={`comm-confidence-pill confidence-${explanation.channel_intelligence.confidence}`}>
+                          {title(explanation.channel_intelligence.confidence)}
+                        </span>
+                        <span className="comm-confidence-score">{(explanation.channel_intelligence.confidence_score * 100).toFixed(0)}%</span>
+                      </div>
                     </div>
 
                     <div className="comm-stat-box comm-stat-wide">
-                      <span className="comm-box-label">Alternatives</span>
+                      <span className="comm-box-label">Alternative Channels</span>
                       <div className="comm-alt-list">
                         {explanation.channel_intelligence.alternatives.map((alt) => {
                           const altScore = explanation.channel_intelligence?.channel_scores[alt] ?? 0;
@@ -223,10 +249,75 @@ export function CaseDetail({
                     </div>
                   </div>
 
+                  {/* Why this channel? */}
                   <div className="comm-reason-box">
                     <span className="comm-reason-label">Why this channel?</span>
                     <p className="comm-reason-text">{explanation.channel_intelligence.reason}</p>
                   </div>
+
+                  {/* Decision Factors Breakdown */}
+                  {explanation.channel_intelligence.decision_factors && explanation.channel_intelligence.decision_factors.length > 0 && (
+                    <div className="comm-factors-section">
+                      <span className="comm-section-title">Decision Factors</span>
+                      <div className="comm-factors-grid">
+                        {explanation.channel_intelligence.decision_factors.map((df) => (
+                          <div key={df.name} className="comm-factor-row">
+                            <div className="comm-factor-info">
+                              <span className="comm-factor-name">{df.name}</span>
+                              <span className="comm-factor-status">{df.status}</span>
+                            </div>
+                            <div className="comm-factor-meter-bg">
+                              <div
+                                className="comm-factor-meter-fill"
+                                style={{ width: `${Math.min(100, Math.max(5, df.score * 100))}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Structured Decision Basis (Positive/Negative impacts) */}
+                  {explanation.channel_intelligence.decision_basis && explanation.channel_intelligence.decision_basis.length > 0 && (
+                    <div className="comm-basis-section">
+                      <span className="comm-section-title">Structured Decision Basis</span>
+                      <div className="comm-basis-list">
+                        {explanation.channel_intelligence.decision_basis.map((item, idx) => (
+                          <div key={idx} className={`comm-basis-item impact-${item.impact}`}>
+                            <span className="comm-basis-icon">
+                              {item.impact === 'positive' ? '✓' : item.impact === 'negative' ? '✕' : '●'}
+                            </span>
+                            <span className="comm-basis-desc">{item.description}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Communication Journey Timeline */}
+                  {explanation.channel_intelligence.communication_journey && explanation.channel_intelligence.communication_journey.length > 0 && (
+                    <div className="comm-journey-section">
+                      <span className="comm-section-title">Communication Journey</span>
+                      <div className="comm-journey-timeline">
+                        {explanation.channel_intelligence.communication_journey.map((item, idx) => (
+                          <div key={idx} className={`comm-journey-item outcome-${item.outcome.toLowerCase()}`}>
+                            <div className="comm-journey-step">Attempt {item.attempt_number}</div>
+                            <div className="comm-journey-detail">
+                              <span className="comm-journey-channel">
+                                {item.channel === 'whatsapp' ? '💬 WhatsApp' : item.channel === 'sms' ? '📱 SMS' : '✉️ Email'}
+                              </span>
+                              <span className="comm-journey-arrow">→</span>
+                              <span className={`comm-journey-outcome badge-${item.outcome.toLowerCase()}`}>
+                                {item.outcome.replace('_', ' ')}
+                              </span>
+                              {item.simulated && <span className="comm-journey-sim">(Simulated)</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
            </div>

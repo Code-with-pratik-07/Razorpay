@@ -155,6 +155,10 @@ def _process_recovered(db: Session, payload: dict[str, Any], event_type: str) ->
     if customer is not None:
         customer.successful_payments += 1
         customer.lifetime_value += case.amount
+    
+    from app.services.channel_service import attribute_recovery_to_communication
+    attribute_recovery_to_communication(db, case)
+
     db.commit()
     log_audit_event(db, case.id, "payment_success", {"event": event_type, "payment_id": payment_id})
     log_audit_event(db, case.id, "case_recovered", {"order_id": order_id})

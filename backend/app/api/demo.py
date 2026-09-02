@@ -104,6 +104,9 @@ def simulate_payment(case_id: str, payload: SimulatePaymentRequest):
                 case.customer.successful_payments += 1
                 case.customer.lifetime_value += case.amount
             
+            from app.services.channel_service import attribute_recovery_to_communication
+            attribute_recovery_to_communication(db, case)
+
             db.commit()
             log_audit_event(db, case.id, "payment_success", {"simulated": True, "event": "simulate_payment"})
             log_audit_event(db, case.id, "case_recovered", {"simulated": True, "order_id": case.razorpay_order_id})
