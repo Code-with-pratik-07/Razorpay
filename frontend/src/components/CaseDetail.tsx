@@ -67,7 +67,7 @@ export function CaseDetail({
     : mlDecision === 'UNCERTAIN'
     ? { label: 'UNCERTAIN — Human Review', cls: 'ml-uncertain' }
     : mlDecision === 'LOW'
-    ? { label: 'LOW — Recovery Stopped', cls: 'ml-low' }
+    ? { label: 'LOW — Attempt Limit Reached', cls: 'ml-low' }
     : mlDecision === 'COLD_START'
     ? { label: 'LIMITED HISTORY', cls: 'ml-cold' }
     : null;
@@ -247,7 +247,7 @@ export function CaseDetail({
              {isAbandoned ? (
                <span style={{color:'#f87171'}}>
                  <b>Recovery abandoned</b><br/>
-                 Recovery attempts exhausted — waiting for final link expiry.
+                 Recovery attempt limit has been reached. The existing payment link remains available until its scheduled expiry.
                </span>
              ) : isRecovered ? (
                <span>
@@ -274,7 +274,7 @@ export function CaseDetail({
                     selected.next_action_type === 'reminder' ? `Reminder scheduled for ${new Date(selected.next_action_at || '').toLocaleString()}` :
                     selected.next_action_type === 'expiry_check' ? `Waiting for payment link expiry at ${new Date(selected.next_action_at || '').toLocaleString()}` :
                     selected.next_action_type === 'recovery_attempt' ? `Next recovery attempt eligible after expiry` :
-                    selected.retry_count >= selected.max_retries ? `Recovery attempts exhausted — waiting for final link expiry` :
+                    selected.retry_count >= selected.max_retries ? `Recovery attempt limit has been reached. The existing payment link remains available until its scheduled expiry.` :
                     currentLink ? 'Waiting for customer payment' :
                     (explanation?.execution_error ? 'FAILED TO CREATE' : 'Pending')
                  }

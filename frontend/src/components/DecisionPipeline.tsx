@@ -75,7 +75,7 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
          <div className="pipeline-step blocked">
            <div className="step-icon">■</div>
            <div className="step-content">
-             <div className="step-title">RECOVERY STOPPED</div>
+             <div className="step-title">NO ADDITIONAL RECOVERY ATTEMPTS</div>
              <div className="step-meta">No recovery action permitted</div>
            </div>
          </div>
