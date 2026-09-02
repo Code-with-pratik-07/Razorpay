@@ -96,7 +96,7 @@ export function Charts({ stats, cases }: ChartsProps) {
               <XAxis dataKey="name" interval={0} tick={{ fontSize: 11, fill: '#71717A' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} allowDecimals={false} />
               <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F4F4F5' }} />
-              <Bar dataKey="value" fill="var(--color-accent)" radius={[4, 4, 0, 0]} minPointSize={3} />
+              <Bar dataKey="value" fill="var(--color-accent)" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
