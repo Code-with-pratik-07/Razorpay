@@ -246,8 +246,8 @@ export function CaseDetail({
            <div className="action-info">
              {isAbandoned ? (
                <span style={{color:'#f87171'}}>
-                 <b>Recovery abandoned</b><br/>
-                 Recovery attempt limit has been reached. The existing payment link remains available until its scheduled expiry.
+                 <b>Recovery Abandoned</b><br/>
+                 The recovery attempt limit was reached and the payment was not completed before the recovery window expired. No further recovery actions will be taken.
                </span>
              ) : isRecovered ? (
                <span>
@@ -270,14 +270,17 @@ export function CaseDetail({
                  {selected.last_notification_at && (
                     <><b>Last Notification:</b> {formatDate(selected.last_notification_at)}<br/></>
                  )}
-                 <b>Next Scheduled Action:</b> {
-                    selected.next_action_type === 'reminder' ? `Reminder scheduled for ${formatDate(selected.next_action_at)}` :
-                    selected.next_action_type === 'expiry_check' ? `Waiting for payment link expiry at ${formatDate(selected.next_action_at)}` :
-                    selected.next_action_type === 'recovery_attempt' ? `Next recovery attempt eligible after expiry` :
-                    selected.retry_count >= selected.max_retries ? `Recovery attempt limit has been reached. The existing payment link remains available until its scheduled expiry.` :
-                    currentLink ? 'Waiting for customer payment' :
-                    (explanation?.execution_error ? 'FAILED TO CREATE' : 'Pending')
-                 }
+                 {selected.retry_count >= selected.max_retries ? (
+                   <><b>Attempt Limit Reached:</b> No additional recovery attempts will be created. The current payment link remains available until its scheduled expiry.</>
+                 ) : (
+                   <><b>Next Scheduled Action:</b> {
+                      selected.next_action_type === 'reminder' ? `Reminder scheduled for ${formatDate(selected.next_action_at)}` :
+                      selected.next_action_type === 'expiry_check' ? `Waiting for payment link expiry at ${formatDate(selected.next_action_at)}` :
+                      selected.next_action_type === 'recovery_attempt' ? `Next recovery attempt eligible after expiry` :
+                      currentLink ? 'Waiting for customer payment' :
+                      (explanation?.execution_error ? 'FAILED TO CREATE' : 'Pending')
+                   }</>
+                 )}
                </span>
              )}
            </div>
