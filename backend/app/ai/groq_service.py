@@ -45,11 +45,11 @@ def fallback_decision(context: dict[str, Any], permitted_actions: set[str], reas
         if is_cold_start:
             reasoning = "Customer history is limited, and automatic recovery is blocked by policy. Human approval is required before creating a payment link."
         elif probability >= 0.60:
-            reasoning = "Recovery probability is high, but automatic recovery is blocked by policy. Human approval is required before creating a payment link."
+            reasoning = "Escalate to Human Review: Recovery probability is high, but automatic recovery is blocked by policy. The fraud-related failure reason requires manual approval under the current safety policy."
         elif probability >= 0.40:
-            reasoning = "Recovery probability is uncertain, and automatic recovery is blocked by policy. Human approval is required before creating a payment link."
+            reasoning = "Escalate to Human Review: Recovery probability is uncertain, and automatic recovery is blocked by policy. Human approval is required before creating a payment link."
         else:
-            reasoning = "Recovery probability is low, and automatic recovery is blocked by policy. Human approval is required before creating a payment link."
+            reasoning = "Close Recovery: Recovery probability is low, and automatic recovery is blocked by policy. Human approval is required before creating a payment link."
             
         return AIDecision(
             recommended_action=action, confidence=0.5,
@@ -64,13 +64,13 @@ def fallback_decision(context: dict[str, Any], permitted_actions: set[str], reas
         action = next(iter(sorted(permitted_actions)))
     
     if is_cold_start:
-        reasoning = "Customer history is limited. ML confidence is unavailable, so a controlled recovery strategy is being used."
+        reasoning = "Automatic Recovery: Customer history is limited. High recovery probability and policy clearance allow automated payment link generation. The recovery communication should be sent through the highest-ranked appropriate channel."
     elif probability >= 0.60:
-        reasoning = "High recovery probability. Automatic payment-link recovery is recommended."
+        reasoning = "Automatic Recovery: High recovery probability. Automatic payment-link recovery is recommended. The recovery communication should be sent through the highest-ranked appropriate channel."
     elif probability >= 0.40:
-        reasoning = "Recovery probability is uncertain, but a controlled automatic recovery attempt is recommended."
+        reasoning = "Automatic Recovery: Recovery probability is uncertain, but a controlled automatic recovery attempt is recommended."
     else:
-        reasoning = "Recovery probability is low. One controlled recovery attempt is permitted."
+        reasoning = "Close Recovery: Recovery probability is low. One controlled recovery attempt is permitted."
 
     return AIDecision(
         recommended_action=action, confidence=0.5,

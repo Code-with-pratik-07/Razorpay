@@ -59,10 +59,10 @@ def seed_demo_data(reset: bool = False):
             policy_check_passed=True, policy_reason="Automatic recovery approved.", notification_status="PENDING", max_retries=2
         )
         case_b_human = PaymentCase(
-            case_number="DEMO-B-HUMAN", customer_id=customers[1].id, razorpay_payment_id="pay_demo_human", razorpay_order_id="order_demo_human",
+            case_number="DEMO-B-HUMAN", customer_id=customers[4].id, razorpay_payment_id="pay_demo_human", razorpay_order_id="order_demo_human",
             amount=2500000, currency="INR", status=CaseStatus.HUMAN_REVIEW, failure_reason="fraud_suspicion", payment_method="card",
             recovery_probability=0.88, recovery_action=RecoveryAction.ESCALATE, created_at=now - timedelta(minutes=10),
-            policy_check_passed=False, policy_reason="Automatic recovery blocked — Human approval required.", notification_status="PENDING", max_retries=3
+            policy_check_passed=False, policy_reason="Automatic recovery blocked — High transaction value requires manual review.", notification_status=None, max_retries=3,
         )
         case_c = PaymentCase(
             case_number="DEMO-C-RECOVERED", customer_id=customers[2].id, razorpay_payment_id="pay_demo_recovered", razorpay_order_id="order_demo_recovered",
@@ -84,7 +84,13 @@ def seed_demo_data(reset: bool = False):
         log_audit_event(db, case_a.id, "failure_detected", {"demo": True, "note": "Synthetic Demo A"})
         log_audit_event(db, case_a.id, "ml_prediction", {"recovery_probability": 0.95})
         log_audit_event(db, case_a.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
-        log_audit_event(db, case_a.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "High recovery probability.", "customer_message": "Please pay.", "confidence": 0.95, "source": "groq"})
+        log_audit_event(db, case_a.id, "ai_analysis", {
+            "recommended_action": "payment_link",
+            "reasoning": "Automatic Recovery: High recovery probability and policy clearance allow automated payment link generation. The recovery communication should be sent through the highest-ranked appropriate channel.",
+            "customer_message": "We noticed your recent payment was unsuccessful. Please use the secure payment option to complete your transaction.",
+            "confidence": 0.95,
+            "source": "groq",
+        })
         
         from app.services.recovery_service import execute_recovery
         execute_recovery(db, case_a, automatic=True)
@@ -92,19 +98,38 @@ def seed_demo_data(reset: bool = False):
         log_audit_event(db, case_b.id, "failure_detected", {"demo": True, "note": "Synthetic Demo B (Uncertain)"})
         log_audit_event(db, case_b.id, "ml_prediction", {"recovery_probability": 0.55})
         log_audit_event(db, case_b.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
-        log_audit_event(db, case_b.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "Recovery probability is uncertain, but a controlled automatic recovery attempt is recommended.", "customer_message": "Please pay.", "confidence": 0.55, "source": "fallback"})
+        log_audit_event(db, case_b.id, "ai_analysis", {
+            "recommended_action": "payment_link",
+            "reasoning": "Automatic Recovery: Recovery probability is uncertain, but a controlled automatic recovery attempt is recommended.",
+            "customer_message": "Please use the secure payment option to try again.",
+            "confidence": 0.55,
+            "source": "fallback",
+        })
         execute_recovery(db, case_b, automatic=True)
 
+        # Seed DEMO-B-HUMAN: Blocked by policy -> Escalated for human review
         log_audit_event(db, case_b_human.id, "failure_detected", {"demo": True, "note": "Synthetic Demo B (Policy Blocked)"})
         log_audit_event(db, case_b_human.id, "ml_prediction", {"recovery_probability": 0.88})
-        log_audit_event(db, case_b_human.id, "policy_check", {"allowed": False, "reason": "Automatic recovery blocked — Human approval required."})
-        log_audit_event(db, case_b_human.id, "ai_analysis", {"recommended_action": "escalate", "reasoning": "Recovery probability is high, but automatic recovery is blocked by policy. Human approval is required before creating a payment link.", "confidence": 0.88, "source": "fallback", "customer_message": "N/A - Escalated for manual review"})
+        log_audit_event(db, case_b_human.id, "policy_check", {"allowed": False, "reason": "Automatic recovery blocked — High transaction value requires manual review."})
         log_audit_event(db, case_b_human.id, "human_escalation", {"reason": "Policy blocked automatic recovery", "source": "policy"})
+        log_audit_event(db, case_b_human.id, "ai_analysis", {
+            "recommended_action": "escalate",
+            "reasoning": "Escalate to Human Review: The recovery probability is high, but the fraud-related failure reason requires manual approval under the current safety policy.",
+            "confidence": 0.88,
+            "source": "groq",
+            "customer_message": "Your payment could not be completed. Please wait while our team reviews the available recovery options.",
+        })
 
         log_audit_event(db, case_c.id, "failure_detected", {"demo": True, "note": "Synthetic Demo C"})
         log_audit_event(db, case_c.id, "ml_prediction", {"recovery_probability": 0.92})
         log_audit_event(db, case_c.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
-        log_audit_event(db, case_c.id, "ai_analysis", {"recommended_action": "payment_link", "reasoning": "High recovery probability and eligible recovery profile.", "customer_message": "Please complete your payment using this secure payment link.", "confidence": 0.92, "source": "demo"})
+        log_audit_event(db, case_c.id, "ai_analysis", {
+            "recommended_action": "payment_link",
+            "reasoning": "Automatic Recovery: Recovery probability is strong and policy checks have passed. Generate the secure payment link and communicate through the highest-ranked appropriate channel.",
+            "customer_message": "Please complete your payment using this secure payment link.",
+            "confidence": 0.92,
+            "source": "demo",
+        })
         log_audit_event(db, case_c.id, "recovery_started", {"advisory_action": "payment_link", "executed_action": "payment_link", "automatic": True})
         log_audit_event(db, case_c.id, "payment_link_created", {"url": "https://rzp.io/i/demo_recovered"})
         log_audit_event(db, case_c.id, "email_notification_sent", {"provider": "demo", "status_code": 200})
@@ -114,11 +139,36 @@ def seed_demo_data(reset: bool = False):
         log_audit_event(db, case_d.id, "failure_detected", {"demo": True, "note": "Synthetic Demo D"})
         log_audit_event(db, case_d.id, "ml_prediction", {"recovery_probability": 0.25})
         log_audit_event(db, case_d.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
-        # Customer 4 opts out of SMS for Scenario E
-        customers[4].opted_out_channels = "sms"
+        log_audit_event(db, case_d.id, "ai_analysis", {
+            "recommended_action": "none",
+            "reasoning": "Close Recovery: The maximum permitted attempts were reached without customer response. Stop further automated communication to protect the customer relationship.",
+            "customer_message": "Recovery closed.",
+            "confidence": 0.25,
+            "source": "groq",
+        })
+        # Customer 5 opts out of SMS for Scenario E
+        customers[5].opted_out_channels = "sms"
         db.commit()
 
         from app.models.communication_record import CommunicationRecord
+
+        # Seed prior SMS attempt with no engagement for DEMO-B-HUMAN (Scenario B)
+        comm_b_1 = CommunicationRecord(
+            case_id=case_b_human.id,
+            channel="sms",
+            status="SIMULATED",
+            suitability_score=0.49,
+            channel_scores={"email": 0.74, "whatsapp": 0.68, "sms": 0.49},
+            reason="Previous SMS communication received no engagement. Email is currently the next-best available channel.",
+            attempt_number=1,
+            simulated=True,
+            outcome="IGNORED",
+            delivery_status="DELIVERED",
+            recipient=customers[4].phone,
+            message_snippet="Payment recovery notice delivered via SMS",
+            created_at=now - timedelta(hours=4),
+        )
+        db.add(comm_b_1)
 
         # Seed established communication history with attribution for DEMO-C (Scenario C)
         comm_c_1 = CommunicationRecord(

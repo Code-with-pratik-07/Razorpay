@@ -68,13 +68,13 @@ export function DemoControlCenter({
           <p>Successful customer payment</p>
           <code>DEMO-C-RECOVERED</code>
         </div>
-        <div className={`demo-card ${isSelected('DEMO-D-DUPLICATE') ? 'active' : ''}`} onClick={() => selectScenario('DEMO-D-DUPLICATE', cases)}>
+        <div className={`demo-card ${isSelected('DEMO-D-STOPPED') ? 'active' : ''}`} onClick={() => selectScenario('DEMO-D-STOPPED', cases)}>
           <div className="demo-card-header">
-            <h4>04 — Duplicate Protection</h4>
-            {isSelected('DEMO-D-DUPLICATE') && <div className="demo-active-dot" />}
+            <h4>04 — Controlled Stopping</h4>
+            {isSelected('DEMO-D-STOPPED') && <div className="demo-active-dot" />}
           </div>
-          <p>Existing recovery cannot execute twice</p>
-          <code>DEMO-D-DUPLICATE</code>
+          <p>Attempt limit reached & recovery closed</p>
+          <code>DEMO-D-STOPPED</code>
         </div>
       </div>
     </div>

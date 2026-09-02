@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.db.database import get_db
 from app.models.payment_case import PaymentCase
-from app.schemas.recovery import CaseExplanation, CaseSummary, ExecuteRecoveryResponse
+from app.schemas.recovery import CaseExplanation, CaseSummary, ExecuteRecoveryResponse, AIDecision
 from app.services.recovery_service import _features, _last_ai_decision, _policy, analyze_case, execute_recovery, ml_routing_decision
 from app.services.audit_service import list_audit_events
 from app.services.channel_service import get_case_channel_intelligence
@@ -62,6 +62,11 @@ def explanation(case_id: str, db: Session = Depends(get_db)) -> CaseExplanation:
     return _explanation(db, _case(db, case_id))
 
 
+from datetime import datetime, timezone
+from pydantic import BaseModel
+from app.models.payment_case import CaseStatus
+from app.services.channel_service import dispatch_channel_communication
+
 def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
     events = list_audit_events(db, case.id)
     
@@ -88,6 +93,68 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
     
     channel_intelligence = get_case_channel_intelligence(db, case)
 
+    # 1. Human review workflow state
+    has_human_approval = any(e.event_type in {"human_approval", "manual_review_approved"} for e in events)
+    if has_human_approval:
+        human_review_status = "APPROVED"
+    elif case.status == CaseStatus.HUMAN_REVIEW or (policy.get("requires_human_approval") and not policy.get("allowed")):
+        human_review_status = "REQUIRED"
+    else:
+        human_review_status = "NOT_REQUIRED"
+
+    # 2. Payment link workflow state
+    now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+    has_link_event = any(e.event_type == "payment_link_created" for e in events)
+    if case.status == CaseStatus.RECOVERED:
+        payment_link_status = "PAID"
+    elif case.payment_link_expires_at:
+        payment_link_status = "EXPIRED" if case.payment_link_expires_at <= now_dt else "ACTIVE"
+    elif has_link_event:
+        payment_link_status = "ACTIVE"
+    else:
+        payment_link_status = "NONE"
+
+    # 3. Customer payment workflow state
+    if case.status == CaseStatus.RECOVERED:
+        customer_payment_status = "RECEIVED"
+    elif case.status == CaseStatus.ABANDONED:
+        customer_payment_status = "EXHAUSTED"
+    elif case.last_payment_status == "FAILED":
+        customer_payment_status = "FAILED"
+    elif payment_link_status == "ACTIVE":
+        customer_payment_status = "PENDING"
+    else:
+        customer_payment_status = "NONE"
+
+    # 4. Recommended & Dispatched channels
+    recommended_channel = channel_intelligence.recommended_channel or "email"
+    last_dispatched = None
+    if channel_intelligence.attempts_count > 0 and case.notification_status:
+        last_dispatched = channel_intelligence.last_channel_used or case.selected_channel
+    dispatched_channel = last_dispatched
+
+    # 5. Communication workflow state
+    if case.status in {CaseStatus.RECOVERED, CaseStatus.CLOSED}:
+        communication_status = "COMPLETED"
+    elif case.status == CaseStatus.ABANDONED:
+        communication_status = "EXHAUSTED"
+    elif human_review_status == "REQUIRED":
+        communication_status = "PAUSED"
+    elif case.notification_status in {"WHATSAPP_SIMULATED", "SMS_SIMULATED"}:
+        communication_status = "SIMULATED"
+    elif case.notification_status == "SENT":
+        communication_status = "SENT"
+    elif case.notification_status in {"GENERATED", "MOCKED", "EMAIL_GENERATED"}:
+        communication_status = "GENERATED"
+    elif case.notification_status == "NOT_AVAILABLE":
+        communication_status = "NOT_AVAILABLE"
+    elif case.notification_status == "FAILED":
+        communication_status = "FAILED"
+    elif human_review_status == "APPROVED" or payment_link_status == "ACTIVE" or case.status == CaseStatus.RECOVERING:
+        communication_status = "READY"
+    else:
+        communication_status = "PAUSED"
+
     return CaseExplanation(
         **_summary(case),
         ml={"recovery_probability": case.recovery_probability, "features": _features(case)},
@@ -98,10 +165,35 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
         execution_error=execution_error,
         manual_execution=manual_execution,
         channel_intelligence=channel_intelligence,
+        human_review_status=human_review_status,
+        payment_link_status=payment_link_status,
+        communication_status=communication_status,
+        customer_payment_status=customer_payment_status,
+        recommended_channel=recommended_channel,
+        dispatched_channel=dispatched_channel,
     )
 
 
 @router.post("/{case_id}/execute", response_model=ExecuteRecoveryResponse)
 def execute(case_id: str, db: Session = Depends(get_db)) -> ExecuteRecoveryResponse:
     case = _case(db, case_id)
-    return ExecuteRecoveryResponse(case_id=case.id, **execute_recovery(db, case))
+    return ExecuteRecoveryResponse(case_id=case.id, **execute_recovery(db, case, automatic=False))
+
+
+class DispatchCommunicationRequest(BaseModel):
+    channel: str | None = None
+
+
+@router.post("/{case_id}/dispatch-communication")
+def dispatch_communication(case_id: str, req: DispatchCommunicationRequest, db: Session = Depends(get_db)):
+    case = _case(db, case_id)
+    if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
+        raise HTTPException(status_code=400, detail="Cannot dispatch communication for a terminal case.")
+    events = list_audit_events(db, case.id)
+    last_link_event = next((e for e in reversed(events) if e.event_type == "payment_link_created"), None)
+    url = last_link_event.event_data.get("url") if last_link_event else "https://rzp.io/i/demo_link"
+    
+    res = dispatch_channel_communication(
+        db, case, url, override_channel=req.channel, automatic=False
+    )
+    return res

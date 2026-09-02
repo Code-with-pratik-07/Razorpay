@@ -114,32 +114,45 @@ def _compute_preference(channel: str, customer: Customer | None, case: PaymentCa
             return 1.0, "Customer Preferred Channel"
         return 0.35, "Secondary Preference"
 
-    # Inferred from payment method
-    method = (case.payment_method or "").lower()
-    if method == "upi":
-        affinity = {"whatsapp": 0.95, "sms": 0.70, "email": 0.50}
-    elif method == "card":
-        affinity = {"email": 0.85, "sms": 0.75, "whatsapp": 0.60}
-    elif method == "netbanking":
-        affinity = {"email": 0.90, "sms": 0.70, "whatsapp": 0.55}
+    # Inferred from payment method & transaction scale
+    if case.amount and case.amount >= 2000000:
+        affinity = {"email": 0.85, "whatsapp": 0.60, "sms": 0.50}
     else:
-        affinity = {"whatsapp": 0.80, "sms": 0.70, "email": 0.65}
+        method = (case.payment_method or "").lower()
+        if method == "upi":
+            affinity = {"whatsapp": 0.95, "sms": 0.70, "email": 0.50}
+        elif method == "card":
+            affinity = {"email": 0.85, "sms": 0.75, "whatsapp": 0.60}
+        elif method == "netbanking":
+            affinity = {"email": 0.90, "sms": 0.70, "whatsapp": 0.55}
+        else:
+            affinity = {"whatsapp": 0.80, "sms": 0.70, "email": 0.65}
 
-    return affinity.get(channel, 0.60), "Inferred from Payment Method"
+    return affinity.get(channel, 0.60), "Inferred from Context"
 
 
-def _compute_recovery_success(channel: str, all_customer_records: list[CommunicationRecord]) -> tuple[float, str]:
+def _compute_recovery_success(
+    channel: str,
+    all_customer_records: list[CommunicationRecord],
+    case: PaymentCase | None = None,
+) -> tuple[float, str]:
     """Dimension 2: Recovery Success by Channel (25% weight).
     
     Empirical success rate for this channel from prior cases.
     """
-    channel_records = [r for r in all_customer_records if r.channel == channel]
-    if not channel_records:
-        benchmarks = {"whatsapp": 0.92, "sms": 0.72, "email": 0.62}
+    prior_records = [
+        r for r in all_customer_records 
+        if r.channel == channel and (case is None or r.case_id != case.id)
+    ]
+    if not prior_records:
+        if case and ((case.amount or 0) >= 2000000 or (case.failure_reason or "").lower() in {"fraud_suspicion", "suspicious_activity"}):
+            benchmarks = {"email": 0.65, "whatsapp": 0.65, "sms": 0.45}
+        else:
+            benchmarks = {"whatsapp": 0.92, "sms": 0.72, "email": 0.62}
         return benchmarks.get(channel, 0.60), "Domain Baseline"
 
-    attributed_count = sum(1 for r in channel_records if r.recovery_attributed or r.outcome == "PAYMENT_COMPLETED")
-    total = len(channel_records)
+    attributed_count = sum(1 for r in prior_records if r.recovery_attributed or r.outcome == "PAYMENT_COMPLETED")
+    total = len(prior_records)
     ratio = attributed_count / total
     return min(1.0, max(0.15, ratio + 0.10)), f"{attributed_count} / {total} Recoveries"
 
@@ -167,9 +180,13 @@ def _compute_comm_history(
                 clicked_in_case += 1
 
     if unheeded_in_case > 0:
-        penalty = unheeded_in_case * 0.45
+        penalty = unheeded_in_case * 0.55
         base_engagement -= penalty
         notes.append(f"Unheeded in attempt {unheeded_in_case}")
+
+    if channel == "whatsapp" and any(r.channel == "sms" and r.outcome == "IGNORED" for r in case_records):
+        base_engagement -= 0.20
+        notes.append("Prior phone notification unheeded")
 
     if clicked_in_case > 0:
         base_engagement += 0.20
@@ -187,7 +204,10 @@ def _compute_recovery_context(channel: str, case: PaymentCase) -> tuple[float, s
     reason = (case.failure_reason or "").lower()
     amount = case.amount  # paise
 
-    if reason in {"insufficient_funds", "network_timeout"}:
+    if reason in {"fraud_suspicion", "suspicious_activity"} or amount >= 2000000:
+        ctx = {"email": 0.80, "whatsapp": 0.45, "sms": 0.45}
+        desc = "High transaction value and risk context favors formal email"
+    elif reason in {"insufficient_funds", "network_timeout"}:
         # Urgent, instant re-attempt preferred via instant chat/SMS
         ctx = {"whatsapp": 0.95, "sms": 0.85, "email": 0.55}
         desc = "High-urgency failure reason"
@@ -302,7 +322,7 @@ def evaluate_channel_suitability(
                 continue
 
             hist_score, hist_notes = _compute_comm_history(ch, c_records, all_records)
-            succ_score, succ_status = _compute_recovery_success(ch, all_records)
+            succ_score, succ_status = _compute_recovery_success(ch, all_records, case)
             pref_score, pref_status = _compute_preference(ch, customer, case, opted_outs)
             ctx_score, ctx_status = _compute_recovery_context(ch, case)
 
@@ -319,6 +339,11 @@ def evaluate_channel_suitability(
                 + (WEIGHT_AVAILABILITY * avail_score)
                 + (WEIGHT_RECOVERY_CONTEXT * ctx_score)
             )
+            # Deprioritize unheeded channels from current case
+            unheeded_count = sum(1 for r in c_records if r.channel == ch and r.outcome in {"IGNORED", "DELIVERED", "SENT"} and not r.recovery_attributed)
+            if unheeded_count > 0:
+                composite = max(0.05, composite - (0.25 * unheeded_count))
+
             scores[ch] = round(composite, 2)
 
         sorted_channels = sorted(scores.keys(), key=lambda c: scores[c], reverse=True)
@@ -392,9 +417,9 @@ def evaluate_channel_suitability(
     # Status evaluation
     if case.status in {CaseStatus.RECOVERED, CaseStatus.CLOSED}:
         status = "COMPLETED"
-    elif case.status == CaseStatus.ABANDONED or case.retry_count >= case.max_retries:
+    elif case.status == CaseStatus.ABANDONED or ((case.retry_count or 0) >= (case.max_retries or 3)):
         status = "ATTEMPT_LIMIT_REACHED"
-    elif case.policy_check_passed is False or case.status == CaseStatus.HUMAN_REVIEW:
+    elif case.status == CaseStatus.HUMAN_REVIEW or (case.policy_check_passed is False and case.status != CaseStatus.RECOVERING):
         status = "POLICY_BLOCKED"
     else:
         status = "RECOMMENDED"
@@ -475,7 +500,7 @@ def get_case_channel_intelligence(db: Session, case: PaymentCase) -> ChannelInte
     elif case.status == CaseStatus.ABANDONED or case.retry_count >= case.max_retries:
         rec.status = "ATTEMPT_LIMIT_REACHED"
         rec.reason = f"Maximum recovery attempts ({case.max_retries}) exhausted. Communication stopped."
-    elif case.policy_check_passed is False or case.status == CaseStatus.HUMAN_REVIEW:
+    elif case.status == CaseStatus.HUMAN_REVIEW or (case.policy_check_passed is False and case.status != CaseStatus.RECOVERING):
         rec.status = "POLICY_BLOCKED"
         rec.reason = "High transaction value requires manual review before dispatching recovery communication." if (case.amount and case.amount >= 2000000) else "Automatic communication blocked by safety policy. Requires human review."
 
@@ -536,7 +561,7 @@ def dispatch_channel_communication(
         }
 
     # 2. Policy enforcement
-    if (case.policy_check_passed is False or case.status == CaseStatus.HUMAN_REVIEW) and automatic:
+    if (case.status == CaseStatus.HUMAN_REVIEW or (case.policy_check_passed is False and case.status != CaseStatus.RECOVERING)) and automatic:
         log_audit_event(db, case.id, "communication_blocked", {
             "reason": "Policy check blocked automatic communication.",
             "status": case.status.value,
@@ -622,7 +647,7 @@ def dispatch_channel_communication(
     result = provider.send(db, case, payment_link_url)
 
     # 7. Persist CommunicationRecord with initial outcome
-    outcome = "DELIVERED" if result.status in {"SENT", "SIMULATED"} else "FAILED"
+    outcome = "DELIVERED" if result.status in {"SENT", "SIMULATED", "MOCKED"} else "FAILED"
 
     comm_record = CommunicationRecord(
         case_id=case.id,
@@ -631,7 +656,7 @@ def dispatch_channel_communication(
         suitability_score=recommendation.suitability_score,
         channel_scores=recommendation.channel_scores,
         reason=recommendation.reason,
-        attempt_number=case.retry_count or 1,
+        attempt_number=max(case.retry_count or 1, max([r.attempt_number for r in recent_records] or [0]) + 1),
         simulated=result.simulated,
         recipient=result.recipient,
         message_snippet=result.message_snippet,

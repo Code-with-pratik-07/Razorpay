@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.common import UTCDateTime
 
 
-AllowedAIAction = Literal["retry", "payment_link", "message", "escalate"]
+AllowedAIAction = Literal["retry", "payment_link", "message", "escalate", "none"]
 
 
 class AIDecision(BaseModel):
@@ -95,6 +95,12 @@ class CaseExplanation(CaseSummary):
     execution_error: str | None = None
     manual_execution: bool = False
     channel_intelligence: ChannelIntelligence | None = None
+    human_review_status: Literal["NOT_REQUIRED", "REQUIRED", "APPROVED", "REJECTED"] = "NOT_REQUIRED"
+    payment_link_status: Literal["ACTIVE", "EXPIRED", "PAID", "NONE"] = "NONE"
+    communication_status: Literal["PAUSED", "READY", "GENERATED", "SENT", "SIMULATED", "NOT_AVAILABLE", "COMPLETED", "FAILED", "EXHAUSTED"] = "PAUSED"
+    customer_payment_status: Literal["PENDING", "RECEIVED", "EXHAUSTED", "FAILED", "NONE"] = "NONE"
+    recommended_channel: str = "email"
+    dispatched_channel: str | None = None
 
 
 class ExecuteRecoveryResponse(BaseModel):

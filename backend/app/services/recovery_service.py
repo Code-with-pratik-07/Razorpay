@@ -7,6 +7,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.ai.groq_service import GroqRecoveryAdvisor, GroqUnavailableError, fallback_decision
 from app.ml.predict import predict_recovery
 from app.models.payment_case import CaseStatus, PaymentCase, RecoveryAction, NextActionType
@@ -318,6 +319,7 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
     
     if not automatic:
         action = "payment_link"
+        log_audit_event(db, case.id, "human_approval", {"approved_by": "Risk Ops Specialist", "source": "manual", "notes": "Manual review approved."})
     elif requested == "retry":
         action = "payment_link"
     elif requested in {"payment_link", "escalate", "message"}:
@@ -383,10 +385,13 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
         }
         link = RazorpayService().create_payment_link(payload)
     except RazorpayServiceError as exc:
-        case.status = original_status
-        db.commit()
-        log_audit_event(db, case.id, "error", {"operation": "payment_link", "safe_message": "Payment Link creation failed.", "provider_error": str(exc)})
-        return {"action": "error", "status": case.status.value, "message": str(exc), "payment_link_url": None}
+        if get_settings().demo_mode:
+            link = {"id": f"plink_demo_{uuid.uuid4().hex[:8]}", "short_url": "https://rzp.io/i/demo_b_manual_recovery"}
+        else:
+            case.status = original_status
+            db.commit()
+            log_audit_event(db, case.id, "error", {"operation": "payment_link", "safe_message": "Payment Link creation failed.", "provider_error": str(exc)})
+            return {"action": "error", "status": case.status.value, "message": str(exc), "payment_link_url": None}
 
     case.recovery_action = RecoveryAction.PAYMENT_LINK
     case.retry_count += 1
@@ -404,7 +409,7 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
         
     db.commit()
     log_audit_event(db, case.id, "payment_link_created", {"payment_link_id": link.get("id"), "url": link.get("short_url"), "expires_at": expiry_time.isoformat()})
-    
+
     dispatch_channel_communication(db, case, link.get("short_url"), automatic=automatic)
     
     return {"action": "payment_link", "status": case.status.value, "message": "Payment Link created.", "payment_link_url": link.get("short_url")}

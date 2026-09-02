@@ -37,32 +37,18 @@ export function CaseDetail({
   }
 
   const mlDecision = explanation?.ml_decision ?? null;
-  const policyAllowed = explanation?.policy?.allowed ?? selected?.policy_check_passed ?? false;
   const existingPaymentLink = audit.find((event) => event.event_type === "payment_link_created")?.event_data.url as string | undefined;
   const currentLink = execution?.payment_link_url || existingPaymentLink;
 
   const recoveryStartedEvent = audit.find((e) => e.event_type === "recovery_started");
   const isAutomatic = recoveryStartedEvent?.event_data.automatic === true;
-  const executionMode = isAutomatic ? "AUTOMATIC" : recoveryStartedEvent ? "MANUAL" : "";
+  const executionMode = isAutomatic ? "Automatic Recovery" : recoveryStartedEvent ? "Manual Recovery" : "Automatic Recovery";
 
   // Modal and preview states
   const [showCommModal, setShowCommModal] = React.useState(false);
   const [activeCommTab, setActiveCommTab] = React.useState<'email' | 'sms' | 'whatsapp'>('email');
   const [copied, setCopied] = React.useState(false);
-
-  // Set default preview tab when opening modal
-  const openCommunicationModal = (channelOverride?: 'email' | 'sms' | 'whatsapp') => {
-    if (channelOverride) {
-      setActiveCommTab(channelOverride);
-    } else if (selected.notification_status === 'WHATSAPP_SIMULATED' || selected.selected_channel === 'whatsapp') {
-      setActiveCommTab('whatsapp');
-    } else if (selected.notification_status === 'SMS_SIMULATED' || selected.selected_channel === 'sms') {
-      setActiveCommTab('sms');
-    } else {
-      setActiveCommTab('email');
-    }
-    setShowCommModal(true);
-  };
+  const [isSending, setIsSending] = React.useState(false);
 
   // Status flags
   const isAbandoned = selected.status === 'abandoned';
@@ -70,52 +56,130 @@ export function CaseDetail({
   const isRecovering = selected.status === 'recovering';
   const isRecovered = selected.status === 'recovered';
 
+  // Backend workflow state derived from explanation
+  const humanReviewStatus = explanation?.human_review_status ?? (explanation?.manual_execution ? 'APPROVED' : isHumanReview ? 'REQUIRED' : 'NOT_REQUIRED');
+  const commStatus = explanation?.communication_status ?? (isRecovered ? 'COMPLETED' : isAbandoned ? 'EXHAUSTED' : humanReviewStatus === 'REQUIRED' ? 'PAUSED' : 'READY');
+  const recommendedChannel = explanation?.recommended_channel ?? explanation?.channel_intelligence?.recommended_channel ?? 'email';
+  const dispatchedChannel = explanation?.dispatched_channel ?? null;
+  const recChannelName = recommendedChannel === 'whatsapp' ? 'WhatsApp' : recommendedChannel === 'sms' ? 'SMS' : 'Email';
+
   // Can approve recovery for HUMAN_REVIEW if under retry limit
-  const canApproveRecovery = isHumanReview && selected.retry_count < selected.max_retries;
+  const canApproveRecovery = (isHumanReview || humanReviewStatus === 'REQUIRED') && selected.retry_count < selected.max_retries;
+
+  // Set default preview tab when opening modal
+  const openCommunicationModal = (channelOverride?: 'email' | 'sms' | 'whatsapp') => {
+    if (channelOverride) {
+      setActiveCommTab(channelOverride);
+    } else if (dispatchedChannel) {
+      setActiveCommTab(dispatchedChannel as 'email' | 'sms' | 'whatsapp');
+    } else if (recommendedChannel === 'whatsapp' || recommendedChannel === 'sms' || recommendedChannel === 'email') {
+      setActiveCommTab(recommendedChannel as 'email' | 'sms' | 'whatsapp');
+    } else {
+      setActiveCommTab('email');
+    }
+    setShowCommModal(true);
+  };
 
   // ML routing label helpers
   const mlBadge = mlDecision === 'HIGH'
     ? { label: 'HIGH CONFIDENCE', cls: 'ml-high' }
     : mlDecision === 'UNCERTAIN'
-    ? { label: 'UNCERTAIN — Human Review', cls: 'ml-uncertain' }
+    ? { label: 'UNCERTAIN — Review', cls: 'ml-uncertain' }
     : mlDecision === 'LOW'
-    ? { label: 'LOW — Attempt Limit Reached', cls: 'ml-low' }
+    ? { label: 'LOW — Attempt Limit', cls: 'ml-low' }
     : mlDecision === 'COLD_START'
-    ? { label: 'LIMITED HISTORY', cls: 'ml-cold' }
+    ? { label: 'COLD START PROFILE', cls: 'ml-cold' }
     : null;
 
   // Formatted date helper
   const formattedExpiry = selected.payment_link_expires_at
     ? formatDate(selected.payment_link_expires_at)
-    : "In 7 days";
+    : "10 Sep 2026, 12:39 AM";
 
-  // Normalized notification status label
-  const getNotificationStatusDisplay = () => {
-    if (isHumanReview || !policyAllowed) {
-      return { text: "⏳ Waiting for Human Approval", cls: "status-waiting", canView: false };
+  // Normalized Communication Status Display
+  const getCommunicationStatusInfo = () => {
+    if (humanReviewStatus === 'REQUIRED') {
+      return {
+        icon: "⏳",
+        badge: "Communication Paused",
+        text: "Waiting for human approval",
+        cls: "status-waiting",
+        canView: false,
+        isReady: false,
+      };
     }
-    if (selected.notification_status === 'WHATSAPP_SIMULATED') {
-      return { text: "✓ WhatsApp Simulated", cls: "status-simulated", canView: true };
+    if (commStatus === 'READY') {
+      return {
+        icon: recommendedChannel === 'whatsapp' ? "💬" : recommendedChannel === 'sms' ? "📱" : "✉️",
+        badge: `${recChannelName} Ready`,
+        text: `${recChannelName} selected for recovery communication`,
+        cls: "status-ready",
+        canView: true,
+        isReady: true,
+      };
     }
-    if (selected.notification_status === 'SMS_SIMULATED') {
-      return { text: "✓ SMS Simulated", cls: "status-simulated", canView: true };
+    if (commStatus === 'GENERATED' || selected.notification_status === 'MOCKED' || selected.notification_status === 'GENERATED') {
+      return {
+        icon: "✓",
+        badge: `${recChannelName} Generated`,
+        text: "Ready for customer delivery",
+        cls: "status-generated",
+        canView: true,
+        isReady: false,
+      };
     }
-    if (selected.notification_status === 'SENT') {
-      return { text: "✓ Email Sent", cls: "status-sent", canView: true };
+    if (commStatus === 'SIMULATED' || selected.notification_status === 'WHATSAPP_SIMULATED' || selected.notification_status === 'SMS_SIMULATED') {
+      const ch = selected.notification_status === 'WHATSAPP_SIMULATED' ? 'WhatsApp' : 'SMS';
+      return {
+        icon: "✓",
+        badge: `${ch} Simulated`,
+        text: `${ch} communication simulated for demo`,
+        cls: "status-simulated",
+        canView: true,
+        isReady: false,
+      };
     }
-    if (selected.notification_status === 'MOCKED' || selected.notification_status === 'GENERATED') {
-      return { text: "✓ Email Generated", cls: "status-generated", canView: true };
+    if (commStatus === 'SENT' || selected.notification_status === 'SENT') {
+      return {
+        icon: "✓",
+        badge: "Email Sent",
+        text: "Email delivered to customer",
+        cls: "status-sent",
+        canView: true,
+        isReady: false,
+      };
     }
-    if (selected.notification_status === 'NOT_AVAILABLE') {
-      return { text: "No Customer Contact Endpoint Available", cls: "status-none", canView: false };
+    if (commStatus === 'COMPLETED' || selected.status === 'recovered') {
+      return {
+        icon: "✓",
+        badge: "Communication Completed",
+        text: "Payment recovered successfully",
+        cls: "status-completed",
+        canView: true,
+        isReady: false,
+      };
     }
-    if (selected.notification_status === 'FAILED') {
-      return { text: "Payment Link exists, but delivery failed.", cls: "status-failed", canView: true };
+    if (commStatus === 'EXHAUSTED' || selected.status === 'abandoned') {
+      return {
+        icon: "■",
+        badge: "Communication Stopped",
+        text: "Maximum attempt limit reached",
+        cls: "status-exhausted",
+        canView: true,
+        isReady: false,
+      };
     }
-    return { text: "Pending", cls: "status-pending", canView: false };
+    return {
+      icon: "•",
+      badge: "Pending",
+      text: "Awaiting recovery action",
+      cls: "status-pending",
+      canView: false,
+      isReady: false,
+    };
   };
 
-  const notifDisplay = getNotificationStatusDisplay();
+  const commInfo = getCommunicationStatusInfo();
 
   // Handler for Complete Payment in all previews
   const handlePaymentClick = (e: React.MouseEvent) => {
@@ -127,29 +191,55 @@ export function CaseDetail({
     }
   };
 
+  // Handler for demo simulation sending
+  const handleSimulateDispatch = async (channelToDispatch: string) => {
+    setIsSending(true);
+    try {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+      const res = await fetch(`${apiBase}/api/cases/${selected.id}/dispatch-communication`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: channelToDispatch })
+      });
+      if (res.ok) {
+        setNotice(`${title(channelToDispatch)} communication simulated successfully.`);
+        await analyze();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setNotice(`Dispatch notice: ${err.detail || 'Simulated for demo'}`);
+        await analyze();
+      }
+    } catch (err) {
+      setNotice(`Dispatch error: ${(err as Error).message}`);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const channelIntel = explanation?.channel_intelligence;
 
   return (
     <>
-      {/* 1. Case Header */}
       <header className="details-header">
         <div className="details-title">
           <h2>
             {selected.case_number} 
-            {selected.case_number === 'DEMO-C-RECOVERED' && <span className="synthetic-badge">Synthetic Demo Data</span>}
-            {isAutomatic && isRecovering && <span className="synthetic-badge" style={{background:'#0ea5e9',marginLeft:8}}>AUTO</span>}
+            <span style={{marginLeft: 12, fontSize: '1.25rem', color: '#10b981', fontWeight: 600}}>
+              {formatINR(selected.amount)}
+            </span>
+            <Badge value={selected.status} />
           </h2>
           <div className="details-meta">
-            {selected.customer_email ?? 'Unknown'} • {title(selected.payment_method)}
+            {selected.customer_email ?? 'Customer'} • {title(selected.payment_method)}
           </div>
           <div className="details-meta notification-meta">
-            <span className={`notif-indicator ${notifDisplay.cls}`}>
-              {notifDisplay.text}
+            <span className={`notif-indicator ${commInfo.cls}`}>
+              {commInfo.icon} {commInfo.badge}
             </span>
-            {notifDisplay.canView && (
+            {commInfo.canView && (
               <button
                 id="view-comm-header-btn"
-                className="button secondary comm-trigger-btn"
+                className="button secondary view-comm-header-btn"
                 onClick={() => openCommunicationModal()}
               >
                 View Communication
@@ -157,28 +247,33 @@ export function CaseDetail({
             )}
           </div>
         </div>
-        <div className="details-amount">
-          {formatINR(selected.amount)}
-          <div className="status-badge-wrapper"><Badge value={selected.status} /></div>
-        </div>
       </header>
 
-      <div className="details-body">
-        {/* 2. Recovery Journey (Pipeline) */}
+      <div className="details-grid">
+        {/* 2. RECOVERY JOURNEY (Six-stage pipeline) */}
         <DecisionPipeline selected={selected} explanation={explanation} />
 
-        {/* 3. Key Metrics Grid */}
         {explanation && (
-          <div className="intelligence-panel">
+          <div className="intelligence-panel" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))'}}>
+            {/* 3. KEY RECOVERY METRICS */}
             <div className="intelligence-card">
-              <h4><i/> Key Recovery Metrics</h4>
+              <h4>
+                <i/> 3. Key Recovery Metrics
+              </h4>
               <div className="stat-row">
-                <span>ML Recovery Probability</span>
-                <b>{mlDecision === 'COLD_START' ? "N/A (Cold Start)" : explanation.ml.recovery_probability != null ? (explanation.ml.recovery_probability * 100).toFixed(1) + "%" : "—"}</b>
+                <span>
+                  ML Recovery Probability
+                  <span 
+                    className="info-tooltip-wrap" 
+                    title="Recovery Probability predicts whether the payment is likely to be recovered. Channel Suitability determines the most effective communication channel." 
+                    style={{marginLeft: 6, cursor: 'help', color: '#64748b'}}
+                  >ℹ️</span>
+                </span>
+                <b>{mlDecision === 'COLD_START' ? "N/A (Cold Start)" : explanation.ml.recovery_probability != null ? (explanation.ml.recovery_probability * 100).toFixed(0) + "%" : "—"}</b>
               </div>
               {mlBadge && (
                 <div className="stat-row">
-                  <span>ML Decision Tier</span>
+                  <span>Recovery Tier</span>
                   <b className={mlBadge.cls} style={{
                     fontSize: '0.7rem', padding: '2px 7px', borderRadius: 4,
                     background: mlDecision === 'HIGH' ? '#064e3b' : mlDecision === 'UNCERTAIN' ? '#78350f' : mlDecision === 'COLD_START' ? '#1e3a8a' : '#3b1515',
@@ -187,8 +282,8 @@ export function CaseDetail({
                 </div>
               )}
               <div className="stat-row">
-                <span>Recovery Attempts</span>
-                <b>{selected.retry_count} of {selected.max_retries} used</b>
+                <span>Attempts Used</span>
+                <b>{selected.retry_count} of {selected.max_retries}</b>
               </div>
               <div className="stat-row">
                 <span>Customer Lifetime Value</span>
@@ -196,18 +291,9 @@ export function CaseDetail({
               </div>
             </div>
 
-            <div className="intelligence-card">
-              <h4><i/> Policy Enforcement</h4>
-              <div className="stat-row"><span>Decision</span> <b>{explanation.policy.allowed ? "APPROVED" : "BLOCKED"}</b></div>
-              <div className="stat-row"><span>Reason</span> <b>{title(explanation.policy.reason)}</b></div>
-              <div className="stat-row"><span>Human Review</span> <b>{explanation.policy.requires_human_approval ? "Required by policy" : "Not Required"}</b></div>
-              <div className="stat-row"><span>Prior Successes</span> <b>{explanation.customer_history.successful_payments} completed payments</b></div>
-            </div>
-
-            {/* 4. Simplified, Professional Communication Intelligence Card */}
+            {/* 4. COMMUNICATION INTELLIGENCE */}
             {channelIntel && (
               <div className="intelligence-card communication-intelligence-card" style={{gridColumn: '1 / -1'}}>
-                {/* Header & Compact Profile Badge */}
                 <div className="comm-card-header">
                   <div className="comm-profile-compact">
                     <span className={`comm-profile-pill maturity-${channelIntel.communication_maturity.toLowerCase()}`}>
@@ -217,18 +303,11 @@ export function CaseDetail({
                     <span className="comm-profile-desc">{channelIntel.maturity_description}</span>
                   </div>
 
-                  <span className={`channel-status-pill status-${channelIntel.status.toLowerCase()}`}>
-                    {channelIntel.status === 'RECOMMENDED' ? 'Recommended for recovery' :
-                     channelIntel.status === 'SIMULATED' ? 'Simulated for Demo' :
-                     channelIntel.status === 'SENT' ? 'Dispatched' :
-                     channelIntel.status === 'POLICY_BLOCKED' ? 'Policy Blocked' :
-                     channelIntel.status === 'COMPLETED' ? 'Recovery Complete' :
-                     channelIntel.status === 'ATTEMPT_LIMIT_REACHED' ? 'Attempt Limit Reached' :
-                     channelIntel.status}
+                  <span className={`channel-status-pill status-${commStatus.toLowerCase()}`}>
+                    {commInfo.badge}
                   </span>
                 </div>
 
-                {/* Primary Visual Focus: Recommended Channel */}
                 <div className="comm-primary-focus">
                   <div className="comm-focus-channel">
                     <span className="comm-focus-icon">
@@ -237,32 +316,32 @@ export function CaseDetail({
                     </span>
                     <div>
                       <div className="comm-focus-title">
-                        Recommended Channel: <b>{title(channelIntel.recommended_channel)}</b>
+                        RECOMMENDED CHANNEL: <b>{title(channelIntel.recommended_channel)}</b>
                       </div>
                       <div className="comm-focus-metrics">
                         <span className="comm-suitability-badge">
-                          <b>{(channelIntel.suitability_score * 100).toFixed(0)}%</b> Channel Suitability
+                          <b>{(channelIntel.suitability_score * 100).toFixed(0)}%</b> Suitability
+                          <span 
+                            className="info-tooltip-wrap" 
+                            title="Recovery Probability predicts whether the payment is likely to be recovered. Channel Suitability determines the most effective communication channel." 
+                            style={{marginLeft: 6, cursor: 'help', color: '#93c5fd'}}
+                          >ℹ️</span>
                         </span>
                         <span className={`comm-conf-badge conf-${channelIntel.confidence}`}>
                           {title(channelIntel.confidence)} Confidence
                         </span>
                       </div>
-                      <div className="comm-subtle-hint">
-                        Channel suitability measures the expected effectiveness of this communication method. It is not the customer's recovery probability.
-                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Why This Channel? (1-2 Concise Sentences) */}
                 <div className="comm-why-box">
-                  <span className="comm-why-title">Why This Channel?</span>
+                  <span className="comm-why-title">Why this channel?</span>
                   <p className="comm-why-body">{channelIntel.reason}</p>
                 </div>
 
-                {/* Compact Alternative Channels */}
                 <div className="comm-alts-row">
-                  <span className="comm-alts-label">Alternative Channels:</span>
+                  <span className="comm-alts-label">Alternatives:</span>
                   <div className="comm-alts-list">
                     {channelIntel.alternatives.map((alt) => {
                       const score = channelIntel.channel_scores[alt] ?? 0;
@@ -276,81 +355,62 @@ export function CaseDetail({
                   </div>
                 </div>
 
-                {/* Communication Journey Timeline */}
                 <div className="comm-journey-block">
-                  <span className="comm-journey-title">Communication Journey</span>
+                  <span className="comm-journey-title">COMMUNICATION JOURNEY</span>
                   <div className="journey-v-timeline">
                     {channelIntel.communication_journey && channelIntel.communication_journey.length > 0 ? (
                       channelIntel.communication_journey.map((item, idx) => {
-                        const isPriorToNext = idx < channelIntel.communication_journey.length - 1;
                         const isIgnored = item.outcome === 'IGNORED';
+                        const isPaid = item.outcome === 'PAYMENT_COMPLETED';
+                        const chIcon = item.channel === 'whatsapp' ? '💬' : item.channel === 'sms' ? '📱' : '✉️';
                         return (
                           <React.Fragment key={idx}>
-                            <div className="journey-v-step">
+                            <div 
+                              className="journey-v-step clickable-journey-step"
+                              onClick={() => openCommunicationModal(item.channel as 'email' | 'sms' | 'whatsapp')}
+                              title="Click to view message preview"
+                              style={{cursor: 'pointer'}}
+                            >
                               <div className="journey-v-badge">Attempt {item.attempt_number}</div>
                               <div className="journey-v-card">
                                 <div className="journey-v-top">
                                   <span className="journey-v-channel">
-                                    {item.channel === 'whatsapp' ? '💬 WhatsApp' : item.channel === 'sms' ? '📱 SMS' : '✉️ Email'}
+                                    {chIcon} {title(item.channel)}
                                   </span>
                                   <span className={`journey-v-status outcome-${item.outcome.toLowerCase()}`}>
-                                    {item.outcome === 'PAYMENT_COMPLETED' ? '✓ Paid' : item.outcome.replace('_', ' ')}
+                                    {isPaid ? '✓ Paid' : isIgnored ? 'Delivered • No customer engagement' : item.outcome.replace('_', ' ')}
                                   </span>
-                                </div>
-                                <div className="journey-v-actions">
-                                  <button
-                                    className="journey-preview-btn"
-                                    onClick={() => openCommunicationModal(item.channel as 'email' | 'sms' | 'whatsapp')}
-                                  >
-                                    View Message
-                                  </button>
                                 </div>
                               </div>
                             </div>
-
-                            {/* Transition indicator */}
-                            {isPriorToNext && isIgnored && (
+                            {isIgnored && (
                               <div className="journey-transition-tag">
-                                ↓ {item.channel.toUpperCase()} deprioritized (No engagement)
-                              </div>
-                            )}
-                            {isPriorToNext && !isIgnored && (
-                              <div className="journey-transition-tag">
-                                ↓ Next attempt
+                                ↓ {title(item.channel)} deprioritized
                               </div>
                             )}
                           </React.Fragment>
                         );
                       })
-                    ) : (
-                      /* Cold Start / Initial Attempt */
-                      <div className="journey-v-step">
-                        <div className="journey-v-badge">Attempt 1</div>
-                        <div className="journey-v-card">
+                    ) : null}
+
+                    {!isRecovered && !isAbandoned && (
+                      <div 
+                        className="journey-v-step next-action-step clickable-journey-step"
+                        onClick={() => openCommunicationModal(recommendedChannel as 'email' | 'sms' | 'whatsapp')}
+                        title="Click to view communication preview"
+                        style={{cursor: 'pointer'}}
+                      >
+                        <div className="journey-v-badge" style={{background: '#2563eb'}}>Next Action</div>
+                        <div className="journey-v-card" style={{border: '1px dashed #60a5fa'}}>
                           <div className="journey-v-top">
                             <span className="journey-v-channel">
-                              {channelIntel.recommended_channel === 'whatsapp' ? '💬 WhatsApp' :
-                               channelIntel.recommended_channel === 'sms' ? '📱 SMS' : '✉️ Email'}
+                              {recommendedChannel === 'whatsapp' ? '💬 WhatsApp' : recommendedChannel === 'sms' ? '📱 SMS' : '✉️ Email'}
                             </span>
-                            <span className="journey-v-status outcome-pending">Recommended</span>
-                          </div>
-                          <div className="journey-v-actions">
-                            <button
-                              className="journey-preview-btn"
-                              onClick={() => openCommunicationModal(channelIntel.recommended_channel as 'email' | 'sms' | 'whatsapp')}
-                            >
-                              Preview Communication
-                            </button>
+                            <span className="journey-v-status" style={{background: '#1e3a8a', color: '#93c5fd'}}>
+                              {commStatus === 'READY' ? 'Ready for review' : commStatus === 'GENERATED' ? '✓ Generated' : 'Selected'}
+                            </span>
                           </div>
                         </div>
-                      </div>
-                    )}
-
-                    {/* Attribution in Journey if recovered */}
-                    {isRecovered && (
-                      <div className="journey-success-step">
-                        <span className="journey-success-check">✓</span>
-                        <span><b>Recovery Successful:</b> Customer completed payment via recovery reminder.</span>
                       </div>
                     )}
                   </div>
@@ -360,182 +420,180 @@ export function CaseDetail({
           </div>
         )}
 
-        {/* 5. Concise AI Advisor */}
+        {/* 5. AI ADVISOR */}
         {explanation?.ai && <AIAdvisorCard explanation={explanation} />}
 
-        {/* 6. Payment Recovery & Communication Action Area */}
-        <div className="payment-recovery-card">
-          <div className="pr-header">
-            <h3>⚡ PAYMENT RECOVERY ACTION</h3>
-            <span className={`pr-status-badge ${isRecovered ? 'completed' : isAbandoned ? 'exhausted' : currentLink ? 'active' : 'pending'}`}>
-              {isRecovered ? '✓ COMPLETED' : isAbandoned ? 'EXHAUSTED' : currentLink ? '🟢 ACTIVE' : 'PENDING'}
-            </span>
-          </div>
-
-          {/* Recovery Attribution Success Banner */}
-          {isRecovered && (
-            <div className="recovery-attribution-banner">
-              <div className="attr-badge">✓ RECOVERY SUCCESS</div>
-              <p className="attr-text">
-                Payment completed after an {channelIntel?.attributed_channel?.toUpperCase() || 'SMS'} recovery notification.
-              </p>
-              <div className="attr-meta">
-                Attributed Channel: <b>{channelIntel?.attributed_channel === 'whatsapp' ? '💬 WhatsApp' : channelIntel?.attributed_channel === 'sms' ? '📱 SMS' : '✉️ Email'}</b> • Attribution Confidence: <span className="attr-conf-pill">High</span>
-              </div>
+        {/* 6. PAYMENT RECOVERY ACTION */}
+        {isRecovered ? (
+          <div className="payment-recovery-card terminal-banner terminal-recovered" style={{
+            background: '#064e3b', border: '1px solid #059669', borderRadius: 8, padding: '20px', color: '#ecfdf5'
+          }}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+              <span style={{fontSize: '1.4rem'}}>✓</span>
+              <h3 style={{margin: 0, color: '#34d399', fontSize: '1.1rem', letterSpacing: '0.05em'}}>PAYMENT SUCCESSFULLY RECOVERED</h3>
             </div>
-          )}
-
-          <div className="pr-body-grid">
-            <div className="pr-info-col">
-              <div className="pr-meta-item">
-                <span className="pr-label">Payment Link:</span>
-                <b>{isRecovered ? 'Paid' : isAbandoned ? 'Expired' : currentLink ? 'Active' : 'Not Created'}</b>
-              </div>
-              <div className="pr-meta-item">
-                <span className="pr-label">Recovery Workflow:</span>
-                <b>{executionMode || (isAutomatic ? 'Automatic' : 'Manual')}</b>
-              </div>
-              <div className="pr-meta-item">
-                <span className="pr-label">Expires:</span>
-                <b>{formattedExpiry}</b>
-              </div>
+            <div style={{fontSize: '1.25rem', fontWeight: 700, margin: '10px 0 6px 0', color: '#ffffff'}}>
+              {formatINR(selected.amount)} recovered successfully.
             </div>
-
-            <div className="pr-actions-col">
-              {currentLink && (
-                <div className="pr-link-buttons">
-                  <a
-                    className="button primary"
-                    href={currentLink.startsWith("http") ? currentLink : `/simulate-payment/${selected.id}`}
-                    target={currentLink.startsWith("http") ? "_blank" : "_self"}
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!currentLink.startsWith("http")) {
-                        e.preventDefault();
-                        window.location.href = `/simulate-payment/${selected.id}`;
-                      }
-                    }}
-                  >
-                    Open Payment Page ↗
-                  </a>
-                  <button
-                    className="button secondary"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void navigator.clipboard.writeText(String(currentLink));
-                      setNotice("Payment link copied to clipboard!");
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
-                    }}
-                  >
-                    {copied ? "✓ Link Copied" : "Copy Link"}
-                  </button>
-                </div>
-              )}
+            <div style={{fontSize: '0.9rem', color: '#a7f3d0'}}>
+              Recovery attributed to: <b>{channelIntel?.attributed_channel?.toUpperCase() || 'SMS'}</b>
             </div>
           </div>
-
-          {/* Customer Communication Row */}
-          <div className="pr-comm-row">
-            <div className="pr-comm-status-wrap">
-              <span className="pr-label">Customer Communication:</span>
-              <span className={`pr-comm-pill ${notifDisplay.cls}`}>
-                {notifDisplay.text}
+        ) : isAbandoned ? (
+          <div className="payment-recovery-card terminal-banner terminal-abandoned" style={{
+            background: '#271212', border: '1px solid #7f1d1d', borderRadius: 8, padding: '20px', color: '#fee2e2'
+          }}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+              <span style={{fontSize: '1.4rem'}}>■</span>
+              <h3 style={{margin: 0, color: '#f87171', fontSize: '1.1rem', letterSpacing: '0.05em'}}>RECOVERY CLOSED</h3>
+            </div>
+            <div style={{fontSize: '0.95rem', margin: '10px 0 4px 0', color: '#fca5a5'}}>
+              Maximum permitted recovery attempts were reached without payment completion.
+            </div>
+            <div style={{fontSize: '0.85rem', color: '#cbd5e1'}}>
+              No further automated recovery actions will be performed.
+            </div>
+          </div>
+        ) : canApproveRecovery ? (
+          <div className="action-panel" style={{background: '#1e293b', border: '1px solid #f59e0b', borderRadius: 8, padding: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12}}>
+            <div className="action-info">
+              <span style={{color: '#fbbf24', fontWeight: 600, fontSize: '0.95rem'}}>
+                ⏳ Human Review Required — Automatic recovery was paused by safety policy.
               </span>
             </div>
-            {notifDisplay.canView && (
-              <button
-                id="view-comm-panel-btn"
-                className="button secondary comm-action-btn"
-                onClick={() => openCommunicationModal()}
-              >
-                View Communication
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Failed Payment Alert if simulated payment failure occurred */}
-        {selected.last_payment_status === 'FAILED' && (
-          <div className="alert error" style={{ marginBottom: '1.5rem', backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '1rem', borderRadius: '8px' }}>
-            <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '1.2rem' }}>✕</span> CUSTOMER PAYMENT FAILED
-            </h3>
-            <p style={{ margin: '0.5rem 0' }}>The customer attempted to complete payment using the active recovery link, but the payment was unsuccessful.</p>
-            <p style={{ margin: '0.5rem 0' }}>
-              <b>Failure reason:</b><br/>
-              {selected.last_payment_failure_reason || 'Simulated payment failure'}
-            </p>
-            <p style={{ margin: '0.5rem 0' }}>
-              <b>Recovery workflow:</b><br/>
-              The active payment link and scheduled reminders remain valid according to the recovery lifecycle.
-            </p>
-            {selected.last_payment_attempt_at && (
-              <p style={{ margin: '0.5rem 0', fontSize: '0.9rem', color: '#7f1d1d' }}>
-                <b>Last Payment Attempt:</b> {formatDate(selected.last_payment_attempt_at)}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* 7. Action Panel & Approval */}
-        <div className="action-panel">
-          <div className="action-info">
-            {isAbandoned ? (
-              <span style={{color:'#f87171'}}>
-                <b>Recovery Abandoned</b><br/>
-                The recovery attempt limit was reached and the payment was not completed before the recovery window expired. No further recovery actions will be taken.
-              </span>
-            ) : isRecovered ? (
-              <span>
-                <b>Recovery:</b> {executionMode || 'AUTOMATIC'}<br/>
-                <b>Payment Link:</b> PAID<br/>
-                <b>Customer Payment:</b> PAYMENT RECEIVED
-              </span>
-            ) : isHumanReview ? (
-              canApproveRecovery
-                ? <span style={{color:'#fbbf24'}}><b>Human Review Required</b> — Click "Approve Recovery" to proceed.</span>
-                : <span style={{color:'#f87171'}}><b>Human Review Required</b> — Recovery cannot be approved (low probability).</span>
-            ) : (
-              <span>
-                <b>Recovery:</b> {executionMode || 'AUTOMATIC'}<br/>
-                <b>Attempts Used:</b> {selected.retry_count} / {selected.max_retries}<br/>
-                <b>Active Payment Link:</b> {(selected.payment_link_expires_at && new Date(selected.payment_link_expires_at).getTime() > Date.now()) ? 'Yes' : 'No'}<br/>
-                {selected.payment_link_expires_at && (
-                  <><b>Payment Link Expiry:</b> {formatDate(selected.payment_link_expires_at)}<br/></>
-                )}
-                {selected.last_notification_at && (
-                  <><b>Last Notification:</b> {formatDate(selected.last_notification_at)}<br/></>
-                )}
-                {selected.retry_count >= selected.max_retries ? (
-                  <><b>Attempt Limit Reached:</b> No additional recovery attempts will be created. The current payment link remains available until its scheduled expiry.</>
-                ) : (
-                  <><b>Next Scheduled Action:</b> {
-                    selected.next_action_type === 'reminder' ? `Reminder scheduled for ${formatDate(selected.next_action_at)}` :
-                    selected.next_action_type === 'expiry_check' ? `Waiting for payment link expiry at ${formatDate(selected.next_action_at)}` :
-                    selected.next_action_type === 'recovery_attempt' ? `Next recovery attempt eligible after expiry` :
-                    currentLink ? 'Waiting for customer payment' :
-                    (explanation?.execution_error ? 'FAILED TO CREATE' : 'Pending')
-                  }</>
-                )}
-              </span>
-            )}
-          </div>
-
-          <div className="action-buttons">
-            {!explanation?.ml && (
-              <button id="view-analysis-btn" className="button secondary" onClick={() => void analyze()} disabled={actionLoading !== null}>
-                {actionLoading === 'analyze' ? <span className="spinner"/> : null}
-                Generate Analysis
-              </button>
-            )}
-
-            {/* Approve Recovery — only for HUMAN_REVIEW */}
-            {canApproveRecovery && !isRecovered && (
-              <button id="approve-recovery-btn" className="button primary" onClick={() => void execute()} disabled={actionLoading !== null}>
+            <div className="action-buttons">
+              <button id="approve-recovery-btn" className="button primary" onClick={() => void execute()} disabled={actionLoading !== null} style={{background: '#f59e0b', color: '#0f172a', fontWeight: 700}}>
                 {actionLoading === 'execute' ? <span className="spinner"/> : null}
                 Approve Recovery
               </button>
+            </div>
+          </div>
+        ) : (
+          <div className="payment-recovery-card">
+            <div className="pr-header">
+              <h3>⚡ 6. PAYMENT RECOVERY ACTION</h3>
+              <span className={`pr-status-badge ${currentLink ? 'active' : 'pending'}`}>
+                {currentLink ? '🟢 Active Payment Link' : 'PENDING'}
+              </span>
+            </div>
+
+            <div className="pr-body-grid">
+              <div className="pr-info-col">
+                <div className="pr-meta-item">
+                  <span className="pr-label">Recovery Method:</span>
+                  <b>{executionMode}</b>
+                </div>
+                <div className="pr-meta-item">
+                  <span className="pr-label">Expires:</span>
+                  <b>{formattedExpiry}</b>
+                </div>
+              </div>
+
+              <div className="pr-actions-col">
+                {currentLink && (
+                  <div className="pr-link-buttons">
+                    <a
+                      className="button primary"
+                      href={currentLink.startsWith("http") ? currentLink : `/simulate-payment/${selected.id}`}
+                      target={currentLink.startsWith("http") ? "_blank" : "_self"}
+                      rel="noopener noreferrer"
+                    >
+                      Open Payment Page ↗
+                    </a>
+                    <button
+                      className="button secondary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void navigator.clipboard.writeText(String(currentLink));
+                        setNotice("Payment link copied to clipboard!");
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                      }}
+                    >
+                      {copied ? "✓ Link Copied" : "Copy Link"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="pr-comm-row">
+              <div className="pr-comm-status-wrap">
+                <span className="pr-label">CUSTOMER COMMUNICATION</span>
+                <div style={{display: 'flex', alignItems: 'center', gap: 10, marginTop: 4}}>
+                  <span className={`pr-comm-pill ${commInfo.cls}`}>
+                    {commInfo.icon} {commInfo.badge}
+                  </span>
+                  <span style={{fontSize: '0.85rem', color: '#94a3b8'}}>
+                    {commInfo.text}
+                  </span>
+                </div>
+              </div>
+              {commInfo.canView && (
+                <button
+                  id="view-comm-panel-btn"
+                  className="button secondary comm-action-btn"
+                  onClick={() => openCommunicationModal()}
+                >
+                  View Communication
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 7. CUSTOMER OUTCOME */}
+        <div className="intelligence-card customer-outcome-card">
+          <h4>7. Customer Outcome</h4>
+          <div className="co-body" style={{marginTop: 8}}>
+            {isRecovered ? (
+              <div>
+                <span className="badge" style={{background: '#064e3b', color: '#34d399', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                  ✓ PAYMENT COMPLETED
+                </span>
+                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem'}}>
+                  Payment successfully captured via {channelIntel?.attributed_channel?.toUpperCase() || 'SMS'} recovery notice.
+                </p>
+              </div>
+            ) : isAbandoned ? (
+              <div>
+                <span className="badge" style={{background: '#3b1515', color: '#f87171', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                  RECOVERY CLOSED
+                </span>
+                <p style={{margin: '8px 0 0 0', color: '#94a3b8', fontSize: '0.9rem'}}>
+                  Maximum permitted recovery attempts were reached without payment completion.
+                </p>
+              </div>
+            ) : selected.last_payment_status === 'FAILED' ? (
+              <div>
+                <span className="badge" style={{background: '#450a0a', color: '#fca5a5', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                  ✕ CUSTOMER PAYMENT FAILED
+                </span>
+                <p style={{margin: '8px 0 4px 0', color: '#fca5a5', fontSize: '0.9rem'}}>
+                  The customer attempted to pay using the link, but the transaction was unsuccessful: <b>{selected.last_payment_failure_reason || 'Failure'}</b>.
+                </p>
+                {selected.last_payment_attempt_at && (
+                  <span style={{fontSize: '0.8rem', color: '#94a3b8'}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
+                )}
+              </div>
+            ) : isRecovering ? (
+              <div>
+                <span className="badge" style={{background: '#1e3a8a', color: '#93c5fd', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                  ⏳ CUSTOMER PAYMENT PENDING
+                </span>
+                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem'}}>
+                  Payment link is active. Waiting for customer checkout.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <span className="badge" style={{background: '#78350f', color: '#fbbf24', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                  ⏳ AWAITING REVIEW
+                </span>
+                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem'}}>
+                  Recovery execution paused pending manual reviewer approval.
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -543,6 +601,7 @@ export function CaseDetail({
         {/* Audit Timeline */}
         <AuditTimeline audit={audit} />
       </div>
+
 
       {/* 8. Interactive Multi-Channel Communication Viewer Modal */}
       {showCommModal && (
@@ -580,6 +639,30 @@ export function CaseDetail({
 
             {/* Tab Contents */}
             <div className="comm-modal-content">
+              {/* Prepared but not dispatched notice */}
+              {commStatus === 'READY' && (!dispatchedChannel || dispatchedChannel !== activeCommTab) && (
+                <div className="comm-ready-banner" style={{
+                  background: '#0f172a', border: '1px solid #3b82f6', borderRadius: 8, padding: '14px 18px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12
+                }}>
+                  <div>
+                    <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#60a5fa', letterSpacing: '0.05em'}}>
+                      {activeCommTab.toUpperCase()} PREVIEW
+                    </div>
+                    <div style={{fontSize: '0.85rem', color: '#cbd5e1', marginTop: 2}}>
+                      Communication prepared for review. Not yet dispatched.
+                    </div>
+                  </div>
+                  <button
+                    className="button primary"
+                    style={{background: '#2563eb', padding: '6px 14px', fontSize: '0.85rem', whiteSpace: 'nowrap'}}
+                    onClick={() => void handleSimulateDispatch(activeCommTab)}
+                    disabled={isSending}
+                  >
+                    {isSending ? "Dispatching..." : `⚡ Simulate Sending for Demo`}
+                  </button>
+                </div>
+              )}
+
               {/* TAB 1: EMAIL */}
               {activeCommTab === 'email' && (
                 <div className="email-preview-wrapper">
@@ -587,25 +670,29 @@ export function CaseDetail({
                     <div className="email-brand">
                       <span className="brand-dot">●</span> <strong>RecoverAI</strong>
                     </div>
-                    <span className="email-badge">TRANSACTIONAL RECOVERY NOTICE</span>
+                    <span className="email-badge">FAILED PAYMENT RECOVERY</span>
                   </div>
                   <div className="email-preview-body">
-                    <h3 style={{marginTop: 0, color: '#1e293b'}}>Payment Attempt Unsuccessful</h3>
+                    <h3 style={{marginTop: 0, color: '#1e293b'}}>Failed Payment Recovery</h3>
                     <p style={{color: '#475569'}}>Hi Customer,</p>
                     <p style={{color: '#475569'}}>
-                      We were unable to process your recent payment of <strong>{formatINR(selected.amount)}</strong> for Order #{selected.case_number}.
+                      We noticed that your recent payment could not be completed.
                     </p>
                     <div className="email-meta-box">
+                      <div><span>Amount:</span> <b>{formatINR(selected.amount)}</b></div>
+                      <div><span>Order:</span> <b>#{selected.case_number}</b></div>
                       <div><span>Reason:</span> <b>{title(selected.failure_reason || 'Insufficient Funds')}</b></div>
                       <div><span>Payment Deadline:</span> <b>{formattedExpiry}</b></div>
                     </div>
-                    <p style={{color: '#475569'}}>You can complete your payment securely using the button below:</p>
+                    <p style={{color: '#475569', fontWeight: 500}}>
+                      Complete your payment securely before the recovery link expires.
+                    </p>
                     <div style={{textAlign: 'center', margin: '24px 0'}}>
                       <button
                         className="button email-complete-btn"
                         onClick={handlePaymentClick}
                       >
-                        Complete Payment →
+                        Complete Payment
                       </button>
                     </div>
                     <div className="email-footer-note">
@@ -636,25 +723,25 @@ export function CaseDetail({
                     <div className="sms-chat-body">
                       <div className="sms-timestamp">Today 9:41 AM</div>
                       <div className="sms-bubble">
-                        <div className="sms-text">
-                          <strong>RecoverAI Alert:</strong> Your payment of {formatINR(selected.amount)} for Order #{selected.case_number} could not be completed.
+                        <div className="sms-text" style={{whiteSpace: 'pre-line', lineHeight: 1.6}}>
+                          <strong>RecoverAI</strong>{"\n\n"}
+                          Your payment of {formatINR(selected.amount)} requires attention.{"\n\n"}
+                          Complete your payment securely:
                         </div>
-                        <div className="sms-reason">Reason: {title(selected.failure_reason || 'Insufficient Funds')}.</div>
-                        <div className="sms-cta">Complete your payment securely here:</div>
-                        <div className="sms-link-text">{currentLink ? currentLink.replace(/^https?:\/\//, '') : 'rzp.io/i/rec_demo'}</div>
                         <button
                           className="button sms-action-btn"
+                          style={{marginTop: 14}}
                           onClick={handlePaymentClick}
                         >
                           Complete Payment
                         </button>
-                        <div className="sms-expiry">Link expires: {formattedExpiry}.</div>
+                        <div className="sms-expiry" style={{marginTop: 10}}>Link expires: {formattedExpiry}.</div>
                       </div>
                     </div>
                     <div className="phone-bottom-indicator" />
                   </div>
                   <div className="simulation-disclaimer">
-                    📱 SMS communication simulated for demonstration purposes.
+                    SMS communication simulated for demonstration purposes.
                   </div>
                 </div>
               )}
@@ -675,25 +762,22 @@ export function CaseDetail({
                     <div className="wa-chat-body">
                       <div className="wa-date-chip">TODAY</div>
                       <div className="wa-bubble">
-                        <div className="wa-greeting">Hello,</div>
-                        <p className="wa-body-text">
-                          We noticed that your recent payment of <strong>{formatINR(selected.amount)}</strong> for Order #{selected.case_number} was unsuccessful.
+                        <div className="wa-greeting" style={{fontWeight: 700}}>RecoverAI ✓</div>
+                        <p className="wa-body-text" style={{margin: '10px 0 6px 0'}}>
+                          Your recent payment could not be completed.
                         </p>
-                        <div className="wa-field-row">
-                          <span>Reason:</span> <b>{title(selected.failure_reason || 'Insufficient Funds')}</b>
+                        <div style={{margin: '8px 0 12px 0', fontSize: '0.95rem', color: '#1e293b'}}>
+                          Amount: <b>{formatINR(selected.amount)}</b>
                         </div>
-                        <p className="wa-body-text">
-                          You can securely complete your payment with 1-click using the button below.
-                        </p>
                         <button
                           className="wa-btn"
+                          style={{marginTop: 4}}
                           onClick={handlePaymentClick}
                         >
                           ⚡ Complete Payment
                         </button>
-                        <div className="wa-footer-msg">
-                          Payment link expires on {formattedExpiry}.<br/>
-                          Need assistance? Reply directly to this message.
+                        <div className="wa-footer-msg" style={{marginTop: 12}}>
+                          Payment link expires on {formattedExpiry}.
                         </div>
                         <div className="wa-bubble-time">
                           09:41 AM <span className="wa-receipts">✓✓</span>
@@ -702,11 +786,12 @@ export function CaseDetail({
                     </div>
                   </div>
                   <div className="simulation-disclaimer">
-                    💬 WhatsApp message simulated for demonstration purposes.
+                    WhatsApp message simulated for demonstration purposes.
                   </div>
                 </div>
               )}
             </div>
+
 
             <div className="comm-modal-footer">
               <button className="button secondary" onClick={() => setShowCommModal(false)}>

@@ -98,6 +98,12 @@ export type Explanation = RecoveryCase & {
   execution_error?: string | null;
   manual_execution: boolean;
   channel_intelligence?: ChannelIntelligence | null;
+  human_review_status?: "NOT_REQUIRED" | "REQUIRED" | "APPROVED" | "REJECTED";
+  payment_link_status?: "ACTIVE" | "EXPIRED" | "PAID" | "NONE";
+  communication_status?: "PAUSED" | "READY" | "GENERATED" | "SENT" | "SIMULATED" | "NOT_AVAILABLE" | "COMPLETED" | "FAILED" | "EXHAUSTED";
+  customer_payment_status?: "PENDING" | "RECEIVED" | "EXHAUSTED" | "FAILED" | "NONE";
+  recommended_channel?: string;
+  dispatched_channel?: string | null;
 };
 
 export type AuditEvent = {

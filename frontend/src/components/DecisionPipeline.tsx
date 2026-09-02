@@ -7,138 +7,136 @@ interface DecisionPipelineProps {
 }
 
 export function DecisionPipeline({ selected, explanation }: DecisionPipelineProps) {
-  const mlDecision = explanation?.ml_decision ?? null;
   const prob = explanation?.ml?.recovery_probability;
   const probStr = prob != null ? `${(prob * 100).toFixed(0)}%` : null;
 
   const isAbandoned = selected.status === 'abandoned';
-  const isHumanReview = selected.status === 'human_review';
   const isRecovering = selected.status === 'recovering';
   const isRecovered = selected.status === 'recovered';
+
+  // Derived / backend workflow states
+  const humanStatus = explanation?.human_review_status ?? (explanation?.manual_execution ? 'APPROVED' : (explanation?.policy?.requires_human_approval && !explanation?.policy?.allowed) ? 'REQUIRED' : 'NOT_REQUIRED');
+  const payLinkStatus = explanation?.payment_link_status ?? (isRecovered ? 'PAID' : isRecovering ? 'ACTIVE' : isAbandoned ? 'EXPIRED' : 'NONE');
+  const custPayStatus = explanation?.customer_payment_status ?? (isRecovered ? 'RECEIVED' : isAbandoned ? 'EXHAUSTED' : isRecovering ? 'PENDING' : 'NONE');
+  const commStatus = explanation?.communication_status ?? 'PAUSED';
 
   // Policy step state
   const policyDone = explanation?.policy != null;
   const policyAllowed = explanation?.policy?.allowed ?? false;
 
   // ML step label
-  let mlLabel = probStr ? `${probStr} recovery probability` : 'Pending';
-  if (mlDecision === 'HIGH' && probStr) mlLabel = `${probStr} — High confidence`;
-  else if (mlDecision === 'UNCERTAIN' && probStr) mlLabel = `${probStr} — Uncertain`;
-  else if (mlDecision === 'LOW' && probStr) mlLabel = `${probStr} — Low`;
-  else if (mlDecision === 'COLD_START') mlLabel = `Limited History (Cold Start)`;
+  const mlConfidence = prob != null ? (prob >= 0.75 ? 'High' : prob >= 0.40 ? 'Moderate' : 'Low') : 'High';
+  const mlLabel = probStr ? `${probStr} • ${mlConfidence}` : 'Completed';
 
-  // Policy step label
-  const policyLabel = !policyDone
-    ? 'Pending'
-    : !policyAllowed
-    ? 'BLOCKED — Human Review'
-    : '✓ Automatic recovery approved';
+  // Stage 3 Policy label
+  const policyLabel = humanStatus === 'APPROVED'
+    ? 'Human Approved'
+    : (humanStatus === 'REQUIRED' || (!policyAllowed && policyDone))
+    ? 'Human Review Required'
+    : 'Policy Approved';
+
+  // Stage 4 Recovery Action label
+  let recoveryLabel = 'Pending';
+  if (humanStatus === 'APPROVED' || explanation?.manual_execution) {
+    recoveryLabel = 'Manual Recovery';
+  } else if (isRecovered || isRecovering || payLinkStatus === 'ACTIVE') {
+    recoveryLabel = 'Automatic Recovery';
+  } else if (humanStatus === 'REQUIRED') {
+    recoveryLabel = 'Awaiting Approval';
+  } else if (isAbandoned) {
+    recoveryLabel = 'No Action';
+  }
+
+  // Stage 5 Communication label
+  const chName = title(explanation?.dispatched_channel || explanation?.recommended_channel || 'Email');
+  let commLabel = 'Communication Ready';
+  if (commStatus === 'PAUSED' || humanStatus === 'REQUIRED') {
+    commLabel = 'Communication Paused';
+  } else if (commStatus === 'READY') {
+    commLabel = `${chName} Ready`;
+  } else if (commStatus === 'GENERATED') {
+    commLabel = `${chName} Generated`;
+  } else if (commStatus === 'SIMULATED') {
+    commLabel = `${chName} Simulated`;
+  } else if (commStatus === 'SENT') {
+    commLabel = `${chName} Sent`;
+  } else if (isRecovered) {
+    commLabel = `${title(explanation?.channel_intelligence?.attributed_channel || 'SMS')} Sent`;
+  } else if (isAbandoned) {
+    commLabel = 'Communication Closed';
+  }
+
+  // Stage 6 Customer Outcome label
+  let outcomeLabel = 'Awaiting Payment';
+  if (isRecovered) {
+    outcomeLabel = 'Payment Completed';
+  } else if (isAbandoned) {
+    outcomeLabel = 'Recovery Closed';
+  } else if (custPayStatus === 'FAILED') {
+    outcomeLabel = 'Attempt Failed';
+  } else if (custPayStatus === 'PENDING' || isRecovering) {
+    outcomeLabel = 'Payment Pending';
+  }
 
   return (
     <div className="decision-pipeline">
-       <div className="pipeline-track" />
+      <div className="pipeline-track" />
 
-       <div className="pipeline-step completed">
-         <div className="step-icon">✓</div>
-         <div className="step-content">
-           <div className="step-title">PAYMENT FAILED</div>
-           <div className="step-meta">{title(selected.failure_reason)}</div>
-         </div>
-       </div>
+      {/* Stage 1: PAYMENT FAILED */}
+      <div className="pipeline-step completed">
+        <div className="step-icon">✓</div>
+        <div className="step-content">
+          <div className="step-title">1. PAYMENT FAILED</div>
+          <div className="step-meta">{title(selected.failure_reason || 'Transaction Failed')}</div>
+        </div>
+      </div>
 
-       <div className={`pipeline-step ${explanation?.ml ? 'completed' : 'active'}`}>
-         <div className="step-icon">{explanation?.ml ? '✓' : '•'}</div>
-         <div className="step-content">
-           <div className="step-title">ML PREDICTION</div>
-           <div className="step-meta">{mlLabel}</div>
-         </div>
-       </div>
+      {/* Stage 2: ML PREDICTION */}
+      <div className={`pipeline-step ${explanation?.ml ? 'completed' : 'active'}`}>
+        <div className="step-icon">{explanation?.ml ? '✓' : '•'}</div>
+        <div className="step-content">
+          <div className="step-title">2. ML PREDICTION</div>
+          <div className="step-meta">{mlLabel}</div>
+        </div>
+      </div>
 
-       <div className={`pipeline-step ${policyDone ? (policyAllowed ? 'completed' : 'warning') : ''}`}>
-         <div className="step-icon">{policyDone ? (policyAllowed ? '✓' : '!') : '•'}</div>
-         <div className="step-content">
-           <div className="step-title">POLICY ENGINE</div>
-           <div className="step-meta">{policyLabel}</div>
-         </div>
-       </div>
+      {/* Stage 3: POLICY DECISION */}
+      <div className={`pipeline-step ${humanStatus === 'APPROVED' || policyAllowed ? 'completed' : 'warning'}`}>
+        <div className="step-icon">{humanStatus === 'APPROVED' || policyAllowed ? '✓' : '!'}</div>
+        <div className="step-content">
+          <div className="step-title">3. POLICY DECISION</div>
+          <div className="step-meta">{policyLabel}</div>
+        </div>
+      </div>
 
-       <div className={`pipeline-step ${explanation?.ai ? 'completed' : ''}`}>
-         <div className="step-icon">{explanation?.ai ? '✓' : '•'}</div>
-         <div className="step-content">
-           <div className="step-title">AI ADVISOR</div>
-           <div className="step-meta">{explanation?.ai ? `${title(explanation.ai.recommended_action)} recommended` : 'Pending'}</div>
-         </div>
-       </div>
+      {/* Stage 4: RECOVERY ACTION */}
+      <div className={`pipeline-step ${isRecovered || isRecovering || payLinkStatus === 'ACTIVE' ? 'completed' : isAbandoned ? 'blocked' : humanStatus === 'REQUIRED' ? 'warning' : 'active'}`}>
+        <div className="step-icon">{isRecovered || isRecovering || payLinkStatus === 'ACTIVE' ? '✓' : isAbandoned ? '■' : humanStatus === 'REQUIRED' ? '⏳' : '•'}</div>
+        <div className="step-content">
+          <div className="step-title">4. RECOVERY ACTION</div>
+          <div className="step-meta">{recoveryLabel}</div>
+        </div>
+      </div>
 
-       {/* Recovery steps */}
-       {isAbandoned && selected.retry_count === 0 ? (
-         <div className="pipeline-step blocked">
-           <div className="step-icon">■</div>
-           <div className="step-content">
-             <div className="step-title">NO ADDITIONAL RECOVERY ATTEMPTS</div>
-             <div className="step-meta">No recovery action permitted</div>
-           </div>
-         </div>
-       ) : (
-         <>
-           {(!policyAllowed && policyDone) && (
-             <div className={`pipeline-step ${explanation?.manual_execution ? 'completed' : 'warning'}`}>
-               <div className="step-icon">{explanation?.manual_execution ? '✓' : '→'}</div>
-               <div className="step-content">
-                 <div className="step-title">HUMAN REVIEW</div>
-                 <div className="step-meta">{explanation?.manual_execution ? 'Manual review approved' : 'Policy blocked automatic recovery'}</div>
-               </div>
-             </div>
-           )}
+      {/* Stage 5: COMMUNICATION */}
+      <div className={`pipeline-step ${commStatus === 'SENT' || commStatus === 'SIMULATED' || commStatus === 'GENERATED' || isRecovered ? 'completed' : commStatus === 'READY' ? 'active' : commStatus === 'PAUSED' ? 'warning' : 'active'}`}>
+        <div className="step-icon">{commStatus === 'SENT' || commStatus === 'SIMULATED' || isRecovered ? '✓' : commStatus === 'READY' || commStatus === 'GENERATED' ? '✉️' : commStatus === 'PAUSED' ? '⏳' : '•'}</div>
+        <div className="step-content">
+          <div className="step-title">5. COMMUNICATION</div>
+          <div className="step-meta">{commLabel}</div>
+        </div>
+      </div>
 
-           {(!policyDone || policyAllowed || explanation?.manual_execution) && (
-             <div className={`pipeline-step ${isRecovered || isRecovering || selected.retry_count > 0 ? 'completed' : explanation?.execution_error ? 'warning' : ''}`}>
-              <div className="step-icon">{isRecovered || isRecovering || selected.retry_count > 0 ? '✓' : explanation?.execution_error ? '!' : '•'}</div>
-              <div className="step-content">
-                <div className="step-title">{explanation?.manual_execution ? 'MANUAL RECOVERY' : 'AUTOMATIC RECOVERY'}</div>
-                <div className="step-meta">{isRecovered || isRecovering || selected.retry_count > 0 ? 'Payment Link created' : explanation?.execution_error ? `Execution Failed: ${explanation.execution_error}` : 'Pending'}</div>
-              </div>
-            </div>
-           )}
-         </>
-       )}
-
-       {/* Customer payment step */}
-       {(!isAbandoned || selected.retry_count > 0) && (
-         <div className={`pipeline-step ${isRecovered ? 'completed' : selected.last_payment_status === 'FAILED' ? 'warning' : isRecovering ? 'active' : isAbandoned ? 'blocked' : ''}`}>
-           <div className="step-icon">{isRecovered ? '✓' : selected.last_payment_status === 'FAILED' ? '✕' : isAbandoned ? '■' : '•'}</div>
-           <div className="step-content">
-             <div className="step-title">CUSTOMER PAYMENT</div>
-             <div className="step-meta">
-               {isRecovered ? 'Payment Received' : selected.last_payment_status === 'FAILED' ? 'Payment Attempt Failed' : isAbandoned ? 'Payment Timeout / Exhausted' : isRecovering ? 'Awaiting customer payment' : 'Awaiting recovery action'}
-             </div>
-           </div>
-         </div>
-       )}
-
-       {isRecovering && selected.last_payment_status === 'FAILED' && (
-         <div className="pipeline-step active">
-           <div className="step-icon">→</div>
-           <div className="step-content">
-             <div className="step-title">NEXT ACTION</div>
-             <div className="step-meta">
-               {selected.next_action_type === 'reminder' ? `Reminder scheduled` :
-                selected.next_action_type === 'expiry_check' ? `Waiting for payment link expiry` :
-                `Waiting for scheduled workflow`}
-             </div>
-           </div>
-         </div>
-       )}
-
-       {isRecovered && (
-         <div className="pipeline-step completed">
-           <div className="step-icon">✓</div>
-           <div className="step-content">
-             <div className="step-title">RECOVERED</div>
-             <div className="step-meta">Revenue Recovered</div>
-           </div>
-         </div>
-       )}
+      {/* Stage 6: CUSTOMER OUTCOME */}
+      <div className={`pipeline-step ${isRecovered ? 'completed' : isAbandoned ? 'blocked' : custPayStatus === 'FAILED' ? 'warning' : custPayStatus === 'PENDING' || isRecovering ? 'active' : ''}`}>
+        <div className="step-icon">{isRecovered ? '✓' : isAbandoned ? '■' : custPayStatus === 'FAILED' ? '✕' : '•'}</div>
+        <div className="step-content">
+          <div className="step-title">6. CUSTOMER OUTCOME</div>
+          <div className="step-meta">{outcomeLabel}</div>
+        </div>
+      </div>
     </div>
   );
 }
+
+
