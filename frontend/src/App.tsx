@@ -28,9 +28,17 @@ export function extractErrorMessage(err: unknown, defaultMessage = "An error occ
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const fetchInit: RequestInit = { ...init };
+  if (fetchInit.body && typeof fetchInit.body === 'string') {
+    fetchInit.headers = {
+      'Content-Type': 'application/json',
+      ...fetchInit.headers,
+    };
+  }
+  
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, init);
+    response = await fetch(`${API_BASE_URL}${path}`, fetchInit);
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('fetch')) {
       throw new Error(`Unable to connect to the backend (${API_BASE_URL}). Please verify that the backend is running and CORS is configured for this origin.`);
