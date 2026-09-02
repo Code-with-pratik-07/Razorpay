@@ -9,6 +9,24 @@ import { CaseDetail } from "./components/CaseDetail";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
+export function extractErrorMessage(err: unknown, defaultMessage = "An error occurred."): string {
+  if (typeof err === "string") return err;
+  if (err instanceof Error) {
+    if (err.message && err.message !== "[object Object]") return err.message;
+  }
+  if (err && typeof err === "object") {
+    if ("detail" in err && err.detail) {
+      if (typeof err.detail === "string") return err.detail;
+      if (Array.isArray(err.detail) && err.detail.length > 0 && err.detail[0].msg) {
+        return err.detail[0].msg;
+      }
+      return JSON.stringify(err.detail);
+    }
+    if ("message" in err && typeof err.message === "string") return err.message;
+  }
+  return defaultMessage;
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
@@ -23,10 +41,21 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const body = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    if (response.status === 403) throw new Error(body.detail ?? "Access denied. Feature may be disabled in current configuration.");
+    let detailMsg: string | undefined;
+    if (body.detail) {
+      if (typeof body.detail === 'string') {
+        detailMsg = body.detail;
+      } else if (Array.isArray(body.detail) && body.detail[0]?.msg) {
+        detailMsg = body.detail[0].msg;
+      } else {
+        detailMsg = JSON.stringify(body.detail);
+      }
+    }
+    
+    if (response.status === 403) throw new Error(detailMsg ?? "Access denied. Feature may be disabled in current configuration.");
     if (response.status === 500) throw new Error("The backend server encountered an internal error.");
     if (response.status === 502) throw new Error("Bad Gateway: The backend server is currently unavailable.");
-    throw new Error(body.detail ?? `Server returned an error (${response.status}).`);
+    throw new Error(detailMsg ?? `Server returned an error (${response.status}).`);
   }
 
   return body as T;
@@ -65,7 +94,7 @@ export default function App() {
       setError(null);
       return next;
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Could not load recovery cases.");
+      setError(extractErrorMessage(requestError, "Could not load recovery cases."));
       return [];
     } finally {
       setLoading(false);
@@ -85,7 +114,7 @@ export default function App() {
       setAudit(auditData);
       setError(null);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Could not load case details.");
+      setError(extractErrorMessage(requestError, "Could not load case details."));
     } finally {
       setDetailLoading(false);
     }
@@ -110,7 +139,7 @@ export default function App() {
       setSelectedId(null);
       return newCases || [];
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to reset demo data.");
+      setError(extractErrorMessage(requestError, "Failed to reset demo data."));
       return [];
     } finally {
       setResettingDemo(false);
@@ -140,7 +169,7 @@ export default function App() {
       const newCases = await refreshCases(false);
       selectScenario(newCases[0].case_number, newCases);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to simulate payment failure.");
+      setError(extractErrorMessage(requestError, "Unable to simulate payment failure. Please try again."));
     } finally {
       setResettingDemo(false);
     }
@@ -172,7 +201,7 @@ export default function App() {
       await refreshCases();
       await loadDetails(selected.id);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Analysis could not be completed.");
+      setError(extractErrorMessage(requestError, "Analysis could not be completed."));
     } finally {
       setActionLoading(null);
     }
@@ -190,7 +219,7 @@ export default function App() {
       await refreshCases();
       await loadDetails(selected.id);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Recovery execution could not be completed.");
+      setError(extractErrorMessage(requestError, "Recovery execution could not be completed."));
     } finally {
       setActionLoading(null);
     }

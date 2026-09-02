@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { RecoveryCase, formatINR } from "../types";
+import { extractErrorMessage } from "../App";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -22,7 +23,7 @@ export const SimulatedPayment = ({ caseId }: { caseId: string }) => {
           setSelectedMethod(data.payment_method.toLowerCase());
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "An error occurred.");
+        setError(extractErrorMessage(err, "An error occurred."));
       } finally {
         setLoading(false);
       }
@@ -45,7 +46,7 @@ export const SimulatedPayment = ({ caseId }: { caseId: string }) => {
         window.location.href = '/';
       }, success ? 3000 : 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Payment processing failed.");
+      setError(extractErrorMessage(err, "Payment processing failed."));
       setProcessing(false);
     }
   };
