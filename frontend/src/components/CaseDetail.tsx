@@ -878,62 +878,125 @@ export function CaseDetail({
                 </div>
               )}
 
-              {/* Prepared but not dispatched notice */}
-              {commStatus === 'READY' && (!dispatchedChannel || dispatchedChannel !== activeCommTab) && (
-                <div className="comm-ready-banner" style={{
-                  background: '#0f172a', border: '1px solid #3b82f6', borderRadius: 8, padding: '14px 18px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12
-                }}>
-                  <div>
-                    <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#60a5fa', letterSpacing: '0.05em'}}>
-                      {activeCommTab.toUpperCase()} PREVIEW
-                    </div>
-                    <div style={{fontSize: '0.85rem', color: '#cbd5e1', marginTop: 2}}>
-                      Communication prepared for review. Not yet dispatched.
-                    </div>
-                  </div>
-                  <button
-                    className="button primary"
-                    style={{background: '#2563eb', padding: '6px 14px', fontSize: '0.85rem', whiteSpace: 'nowrap'}}
-                    onClick={() => void handleSimulateDispatch(activeCommTab)}
-                    disabled={isSending}
-                  >
-                    {isSending ? "Dispatching..." : `⚡ Simulate Sending for Demo`}
-                  </button>
-                </div>
-              )}
-
               {/* TAB 1: EMAIL */}
               {activeCommTab === 'email' && (
-                <div className="email-preview-wrapper">
-                  <div className="email-preview-header-bar">
-                    <div className="email-brand">
-                      <span className="brand-dot">●</span> <strong>RecoverAI</strong>
-                    </div>
-                    <span className="email-badge">FAILED PAYMENT RECOVERY</span>
-                  </div>
-                  <div className="email-preview-body">
-                    <h3 style={{marginTop: 0, color: '#1e293b', fontSize: '1.05rem', fontWeight: 700}}>Payment Requires Your Attention</h3>
-                    <p style={{color: '#475569', margin: '12px 0 6px 0'}}>Hello,</p>
-                    <p style={{color: '#475569', margin: '0 0 10px 0'}}>
-                      Your recent payment of {formatINR(selected.amount)} could not be completed.
-                    </p>
-                    <p style={{color: '#475569', fontWeight: 500, margin: '0 0 16px 0'}}>
-                      Please complete your payment securely before the payment link expires.
-                    </p>
-                    <div style={{textAlign: 'center', margin: '20px 0'}}>
+                <div className="email-tab-container" style={{width: '100%', maxWidth: 500, margin: '0 auto'}}>
+                  {/* Prepared vs Sent Status Banner */}
+                  {(selectedComm?.isPrepared || (commStatus === 'READY' && !actualComms.some(c => c.channel === 'email' && !c.isPrepared))) ? (
+                    <div className="email-status-banner prepared" style={{
+                      background: '#1e293b',
+                      border: '1px solid #f59e0b',
+                      borderRadius: 8,
+                      padding: '12px 16px',
+                      marginBottom: 16,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 12
+                    }}>
+                      <div>
+                        <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 6}}>
+                          <span>🟡</span> Communication Prepared
+                        </div>
+                        <div style={{fontSize: '0.82rem', color: '#cbd5e1', marginTop: 2}}>
+                          This email is ready for review and has not been sent to the customer.
+                        </div>
+                      </div>
                       <button
-                        className="button email-complete-btn"
-                        onClick={handlePaymentClick}
-                        style={{background: '#2563eb', color: '#fff', padding: '10px 24px', borderRadius: 6, fontWeight: 600, border: 'none', cursor: 'pointer'}}
+                        className="button primary"
+                        style={{background: '#2563eb', padding: '6px 14px', fontSize: '0.85rem', whiteSpace: 'nowrap'}}
+                        onClick={() => void handleSimulateDispatch('email')}
+                        disabled={isSending}
                       >
-                        Complete Payment
+                        {isSending ? "Dispatching..." : `⚡ Simulate Sending`}
                       </button>
                     </div>
-                    <div className="email-meta-box" style={{background: '#f8fafc', padding: '10px 14px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: '0.85rem'}}>
-                      <div><span style={{color: '#64748b'}}>Payment Link Expiry:</span> <b style={{color: '#1e293b'}}>{formattedExpiry}</b></div>
+                  ) : (
+                    <div className="email-status-banner simulated" style={{
+                      background: 'rgba(6, 78, 59, 0.3)',
+                      border: '1px solid #059669',
+                      borderRadius: 8,
+                      padding: '8px 14px',
+                      marginBottom: 16,
+                      color: '#34d399',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}>
+                      <span>✓</span> Email Simulated
                     </div>
-                    <div className="email-footer-note" style={{fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center', marginTop: 14}}>
-                      Secure 256-bit encrypted checkout powered by Razorpay.
+                  )}
+
+                  {/* Transactional Email Card */}
+                  <div className="email-preview-wrapper" style={{
+                    background: '#ffffff',
+                    color: '#1e293b',
+                    borderRadius: 8,
+                    overflow: 'hidden',
+                    width: '100%',
+                    border: '1px solid #e2e8f0',
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.1)'
+                  }}>
+                    <div className="email-preview-body" style={{padding: '28px 24px'}}>
+                      <div style={{fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', marginBottom: 20}}>
+                        RecoverAI
+                      </div>
+
+                      <h3 style={{margin: '0 0 16px 0', color: '#0f172a', fontSize: '1.1rem', fontWeight: 700}}>
+                        Payment Requires Your Attention
+                      </h3>
+
+                      <p style={{color: '#334155', margin: '0 0 12px 0', fontSize: '0.92rem'}}>
+                        Hello,
+                      </p>
+
+                      <p style={{color: '#334155', margin: '0 0 12px 0', fontSize: '0.92rem'}}>
+                        Your recent payment of <b>{formatINR(selected.amount)}</b> could not be completed.
+                      </p>
+
+                      <p style={{color: '#334155', margin: '0 0 22px 0', fontSize: '0.92rem'}}>
+                        Please complete your payment securely using the payment link below.
+                      </p>
+
+                      <div style={{margin: '22px 0'}}>
+                        <button
+                          className="button primary email-complete-btn"
+                          onClick={handlePaymentClick}
+                          style={{
+                            background: '#2563eb',
+                            color: '#ffffff',
+                            padding: '11px 24px',
+                            borderRadius: 6,
+                            fontWeight: 600,
+                            fontSize: '0.92rem',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6
+                          }}
+                        >
+                          Complete Payment →
+                        </button>
+                      </div>
+
+                      <div style={{fontSize: '0.85rem', color: '#64748b', margin: '0 0 16px 0', lineHeight: 1.5}}>
+                        Payment link expires on<br />
+                        <b style={{color: '#0f172a'}}>{formattedExpiry}</b>
+                      </div>
+
+                      <p style={{color: '#64748b', fontSize: '0.82rem', margin: '0 0 20px 0', lineHeight: 1.4}}>
+                        If you have already completed this payment, please ignore this message.
+                      </p>
+
+                      <hr style={{border: 'none', borderTop: '1px solid #e2e8f0', margin: '20px 0 14px 0'}} />
+
+                      <div style={{fontSize: '0.78rem', color: '#94a3b8', textAlign: 'center'}}>
+                        Secure payment processing powered by Razorpay
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1064,29 +1127,6 @@ export function CaseDetail({
                     Simulated WhatsApp communication for demonstration purposes.
                   </div>
                 </div>
-              )}
-            </div>
-
-
-            <div className="comm-modal-footer">
-              <button className="button secondary" onClick={() => setShowCommModal(false)}>
-                Close Preview
-              </button>
-              {currentLink && (
-                <a
-                  className="button primary"
-                  href={currentLink.startsWith("http") ? currentLink : `/simulate-payment/${selected.id}`}
-                  target={currentLink.startsWith("http") ? "_blank" : "_self"}
-                  rel="noopener noreferrer"
-                  onClick={(e) => {
-                    if (!currentLink.startsWith("http")) {
-                      e.preventDefault();
-                      window.location.href = `/simulate-payment/${selected.id}`;
-                    }
-                  }}
-                >
-                  Open Active Payment Link ↗
-                </a>
               )}
             </div>
           </div>
