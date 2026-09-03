@@ -691,17 +691,41 @@ export function CaseDetail({
         {/* 7. PAYMENT RECOVERY ACTION */}
         {isRecovered ? (
           <div className="payment-recovery-card terminal-banner terminal-recovered" style={{
-            background: '#064e3b', border: '1px solid #059669', borderRadius: 8, padding: '20px', color: '#ecfdf5'
+            background: 'linear-gradient(135deg, #064e3b 0%, #065f46 100%)',
+            border: '1.5px solid #10b981',
+            borderRadius: 8,
+            padding: '22px 24px',
+            color: '#ffffff',
+            boxShadow: '0 4px 20px rgba(6, 78, 59, 0.3)'
           }}>
-            <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-              <span style={{fontSize: '1.4rem'}}>✓</span>
-              <h3 style={{margin: 0, color: '#34d399', fontSize: '1.1rem', letterSpacing: '0.05em'}}>PAYMENT SUCCESSFULLY RECOVERED</h3>
+            <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12}}>
+              <span style={{fontSize: '1.3rem', color: '#6ee7b7', fontWeight: 800}}>✓</span>
+              <h3 style={{margin: 0, color: '#6ee7b7', fontSize: '1.05rem', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase'}}>
+                PAYMENT SUCCESSFULLY RECOVERED
+              </h3>
             </div>
-            <div style={{fontSize: '1.25rem', fontWeight: 700, margin: '10px 0 6px 0', color: '#ffffff'}}>
-              {formatINR(selected.amount)} recovered successfully.
+            <div style={{margin: '8px 0 12px 0', display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap'}}>
+              <span style={{fontSize: '2rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.03em', lineHeight: 1.1}}>
+                {formatINR(selected.amount)}
+              </span>
+              <span style={{fontSize: '1.05rem', fontWeight: 600, color: '#e6fffa'}}>
+                recovered successfully.
+              </span>
             </div>
-            <div style={{fontSize: '0.9rem', color: '#a7f3d0'}}>
-              Recovery attributed to: <b>{channelIntel?.attributed_channel?.toUpperCase() || 'SMS'}</b>
+            <div style={{fontSize: '0.92rem', color: '#d1fae5', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8, marginTop: 10}}>
+              <span>Recovery attributed to:</span>
+              <span style={{
+                fontWeight: 700,
+                color: '#ffffff',
+                background: 'rgba(255, 255, 255, 0.18)',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                padding: '3px 10px',
+                borderRadius: 4,
+                letterSpacing: '0.04em',
+                fontSize: '0.85rem'
+              }}>
+                {channelIntel?.attributed_channel?.toUpperCase() || 'SMS'}
+              </span>
             </div>
           </div>
         ) : isAbandoned ? (
@@ -824,67 +848,67 @@ export function CaseDetail({
           <div className="co-body" style={{marginTop: 8}}>
             {isRecovered ? (
               <div>
-                <span className="badge" style={{background: '#064e3b', color: '#34d399', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                <span className="badge" style={{background: '#065f46', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
                   ✓ PAYMENT COMPLETED
                 </span>
-                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem'}}>
+                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
                   The payment was successfully completed.
                 </p>
               </div>
             ) : isAbandoned ? (
               <div>
-                <span className="badge" style={{background: '#3b1515', color: '#f87171', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                <span className="badge" style={{background: '#7f1d1d', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
                   RECOVERY CLOSED
                 </span>
-                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5}}>
+                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
                   The maximum number of recovery attempts has been reached without successful payment. Automated recovery communication has been stopped.
                 </p>
               </div>
             ) : selected.last_payment_status === 'FAILED' ? (
               <div>
-                <span className="badge" style={{background: '#450a0a', color: '#fca5a5', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                <span className="badge" style={{background: '#991b1b', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
                   ✕ CUSTOMER PAYMENT FAILED
                 </span>
-                <p style={{margin: '8px 0 4px 0', color: '#fca5a5', fontSize: '0.9rem'}}>
-                  The customer attempted to pay using the link, but the transaction was unsuccessful: <b>{selected.last_payment_failure_reason || 'Failure'}</b>.
+                <p style={{margin: '10px 0 4px 0', color: '#991b1b', fontSize: '0.95rem', fontWeight: 500}}>
+                  The customer attempted to pay using the link, but the transaction was unsuccessful: <b style={{color: '#7f1d1d'}}>{selected.last_payment_failure_reason || 'Failure'}</b>.
                 </p>
                 {selected.last_payment_attempt_at && (
-                  <span style={{fontSize: '0.8rem', color: '#94a3b8'}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
+                  <span style={{fontSize: '0.82rem', color: '#475569', fontWeight: 500}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
                 )}
               </div>
             ) : isAwaitingResponse || channelIntel?.followup_decision?.next_action === 'AWAIT_RESPONSE' ? (
               <div>
-                <span className="badge" style={{background: '#1e3a8a', color: '#93c5fd', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
                   ⏳ CUSTOMER RESPONSE PENDING
                 </span>
-                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5}}>
+                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
                   A WhatsApp reminder has been sent. RecoverAI is waiting for customer activity before taking another recovery action.
                 </p>
               </div>
             ) : channelIntel?.followup_decision?.previous_outcome === 'LINK_CLICKED' ? (
               <div>
-                <span className="badge" style={{background: '#1e3a8a', color: '#93c5fd', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
                   ⏳ CUSTOMER PAYMENT PENDING
                 </span>
-                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5}}>
+                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
                   The customer opened the payment link but has not completed the payment.
                 </p>
               </div>
             ) : isRecovering ? (
               <div>
-                <span className="badge" style={{background: '#1e3a8a', color: '#93c5fd', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
                   ⏳ CUSTOMER PAYMENT PENDING
                 </span>
-                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem'}}>
+                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
                   Payment link is active. Waiting for customer checkout.
                 </p>
               </div>
             ) : (
               <div>
-                <span className="badge" style={{background: '#78350f', color: '#fbbf24', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                <span className="badge" style={{background: '#92400e', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
                   ⏳ AWAITING REVIEW
                 </span>
-                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem'}}>
+                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
                   Recovery execution paused pending manual reviewer approval.
                 </p>
               </div>

@@ -56,20 +56,30 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
 
   return (
     <div className="intelligence-card ai-advisor-card">
-      <div className="ai-header" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10}}>
-        <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#93c5fd', letterSpacing: '0.05em', textTransform: 'uppercase'}}>
-          ✦ AI ADVISOR
-        </div>
-        <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
-          <span style={{fontSize: '0.75rem', color: '#94a3b8'}}>Recommended Next Action:</span>
-          <Badge value={actionBadge} />
+      <div className="ai-header" style={{marginBottom: 14}}>
+        <div style={{fontWeight: 800, fontSize: '0.95rem', color: '#60a5fa', letterSpacing: '0.06em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6}}>
+          <span>✦</span> AI ADVISOR
         </div>
       </div>
-      <div className="ai-body" style={{fontSize: '0.9rem', color: '#e2e8f0', lineHeight: 1.5}}>
-        <div style={{color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4}}>
-          Business Insight
+
+      <div style={{display: 'flex', flexDirection: 'column', gap: 14}}>
+        <div>
+          <div style={{color: '#94a3b8', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6}}>
+            Recommended Next Action
+          </div>
+          <div style={{display: 'inline-flex'}}>
+            <Badge value={actionBadge} />
+          </div>
         </div>
-        <div>{businessInsight}</div>
+
+        <div>
+          <div style={{color: '#94a3b8', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6}}>
+            Business Insight
+          </div>
+          <div style={{fontSize: '0.95rem', color: '#f8fafc', fontWeight: 400, lineHeight: 1.6}}>
+            {businessInsight}
+          </div>
+        </div>
       </div>
     </div>
   );

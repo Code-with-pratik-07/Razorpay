@@ -785,6 +785,68 @@ h1, h2, h3, h4, p { margin: 0; }
 .badge.payment-link { background: var(--color-accent-bg); color: var(--color-accent); border: 1px solid #BFDBFE; }
 .badge.retry { background: var(--color-bg-hover); color: var(--color-text-main); }
 
+/* AI Advisor Action Badges */
+.badge.close-recovery-successfully {
+  background: #064e3b;
+  color: #34d399;
+  border: 1.5px solid #059669;
+  font-size: 12px;
+  padding: 5px 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
+.badge.close-recovery {
+  background: #450a0a;
+  color: #fca5a5;
+  border: 1.5px solid #991b1b;
+  font-size: 12px;
+  padding: 5px 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
+.badge.wait-for-customer-response {
+  background: #1e1b4b;
+  color: #a5b4fc;
+  border: 1.5px solid #4f46e5;
+  font-size: 12px;
+  padding: 5px 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
+.badge.send-whatsapp-reminder,
+.badge.automatic-recovery,
+.badge.dispatch-recovery-communication {
+  background: #1e3a8a;
+  color: #93c5fd;
+  border: 1.5px solid #2563eb;
+  font-size: 12px;
+  padding: 5px 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
+.badge.switch-communication-channel,
+.badge.manual-review-required,
+.badge.generate-new-payment-link,
+.badge.use-immediate-channel-fallback {
+  background: #78350f;
+  color: #fde047;
+  border: 1.5px solid #d97706;
+  font-size: 12px;
+  padding: 5px 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
+
 /* Buttons */
 .button {
   appearance: none;
@@ -2332,19 +2394,40 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 
 .terminal-recovered {
-  background: linear-gradient(135deg, rgba(6, 78, 59, 0.4), rgba(4, 120, 87, 0.2)) !important;
-  border: 1px solid rgba(52, 211, 153, 0.4) !important;
+  background: linear-gradient(135deg, #064e3b 0%, #065f46 100%) !important;
+  border: 1.5px solid #10b981 !important;
+  box-shadow: 0 4px 20px rgba(6, 78, 59, 0.3) !important;
 }
 
 .terminal-abandoned {
-  background: linear-gradient(135deg, rgba(69, 10, 10, 0.4), rgba(127, 29, 29, 0.2)) !important;
-  border: 1px solid rgba(248, 113, 113, 0.4) !important;
+  background: linear-gradient(135deg, #271212 0%, #3b1515 100%) !important;
+  border: 1.5px solid #7f1d1d !important;
+  box-shadow: 0 4px 20px rgba(127, 29, 29, 0.3) !important;
 }
 
 .customer-outcome-card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 20px 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.customer-outcome-card h4 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin-bottom: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-advisor-card {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
+  border: 1px solid rgba(99, 102, 241, 0.35);
   border-radius: 8px;
-  padding: 16px 20px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
 }
 
 /* ---------------------------------------------------------------------------
