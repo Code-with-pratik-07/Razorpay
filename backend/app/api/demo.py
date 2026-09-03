@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from app.ml.predict import load_model
 from app.ml.train import MODEL_PATH
-from app.schemas.recovery import ExperimentResult
+from app.schemas.recovery import CaseSummary, ExperimentResult
 from app.core.config import get_settings
 from app.services.demo_service import seed_demo_data, simulate_failure_event
 
@@ -23,7 +23,11 @@ class SimulateFailureRequest(BaseModel):
     successful_payments: int | None = None
 
 class SimulatePaymentRequest(BaseModel):
-    success: bool
+    success: bool = True
+    payment_method: str | None = None
+    status: str | None = None
+    failure_reason: str | None = None
+    amount: int | None = None
 
 @router.get("/status", response_model=DemoStatus)
 def get_demo_status():
@@ -41,17 +45,9 @@ def reset_demo_data():
     seed_demo_data(reset=True)
     return {"message": "Demo database successfully reset and seeded."}
 
-
-
-@router.post("/simulate-failure")
-def simulate_payment_failure(body: SimulateFailureRequest | None = None):
-    """Simulate a payment.failed event and run the full automatic recovery pipeline.
-
-    This is the primary demo action. It creates a realistic customer + failed PaymentCase,
-    then executes the real ML prediction → policy check → Groq advisory → routing pipeline.
-    No mocking. If DEMO_MODE=true and Razorpay credentials are set, a real Razorpay Test
-    Mode invoice is generated for HIGH-confidence cases.
-    """
+@router.post("/simulate-failure", response_model=CaseSummary)
+def simulate_failure(body: SimulateFailureRequest | None = None):
+    """Simulate a payment.failed event and run the full automatic recovery pipeline."""
     settings = get_settings()
     if not settings.demo_mode:
         raise HTTPException(
@@ -71,12 +67,9 @@ def simulate_payment_failure(body: SimulateFailureRequest | None = None):
 @router.post("/simulate-payment/{case_id}")
 def simulate_payment(case_id: str, payload: SimulatePaymentRequest):
     from sqlalchemy.orm import joinedload
-    from datetime import datetime, timezone
     from app.db.database import SessionLocal
-    from app.models.payment_case import PaymentCase, CaseStatus, NextActionType
-    from app.services.audit_service import log_audit_event
-    from app.models.customer import Customer
-
+    from app.models.payment_case import PaymentCase
+    from app.services.recovery_service import record_payment_attempt
     from sqlalchemy import select
 
     with SessionLocal() as db:
@@ -86,59 +79,19 @@ def simulate_payment(case_id: str, payload: SimulatePaymentRequest):
         if not case:
             raise HTTPException(status_code=404, detail="Case not found.")
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        effective_status = payload.status or ("success" if payload.success else "failed")
+        method = payload.payment_method or case.payment_method or "card"
+        reason = payload.failure_reason if payload.failure_reason else ("Simulated payment failure" if effective_status == "failed" else None)
 
-        if payload.success:
-            if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
-                return {"success": True, "payment_result": "already_terminal", "case_status": case.status.value, "message": "Case is already in a terminal state."}
-            
-            case.status = CaseStatus.RECOVERED
-            case.recovered_at = now
-            case.next_action_type = NextActionType.NONE
-            case.next_action_at = None
-            
-            case.last_payment_status = "SUCCESS"
-            case.last_payment_attempt_at = now
-            case.last_payment_failure_reason = None
-
-            if case.customer:
-                case.customer.successful_payments += 1
-                case.customer.lifetime_value += case.amount
-            
-            from app.services.channel_service import attribute_recovery_to_communication
-            attribute_recovery_to_communication(db, case)
-
-            db.commit()
-            log_audit_event(db, case.id, "payment_success", {"simulated": True, "event": "simulate_payment"})
-            log_audit_event(db, case.id, "case_recovered", {"simulated": True, "order_id": case.razorpay_order_id})
-            
-            return {"success": True, "payment_result": "success", "case_status": case.status.value, "message": "Simulated payment successful."}
-        
-        else:
-            if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
-                return {"success": True, "payment_result": "already_terminal", "case_status": case.status.value, "message": "Case is already in a terminal state."}
-
-            case.last_payment_status = "FAILED"
-            case.last_payment_attempt_at = now
-            case.last_payment_failure_reason = "Simulated payment failure"
-
-            log_audit_event(db, case.id, "payment_failed_simulated", {
-                "source": "simulated_payment_page",
-                "success": False,
-                "payment_method": case.payment_method,
-                "failure_reason": "simulated_payment_failure",
-                "retry_count": case.retry_count,
-                "max_retries": case.max_retries
-            })
-            
-            # We don't increment retry_count or change status here, preserving the scheduler's logic.
-            db.commit()
-            return {
-                "success": True, 
-                "payment_result": "failed", 
-                "case_status": case.status.value, 
-                "message": "Payment failure recorded successfully. Recovery will continue according to the scheduled workflow."
-            }
+        result = record_payment_attempt(
+            db=db,
+            case=case,
+            payment_method=method,
+            status=effective_status,
+            failure_reason=reason,
+            amount=payload.amount,
+        )
+        return result
 
 
 @router.post("/run-experiment", response_model=ExperimentResult)

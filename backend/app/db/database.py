@@ -29,7 +29,7 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    from app.models import audit_event, communication_record, customer, payment_case, recovery_policy, webhook_log  # noqa: F401
+    from app.models import audit_event, communication_record, customer, payment_attempt, payment_case, recovery_policy, webhook_log  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 
@@ -40,6 +40,7 @@ def init_db() -> None:
             # payment_cases migrations
             for col_stmt in [
                 "ALTER TABLE payment_cases ADD COLUMN selected_channel VARCHAR(30)",
+                "ALTER TABLE payment_cases ADD COLUMN last_payment_method VARCHAR(30)",
                 "ALTER TABLE customers ADD COLUMN preferred_channel VARCHAR(30)",
                 "ALTER TABLE customers ADD COLUMN opted_out_channels VARCHAR(100)",
                 "ALTER TABLE communication_records ADD COLUMN outcome VARCHAR(50) DEFAULT 'SENT'",

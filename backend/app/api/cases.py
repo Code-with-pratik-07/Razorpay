@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.models.payment_case import PaymentCase, CaseStatus, RecoveryAction, NextActionType
 from app.models.communication_record import CommunicationRecord
-from app.schemas.recovery import CaseExplanation, CaseSummary, ExecuteRecoveryResponse, AIDecision
-from app.services.recovery_service import _features, _last_ai_decision, _policy, analyze_case, execute_recovery, ml_routing_decision
+from app.schemas.recovery import CaseExplanation, CaseSummary, ExecuteRecoveryResponse, AIDecision, PaymentAttemptSummary, RecordPaymentAttemptRequest
+from app.services.recovery_service import _features, _last_ai_decision, _policy, analyze_case, execute_recovery, ml_routing_decision, record_payment_attempt
 from app.services.audit_service import list_audit_events, log_audit_event
 from app.services.channel_service import get_case_channel_intelligence, evaluate_channel_suitability, dispatch_channel_communication
 from app.services.policy_service import check_recovery_policy
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/cases", tags=["cases"])
 def _case(db: Session, case_id: str) -> PaymentCase:
     case = db.scalar(
         select(PaymentCase)
-        .options(joinedload(PaymentCase.customer))
+        .options(joinedload(PaymentCase.customer), joinedload(PaymentCase.payment_attempts))
         .where((PaymentCase.id == case_id) | (PaymentCase.case_number == case_id))
     )
     if case is None:
@@ -44,6 +44,21 @@ def _summary(case: PaymentCase) -> dict:
         if case.status == CaseStatus.FAILED and (has_active_link or (case.retry_count or 0) > 0 or case.notification_status in {"SENT", "SIMULATED", "WHATSAPP_SIMULATED", "SMS_SIMULATED"}):
             status_val = CaseStatus.RECOVERING.value
 
+    attempts_list = []
+    if hasattr(case, "payment_attempts") and case.payment_attempts:
+        for pa in case.payment_attempts:
+            attempts_list.append({
+                "id": pa.id,
+                "case_id": pa.case_id,
+                "payment_method": pa.payment_method,
+                "amount": pa.amount,
+                "currency": pa.currency,
+                "status": pa.status,
+                "failure_reason": pa.failure_reason,
+                "source": pa.source,
+                "created_at": pa.created_at,
+            })
+
     return {
         "id": case.id, "case_number": case.case_number, "customer_email": case.customer.email, 
         "amount": case.amount, "currency": case.currency, "status": status_val, 
@@ -59,7 +74,9 @@ def _summary(case: PaymentCase) -> dict:
         "last_payment_status": case.last_payment_status,
         "last_payment_attempt_at": case.last_payment_attempt_at,
         "last_payment_failure_reason": case.last_payment_failure_reason,
+        "last_payment_method": getattr(case, "last_payment_method", None),
         "selected_channel": getattr(case, "selected_channel", None),
+        "payment_attempts": attempts_list,
     }
 
 
@@ -414,3 +431,29 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
         return {"action": "dispatched", "result": res, "explanation": _explanation(db, case)}
 
     return {"action": followup.next_action, "explanation": _explanation(db, case)}
+
+
+@router.post("/{case_id}/payment-attempt")
+def record_case_payment_attempt(
+    case_id: str,
+    payload: RecordPaymentAttemptRequest,
+    db: Session = Depends(get_db),
+):
+    case = _case(db, case_id)
+    return record_payment_attempt(
+        db=db,
+        case=case,
+        payment_method=payload.payment_method or "card",
+        status=payload.status,
+        failure_reason=payload.failure_reason,
+        amount=payload.amount,
+    )
+
+
+@router.get("/{case_id}/payment-attempts", response_model=list[PaymentAttemptSummary])
+def get_case_payment_attempts(
+    case_id: str,
+    db: Session = Depends(get_db),
+) -> list[PaymentAttemptSummary]:
+    case = _case(db, case_id)
+    return [PaymentAttemptSummary.model_validate(pa) for pa in case.payment_attempts]

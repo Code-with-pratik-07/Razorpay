@@ -228,7 +228,7 @@ export default function App() {
   };
 
   const execute = async () => {
-    if (!selected) return;
+    if (!selected || actionLoading !== null) return;
     setActionLoading("execute");
     setError(null);
     setNotice(null);

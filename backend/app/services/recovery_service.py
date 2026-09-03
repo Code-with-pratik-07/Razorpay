@@ -422,3 +422,165 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
         dispatch_channel_communication(db, case, link.get("short_url"), automatic=automatic)
     
     return {"action": "payment_link", "status": case.status.value, "message": "Payment Link created.", "payment_link_url": link.get("short_url")}
+
+
+def record_payment_attempt(
+    db: Session,
+    case: PaymentCase,
+    payment_method: str = "card",
+    status: str = "failed",
+    failure_reason: str | None = None,
+    amount: int | None = None,
+) -> dict[str, Any]:
+    """Record a recovery payment attempt (failed or successful) and update case state."""
+    from app.models.payment_attempt import PaymentAttempt
+    from app.services.channel_service import attribute_recovery_to_communication
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    method_clean = (payment_method or case.payment_method or "card").lower()
+    attempt_amount = amount if amount is not None else case.amount
+    is_success = status.lower() == "success"
+
+    # 1. Terminal state check
+    if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
+        return {
+            "success": True,
+            "payment_result": "already_terminal",
+            "case_status": case.status.value,
+            "message": "Case is already in a terminal state.",
+            "attempt": None,
+        }
+
+    # 2. Debounce / Idempotency protection against rapid duplicate submissions (within 2 seconds)
+    recent_attempt = (
+        db.query(PaymentAttempt)
+        .filter(
+            PaymentAttempt.case_id == case.id,
+            PaymentAttempt.payment_method == method_clean,
+            PaymentAttempt.status == ("success" if is_success else "failed"),
+            PaymentAttempt.created_at >= now - timedelta(seconds=2),
+        )
+        .order_by(PaymentAttempt.created_at.desc())
+        .first()
+    )
+    if recent_attempt:
+        return {
+            "success": True,
+            "payment_result": recent_attempt.status,
+            "case_status": case.status.value,
+            "message": "Payment attempt already recorded (duplicate submission prevented).",
+            "attempt": {
+                "id": recent_attempt.id,
+                "payment_method": recent_attempt.payment_method,
+                "status": recent_attempt.status,
+                "amount": recent_attempt.amount,
+                "failure_reason": recent_attempt.failure_reason,
+                "created_at": recent_attempt.created_at.isoformat(),
+            },
+        }
+
+    # 3. Record PaymentAttempt
+    attempt = PaymentAttempt(
+        case_id=case.id,
+        payment_method=method_clean,
+        amount=attempt_amount,
+        currency=case.currency,
+        status="success" if is_success else "failed",
+        failure_reason=None if is_success else (failure_reason or "Payment simulation failed"),
+        source="recovery_payment_link",
+        created_at=now,
+    )
+    db.add(attempt)
+
+    # 3. Update latest payment activity on PaymentCase (without modifying original failure/method)
+    case.last_payment_method = method_clean
+    case.last_payment_status = "SUCCESS" if is_success else "FAILED"
+    case.last_payment_attempt_at = now
+
+    # 4. Log initial attempt event
+    log_audit_event(db, case.id, "recovery_payment_attempted", {
+        "source": "recovery_payment_link",
+        "payment_method": method_clean,
+        "amount": attempt_amount,
+        "status": "success" if is_success else "failed",
+        "timestamp": now.isoformat(),
+    })
+
+    if is_success:
+        case.status = CaseStatus.RECOVERED
+        case.recovered_at = now
+        case.next_action_type = NextActionType.NONE
+        case.next_action_at = None
+        case.last_payment_failure_reason = None
+
+        if case.customer:
+            case.customer.successful_payments += 1
+            case.customer.lifetime_value += attempt_amount
+
+        attribute_recovery_to_communication(db, case)
+        db.commit()
+
+        log_audit_event(db, case.id, "recovery_payment_completed", {
+            "source": "recovery_payment_link",
+            "payment_method": method_clean,
+            "amount": attempt_amount,
+            "resulting_status": "recovered",
+            "timestamp": now.isoformat(),
+        })
+        log_audit_event(db, case.id, "payment_success", {"simulated": True, "event": "simulate_payment", "payment_method": method_clean})
+        log_audit_event(db, case.id, "case_recovered", {"simulated": True, "order_id": case.razorpay_order_id, "payment_method": method_clean})
+
+        return {
+            "success": True,
+            "payment_result": "success",
+            "case_status": case.status.value,
+            "message": "Simulated recovery payment successful.",
+            "attempt": {
+                "id": attempt.id,
+                "payment_method": attempt.payment_method,
+                "status": attempt.status,
+                "amount": attempt.amount,
+                "created_at": attempt.created_at.isoformat(),
+            },
+        }
+    else:
+        case.last_payment_failure_reason = failure_reason or "Payment simulation failed"
+        # Preserve active recovering state (do not change status to FAILED or increment retries)
+        if case.status != CaseStatus.RECOVERING and case.status != CaseStatus.HUMAN_REVIEW:
+            case.status = CaseStatus.RECOVERING
+
+        db.commit()
+
+        log_audit_event(db, case.id, "recovery_payment_failed", {
+            "source": "recovery_payment_link",
+            "payment_method": method_clean,
+            "amount": attempt_amount,
+            "failure_reason": case.last_payment_failure_reason,
+            "resulting_status": case.status.value,
+            "timestamp": now.isoformat(),
+        })
+        # Backward compatibility for existing tests
+        log_audit_event(db, case.id, "payment_failed_simulated", {
+            "source": "simulated_payment_page",
+            "success": False,
+            "payment_method": method_clean,
+            "failure_reason": case.last_payment_failure_reason,
+            "retry_count": case.retry_count,
+            "max_retries": case.max_retries,
+        })
+
+        return {
+            "success": True,
+            "payment_result": "failed",
+            "case_status": case.status.value,
+            "message": "Recovery payment failure recorded successfully. Recovery workflow will continue.",
+            "attempt": {
+                "id": attempt.id,
+                "payment_method": attempt.payment_method,
+                "status": attempt.status,
+                "amount": attempt.amount,
+                "failure_reason": attempt.failure_reason,
+                "created_at": attempt.created_at.isoformat(),
+            },
+        }
+

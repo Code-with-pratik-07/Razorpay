@@ -32,13 +32,19 @@ export const SimulatedPayment = ({ caseId }: { caseId: string }) => {
   }, [caseId]);
 
   const simulatePayment = async (success: boolean) => {
+    if (processing) return;
     setProcessing(true);
     setError(null);
     try {
       const response = await fetch(`${API_BASE_URL}/api/demo/simulate-payment/${caseId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ success })
+        body: JSON.stringify({
+          success,
+          payment_method: selectedMethod,
+          status: success ? 'success' : 'failed',
+          failure_reason: success ? undefined : 'Payment simulation failed'
+        })
       });
       if (!response.ok) throw new Error("Failed to process simulated payment.");
       setResult(success ? 'success' : 'failure');
@@ -97,6 +103,7 @@ export const SimulatedPayment = ({ caseId }: { caseId: string }) => {
             <h2>Payment Failed</h2>
             <p>The payment failure has been recorded successfully. The recovery workflow will continue according to the scheduled recovery rules.</p>
             <p className="redirect-text">Redirecting to dashboard...</p>
+            <button className="button secondary" onClick={() => window.location.href = '/'}>Return Now</button>
           </div>
         ) : (
           <>

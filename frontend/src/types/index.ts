@@ -32,7 +32,21 @@ export type RecoveryCase = {
   last_payment_status?: string | null;
   last_payment_attempt_at?: string | null;
   last_payment_failure_reason?: string | null;
+  last_payment_method?: string | null;
   selected_channel?: string | null;
+  payment_attempts?: PaymentAttempt[];
+};
+
+export type PaymentAttempt = {
+  id: string;
+  case_id: string;
+  payment_method: string;
+  amount: number;
+  currency: string;
+  status: "failed" | "success" | string;
+  failure_reason?: string | null;
+  source: string;
+  created_at: string;
 };
 
 export type DecisionBasisItem = {

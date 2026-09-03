@@ -139,6 +139,23 @@ export function CaseDetail({
     latestComm?.outcome === 'AWAITING_RESPONSE'
   );
 
+  const paymentAttempts = selected.payment_attempts || explanation?.payment_attempts || [];
+  const latestPaymentAttempt = paymentAttempts.length > 0
+    ? paymentAttempts[0]
+    : (selected.last_payment_status
+        ? {
+            id: 'latest-attempt',
+            case_id: selected.id,
+            payment_method: selected.last_payment_method || 'card',
+            amount: selected.amount,
+            currency: selected.currency || 'INR',
+            status: selected.last_payment_status.toLowerCase(),
+            failure_reason: selected.last_payment_failure_reason,
+            source: 'recovery_payment_link',
+            created_at: selected.last_payment_attempt_at || selected.created_at,
+          }
+        : null);
+
   const actualComms = journey
     .filter(r => r.channel)
     .map(r => ({
@@ -216,7 +233,7 @@ export function CaseDetail({
   }, [showCommModal]);
 
   const handleRunNextStep = async () => {
-    if (!selected) return;
+    if (!selected || isRunningNextStep) return;
     setIsRunningNextStep(true);
     if (setError) setError(null);
     try {
@@ -388,6 +405,7 @@ export function CaseDetail({
 
   // Handler for demo simulation sending
   const handleSimulateDispatch = async (channelToDispatch: string) => {
+    if (isSending) return;
     setIsSending(true);
     try {
       const apiBase = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
@@ -909,10 +927,10 @@ export function CaseDetail({
             ) : selected.last_payment_status === 'FAILED' ? (
               <div>
                 <span className="badge" style={{background: '#991b1b', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  ✕ CUSTOMER PAYMENT FAILED
+                  ✗ RECOVERY PAYMENT ATTEMPT FAILED
                 </span>
-                <p style={{margin: '10px 0 4px 0', color: '#991b1b', fontSize: '0.95rem', fontWeight: 500}}>
-                  The customer attempted to pay using the link, but the transaction was unsuccessful: <b style={{color: '#7f1d1d'}}>{selected.last_payment_failure_reason || 'Failure'}</b>.
+                <p style={{margin: '10px 0 4px 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                  The customer attempted to complete the payment using <b>{title(latestPaymentAttempt?.payment_method || selected.last_payment_method || 'Netbanking')}</b>, but the transaction was unsuccessful. RecoverAI is continuing to evaluate the customer's recovery activity.
                 </p>
                 {selected.last_payment_attempt_at && (
                   <span style={{fontSize: '0.82rem', color: '#475569', fontWeight: 500}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
@@ -957,6 +975,120 @@ export function CaseDetail({
             )}
           </div>
         </div>
+
+        {/* LATEST RECOVERY PAYMENT ACTIVITY */}
+        {latestPaymentAttempt && (
+          <div className="intelligence-card latest-payment-activity-card" style={{marginTop: 14}}>
+            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12}}>
+              <h4 style={{margin: 0, fontSize: '0.85rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6}}>
+                💳 Latest Recovery Payment Activity
+              </h4>
+              <span
+                className="badge"
+                style={{
+                  background: latestPaymentAttempt.status === 'success' ? '#065f46' : '#7f1d1d',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  fontSize: '0.78rem'
+                }}
+              >
+                {latestPaymentAttempt.status === 'success' ? '✓ Recovery Payment Successful' : '✗ Recovery Payment Failed'}
+              </span>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))',
+              gap: 12,
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              padding: '12px 16px',
+              borderRadius: 6
+            }}>
+              <div>
+                <span style={{display: 'block', fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600}}>Recovery Method</span>
+                <strong style={{fontSize: '0.92rem', color: '#0f172a'}}>{title(latestPaymentAttempt.payment_method)}</strong>
+              </div>
+              <div>
+                <span style={{display: 'block', fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600}}>Attempt Amount</span>
+                <strong style={{fontSize: '0.92rem', color: '#059669'}}>{formatINR(latestPaymentAttempt.amount)}</strong>
+              </div>
+              <div>
+                <span style={{display: 'block', fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600}}>Attempt Status</span>
+                <strong style={{fontSize: '0.92rem', color: latestPaymentAttempt.status === 'success' ? '#059669' : '#dc2626'}}>
+                  {title(latestPaymentAttempt.status)}
+                </strong>
+              </div>
+              <div>
+                <span style={{display: 'block', fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600}}>Attempt Time</span>
+                <span style={{fontSize: '0.85rem', color: '#334155', fontWeight: 500}}>
+                  {formatDate(latestPaymentAttempt.created_at)}
+                </span>
+              </div>
+              {latestPaymentAttempt.status !== 'success' && (
+                <div>
+                  <span style={{display: 'block', fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600}}>Failure Reason</span>
+                  <strong style={{fontSize: '0.86rem', color: '#b91c1c'}}>
+                    {latestPaymentAttempt.failure_reason || selected.last_payment_failure_reason || 'Simulation Failed'}
+                  </strong>
+                </div>
+              )}
+            </div>
+
+            <p style={{margin: '12px 0 0 0', color: latestPaymentAttempt.status === 'success' ? '#065f46' : '#7f1d1d', fontSize: '0.9rem', fontWeight: 500, lineHeight: 1.5}}>
+              {latestPaymentAttempt.status === 'success'
+                ? `The customer completed payment of ${formatINR(latestPaymentAttempt.amount)} using ${title(latestPaymentAttempt.payment_method)} through the recovery payment link. The recovery workflow has been automatically completed.`
+                : `The customer attempted payment using ${title(latestPaymentAttempt.payment_method)} through the recovery payment link, but the recovery payment was not completed${latestPaymentAttempt.failure_reason ? `: ${latestPaymentAttempt.failure_reason}` : '.'}`}
+            </p>
+
+            {/* Multiple Payment Attempts Chronological History */}
+            {paymentAttempts.length > 1 && (
+              <div style={{marginTop: 14, borderTop: '1px solid #e2e8f0', paddingTop: 12}}>
+                <div style={{fontSize: '0.78rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 8, letterSpacing: '0.04em'}}>
+                  Previous Payment Attempts ({paymentAttempts.length - 1})
+                </div>
+                <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
+                  {paymentAttempts.slice(1).map((att, idx) => (
+                    <div key={att.id || idx} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      padding: '8px 12px',
+                      borderRadius: 6,
+                      fontSize: '0.84rem'
+                    }}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+                        <span style={{color: att.status === 'success' ? '#059669' : '#dc2626', fontWeight: 700}}>
+                          {att.status === 'success' ? '✓' : '✗'}
+                        </span>
+                        <span style={{fontWeight: 600, color: '#1e293b'}}>Attempt #{paymentAttempts.length - 1 - idx}: {title(att.payment_method)}</span>
+                        <span style={{color: '#64748b'}}>({formatINR(att.amount)})</span>
+                        {att.failure_reason && (
+                          <span style={{color: '#b91c1c', fontSize: '0.78rem'}}>• {att.failure_reason}</span>
+                        )}
+                      </div>
+                      <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                        <span style={{
+                          color: att.status === 'success' ? '#059669' : '#dc2626',
+                          fontWeight: 700,
+                          fontSize: '0.75rem',
+                          textTransform: 'uppercase'
+                        }}>
+                          {title(att.status)}
+                        </span>
+                        <span style={{color: '#64748b', fontSize: '0.75rem'}}>{formatDate(att.created_at)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Audit Timeline */}
         <AuditTimeline audit={audit} />

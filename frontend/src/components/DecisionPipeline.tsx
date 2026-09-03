@@ -103,7 +103,7 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
         <div className="step-icon">✓</div>
         <div className="step-content">
           <div className="step-title">1. PAYMENT FAILED</div>
-          <div className="step-meta">{title(selected.failure_reason || 'Transaction Failed')}</div>
+          <div className="step-meta">{title(selected.failure_reason || 'Transaction Failed')}{selected.payment_method ? ` • ${title(selected.payment_method)}` : ''}</div>
         </div>
       </div>
 

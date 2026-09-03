@@ -38,6 +38,11 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
     journey.length === 0
   );
 
+  const attempts = explanation.payment_attempts || [];
+  const latestPaymentAttempt = attempts.length > 0 ? attempts[0] : null;
+  const lastPaymentFailed = !isTerminalCase && (explanation.last_payment_status === 'FAILED' || latestPaymentAttempt?.status === 'failed');
+  const paymentAttemptMethod = explanation.last_payment_method || latestPaymentAttempt?.payment_method || 'Netbanking';
+
   let actionBadge = 'Automatic Recovery';
   let businessInsight = explanation.ai.reasoning;
 
@@ -56,17 +61,27 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
     actionBadge = 'Manual Review Required';
     businessInsight = 'Transaction policy requires manual oversight. Human approval ensures compliance before recovery outreach begins.';
   } 
-  // 4. AWAITING_RESPONSE (takes strict precedence over approved / manual recovery state)
+  // 4. RECENT RECOVERY PAYMENT ACTIVITY
+  else if (lastPaymentFailed) {
+    actionBadge = isAwaitingResponse ? 'Wait for Customer Response' : 'Follow-up on Payment Intent';
+    const sameMethodFailures = attempts.filter(a => a.status === 'failed' && a.payment_method?.toLowerCase() === paymentAttemptMethod.toLowerCase()).length;
+    if (sameMethodFailures >= 2) {
+      businessInsight = `The customer engaged with the recovery payment link and repeatedly attempted payment using ${title(paymentAttemptMethod)}, but transactions were unsuccessful. This indicates clear payment intent; recommending an alternative payment method (such as UPI or Card) is advised.`;
+    } else {
+      businessInsight = `The customer engaged with the recovery payment link and attempted to complete payment using ${title(paymentAttemptMethod)}, but the transaction was unsuccessful. This indicates payment intent and RecoverAI should consider the failed payment attempt when determining the next recovery action.`;
+    }
+  } 
+  // 5. AWAITING_RESPONSE (when no payment attempt occurred yet)
   else if (isAwaitingResponse) {
     actionBadge = 'Wait for Customer Response';
     businessInsight = 'The latest recovery communication has been delivered and RecoverAI is currently waiting for customer activity before determining whether another recovery action is necessary.';
   } 
-  // 5. Communication prepared but not dispatched
+  // 6. Communication prepared but not dispatched
   else if (isPreparedNotDispatched) {
     actionBadge = 'Dispatch Recovery Communication';
     businessInsight = 'Manual review approved. Secure payment link prepared for customer delivery via the recommended verified channel.';
   } 
-  // 6. Otherwise: follow-up or fallback decision
+  // 7. ACTIVE FOLLOW-UP / FALLBACK ACTIONS
   else if (previousOutcome === 'FAILED_DELIVERY') {
     actionBadge = 'Use Immediate Channel Fallback';
     businessInsight = 'Delivery failed on the initial channel. Immediately switching to an alternate verified communication channel without delay.';

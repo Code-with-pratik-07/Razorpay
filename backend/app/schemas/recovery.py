@@ -15,6 +15,27 @@ class AIDecision(BaseModel):
     source: Literal["groq", "fallback", "demo"] = "fallback"
 
 
+class PaymentAttemptSummary(BaseModel):
+    id: str
+    case_id: str
+    payment_method: str
+    amount: int
+    currency: str = "INR"
+    status: str
+    failure_reason: str | None = None
+    source: str = "recovery_payment_link"
+    created_at: UTCDateTime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RecordPaymentAttemptRequest(BaseModel):
+    payment_method: str | None = "card"
+    status: Literal["failed", "success"] = "failed"
+    failure_reason: str | None = "Payment simulation failed"
+    amount: int | None = None
+
+
 class CaseSummary(BaseModel):
     id: str
     case_number: str
@@ -35,11 +56,13 @@ class CaseSummary(BaseModel):
     last_payment_status: str | None = None
     last_payment_attempt_at: UTCDateTime | None = None
     last_payment_failure_reason: str | None = None
+    last_payment_method: str | None = None
     payment_link_expires_at: UTCDateTime | None = None
     next_action_at: UTCDateTime | None = None
     next_action_type: str | None = None
     last_notification_at: UTCDateTime | None = None
     selected_channel: str | None = None
+    payment_attempts: list[PaymentAttemptSummary] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

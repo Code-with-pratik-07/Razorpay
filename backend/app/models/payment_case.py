@@ -65,6 +65,7 @@ class PaymentCase(Base):
     last_payment_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_payment_failure_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     selected_channel: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    last_payment_method: Mapped[str | None] = mapped_column(String(30), nullable=True)
     
     customer = relationship("Customer", back_populates="payment_cases")
     audit_events = relationship("AuditEvent", back_populates="payment_case")
@@ -74,3 +75,10 @@ class PaymentCase(Base):
         cascade="all, delete-orphan",
         order_by="desc(CommunicationRecord.created_at)",
     )
+    payment_attempts = relationship(
+        "PaymentAttempt",
+        back_populates="payment_case",
+        cascade="all, delete-orphan",
+        order_by="desc(PaymentAttempt.created_at)",
+    )
+
