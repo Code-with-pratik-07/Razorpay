@@ -692,14 +692,12 @@ export function CaseDetail({
                       <div className="journey-v-item terminal-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-terminal" />
+                          <span className="journey-v-title-text" style={{color: '#f87171', fontSize: '0.85rem'}}>
+                            <span style={{marginRight: 6}}>■</span> Communication limit reached
+                          </span>
                         </div>
-                        <div className="journey-compact-card" style={{borderColor: '#7f1d1d', background: 'rgba(69, 10, 10, 0.4)', padding: '10px 14px', marginTop: 6}}>
-                          <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: 6}}>
-                            <span>■</span> COMMUNICATION LIMIT REACHED
-                          </div>
-                          <div style={{fontSize: '0.78rem', color: '#fca5a5', marginTop: 3}}>
-                            Maximum communication attempt limit reached.<br />No further communication attempts will be scheduled.
-                          </div>
+                        <div style={{marginLeft: 26, fontSize: '0.78rem', color: '#fca5a5', marginTop: 4}}>
+                          Maximum allowed communication attempts completed.
                         </div>
                       </div>
                     )}
@@ -842,15 +840,8 @@ export function CaseDetail({
             {currentLink && !isLinkExpired ? (
               <div style={{fontSize: '0.92rem', color: '#fca5a5', lineHeight: 1.6}}>
                 The payment link remains available until <b style={{color: '#ffffff'}}>{formatExpiryDate(selected.payment_link_expires_at)}</b>.
-                <div style={{marginTop: 6, color: '#cbd5e1', fontSize: '0.85rem'}}>
-                  No further automated recovery communication will be scheduled.
-                </div>
               </div>
-            ) : (
-              <div style={{fontSize: '0.92rem', color: '#fca5a5', lineHeight: 1.5}}>
-                No further automated recovery communication will be scheduled.
-              </div>
-            )}
+            ) : null}
           </div>
         ) : canApproveRecovery ? (
           <div className="action-panel" style={{background: '#1e293b', border: '1px solid #f59e0b', borderRadius: 8, padding: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12}}>

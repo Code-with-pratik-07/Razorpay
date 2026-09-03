@@ -54,7 +54,7 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
   // 2. ABANDONED / CLOSED / Attempt limit reached
   else if (isRecoveryClosed) {
     actionBadge = 'Close Recovery';
-    businessInsight = 'The maximum permitted recovery attempts have been reached without successful payment. Further automated communication should stop to prevent unnecessary customer outreach.';
+    businessInsight = 'The maximum permitted communication attempts were reached without successful payment. Further automated outreach should stop.';
   } 
   // 3. HUMAN_REVIEW and not yet approved
   else if (isHumanReview) {
