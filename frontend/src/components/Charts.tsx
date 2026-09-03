@@ -32,17 +32,14 @@ export function Charts({ stats, cases }: ChartsProps) {
 
   const unifiedStatusData = useMemo(() => {
     let recovering = 0;
-    let paymentFailed = 0;
     let recovered = 0;
     let abandoned = 0;
 
     cases.forEach((curr) => {
-      if (curr.status === "recovered" || curr.last_payment_status === "SUCCESS") {
+      if (curr.status === "recovered") {
         recovered++;
-      } else if (curr.status === "abandoned") {
+      } else if (curr.status === "abandoned" || curr.status === "closed") {
         abandoned++;
-      } else if (curr.last_payment_status === "FAILED") {
-        paymentFailed++;
       } else if (curr.status === "recovering") {
         recovering++;
       }
@@ -50,7 +47,6 @@ export function Charts({ stats, cases }: ChartsProps) {
 
     return [
       { name: "Recovering", value: recovering },
-      { name: "Payment Failed", value: paymentFailed },
       { name: "Recovered", value: recovered },
       { name: "Abandoned", value: abandoned },
     ];
