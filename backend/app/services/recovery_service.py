@@ -410,6 +410,10 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
     db.commit()
     log_audit_event(db, case.id, "payment_link_created", {"payment_link_id": link.get("id"), "url": link.get("short_url"), "expires_at": expiry_time.isoformat()})
 
-    dispatch_channel_communication(db, case, link.get("short_url"), automatic=automatic)
+    if original_status == CaseStatus.HUMAN_REVIEW:
+        case.notification_status = "PENDING"
+        db.commit()
+    else:
+        dispatch_channel_communication(db, case, link.get("short_url"), automatic=automatic)
     
     return {"action": "payment_link", "status": case.status.value, "message": "Payment Link created.", "payment_link_url": link.get("short_url")}

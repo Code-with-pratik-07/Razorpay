@@ -17,6 +17,62 @@ interface CaseDetailProps {
   setNotice: (n: string) => void;
 }
 
+function formatNextActionLabel(nextAction: string, channel: string | null): string {
+  const ch = channel ? title(channel) : '';
+  switch (nextAction) {
+    case 'RETRY_SAME_CHANNEL':
+      return channel === 'whatsapp' ? '💬 Send WhatsApp Reminder' :
+             channel === 'sms' ? '📱 Send SMS Reminder' :
+             `✉️ Send ${ch} Reminder`;
+    case 'SWITCH_CHANNEL':
+      return channel === 'sms' ? '📱 Switch to SMS' :
+             channel === 'whatsapp' ? '💬 Switch to WhatsApp' :
+             `✉️ Switch to ${ch}`;
+    case 'DISPATCH_INITIAL':
+      return `Dispatch ${ch} Communication`;
+    case 'AWAIT_APPROVAL':
+      return '⏳ Await Human Approval';
+    case 'AWAIT_RESPONSE':
+      return '⏳ Awaiting Customer Response';
+    case 'GENERATE_NEW_LINK':
+      return '🔄 Generate New Payment Link';
+    case 'STOP_RECOVERY':
+      return 'Close Recovery';
+    default:
+      return nextAction.replace(/_/g, ' ');
+  }
+}
+
+function formatPreviousOutcome(outcome: string | null): string {
+  if (!outcome) return 'None';
+  switch (outcome) {
+    case 'LINK_CLICKED':
+    case 'CLICKED':
+      return '🔗 Payment Link Clicked';
+    case 'NO_ENGAGEMENT':
+    case 'IGNORED':
+      return 'Delivered • No Customer Engagement';
+    case 'PAYMENT_COMPLETED':
+      return '✓ Payment Completed';
+    case 'FAILED_DELIVERY':
+    case 'FAILED':
+      return '✕ Delivery Failed';
+    case 'PAYMENT_LINK_EXPIRED':
+      return '⏱ Payment Link Expired';
+    case 'AWAITING_RESPONSE':
+      return '✓ Simulated Sent • Awaiting Response';
+    default:
+      return outcome.replace(/_/g, ' ');
+  }
+}
+
+function formatTiming(waitPeriod: string): string {
+  if (!waitPeriod || waitPeriod === 'None' || waitPeriod === 'none') return '⏱ None';
+  if (waitPeriod.toLowerCase().includes('24')) return '⏱ After 24 hours';
+  if (waitPeriod.toLowerCase().includes('immediate')) return '⏱ Immediate';
+  return `⏱ ${waitPeriod}`;
+}
+
 export function CaseDetail({
   selected,
   explanation,
@@ -66,18 +122,86 @@ export function CaseDetail({
   // Can approve recovery for HUMAN_REVIEW if under retry limit
   const canApproveRecovery = (isHumanReview || humanReviewStatus === 'REQUIRED') && selected.retry_count < selected.max_retries;
 
-  // Set default preview tab when opening modal
-  const openCommunicationModal = (channelOverride?: 'email' | 'sms' | 'whatsapp') => {
-    if (channelOverride) {
-      setActiveCommTab(channelOverride);
-    } else if (dispatchedChannel) {
-      setActiveCommTab(dispatchedChannel as 'email' | 'sms' | 'whatsapp');
-    } else if (recommendedChannel === 'whatsapp' || recommendedChannel === 'sms' || recommendedChannel === 'email') {
-      setActiveCommTab(recommendedChannel as 'email' | 'sms' | 'whatsapp');
-    } else {
-      setActiveCommTab('email');
+  // Selected communication ID for multi-attempt modal
+  const [selectedCommId, setSelectedCommId] = React.useState<string>('');
+  const [isRunningNextStep, setIsRunningNextStep] = React.useState<boolean>(false);
+
+  // Dynamic available communications strictly from backend records & prepared channel
+  const journey = explanation?.channel_intelligence?.communication_journey || [];
+  const actualComms = journey
+    .filter(r => r.channel)
+    .map(r => ({
+      id: r.id || `${r.channel.toLowerCase()}-${r.attempt_number}`,
+      channel: r.channel.toLowerCase() as 'email' | 'sms' | 'whatsapp',
+      attempt: r.attempt_number,
+      status: r.outcome,
+      simulated: r.simulated,
+      recipient: r.recipient || (r.channel.toLowerCase() === 'email' ? selected.customer_email : 'Verified Mobile'),
+      message: r.message_snippet,
+      recovery_attributed: r.recovery_attributed || false,
+      isPrepared: false,
+    }));
+
+  if (commStatus === 'READY' && humanReviewStatus !== 'REQUIRED') {
+    const hasExisting = actualComms.some(c => c.channel === recommendedChannel.toLowerCase());
+    if (!hasExisting) {
+      actualComms.push({
+        id: `prepared-${recommendedChannel.toLowerCase()}`,
+        channel: recommendedChannel.toLowerCase() as 'email' | 'sms' | 'whatsapp',
+        attempt: actualComms.length + 1,
+        status: 'PREPARED',
+        simulated: false,
+        recipient: recommendedChannel.toLowerCase() === 'email' ? selected.customer_email : 'Verified Mobile',
+        message: `${recChannelName} notification prepared for review. Not yet dispatched.`,
+        recovery_attributed: false,
+        isPrepared: true,
+      });
+    }
+  }
+
+  const availableCommunications = actualComms;
+
+  const openCommunicationModal = (channelOverride?: 'email' | 'sms' | 'whatsapp', commIdOverride?: string) => {
+    if (commIdOverride) {
+      setSelectedCommId(commIdOverride);
+      const target = availableCommunications.find(c => c.id === commIdOverride);
+      if (target) {
+        setActiveCommTab(target.channel);
+      }
+    } else if (channelOverride) {
+      const target = availableCommunications.find(c => c.channel === channelOverride);
+      if (target) {
+        setSelectedCommId(target.id);
+        setActiveCommTab(target.channel);
+      } else {
+        setActiveCommTab(channelOverride);
+      }
+    } else if (availableCommunications.length > 0) {
+      setSelectedCommId(availableCommunications[0].id);
+      setActiveCommTab(availableCommunications[0].channel);
     }
     setShowCommModal(true);
+  };
+
+  const handleRunNextStep = async () => {
+    setIsRunningNextStep(true);
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/cases/${selected.id}/next-step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || 'Failed to execute next recovery step');
+        return;
+      }
+      await analyze();
+      setNotice('Next recovery step simulated successfully.');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsRunningNextStep(false);
+    }
   };
 
   // ML routing label helpers
@@ -218,6 +342,17 @@ export function CaseDetail({
 
   const channelIntel = explanation?.channel_intelligence;
 
+  const canRunNextStep = Boolean(
+    !isRecovered &&
+    !isAbandoned &&
+    !isHumanReview &&
+    channelIntel?.followup_decision &&
+    channelIntel.followup_decision.next_action !== 'STOP_RECOVERY' &&
+    channelIntel.followup_decision.next_action !== 'AWAIT_RESPONSE' &&
+    channelIntel.followup_decision.next_action !== 'AWAIT_APPROVAL' &&
+    selected.retry_count < selected.max_retries
+  );
+
   return (
     <>
       <header className="details-header">
@@ -236,13 +371,15 @@ export function CaseDetail({
             <span className={`notif-indicator ${commInfo.cls}`}>
               {commInfo.icon} {commInfo.badge}
             </span>
-            {commInfo.canView && (
+            {availableCommunications.length > 0 && (
               <button
                 id="view-comm-header-btn"
                 className="button secondary view-comm-header-btn"
                 onClick={() => openCommunicationModal()}
               >
-                View Communication
+                {availableCommunications.length === 1
+                  ? `View ${title(availableCommunications[0].channel)} Message`
+                  : 'View Communications'}
               </button>
             )}
           </div>
@@ -265,7 +402,7 @@ export function CaseDetail({
                   ML Recovery Probability
                   <span 
                     className="info-tooltip-wrap" 
-                    title="Recovery Probability predicts whether the payment is likely to be recovered. Channel Suitability determines the most effective communication channel." 
+                    title="Likelihood that the payment can eventually be recovered." 
                     style={{marginLeft: 6, cursor: 'help', color: '#64748b'}}
                   >ℹ️</span>
                 </span>
@@ -323,7 +460,7 @@ export function CaseDetail({
                           <b>{(channelIntel.suitability_score * 100).toFixed(0)}%</b> Suitability
                           <span 
                             className="info-tooltip-wrap" 
-                            title="Recovery Probability predicts whether the payment is likely to be recovered. Channel Suitability determines the most effective communication channel." 
+                            title="Expected effectiveness of this communication channel." 
                             style={{marginLeft: 6, cursor: 'help', color: '#93c5fd'}}
                           >ℹ️</span>
                         </span>
@@ -355,66 +492,151 @@ export function CaseDetail({
                   </div>
                 </div>
 
-                <div className="comm-journey-block">
+                <div className="comm-journey-block" style={{marginTop: 18}}>
                   <span className="comm-journey-title">COMMUNICATION JOURNEY</span>
                   <div className="journey-v-timeline">
-                    {channelIntel.communication_journey && channelIntel.communication_journey.length > 0 ? (
-                      channelIntel.communication_journey.map((item, idx) => {
-                        const isIgnored = item.outcome === 'IGNORED';
-                        const isPaid = item.outcome === 'PAYMENT_COMPLETED';
-                        const chIcon = item.channel === 'whatsapp' ? '💬' : item.channel === 'sms' ? '📱' : '✉️';
-                        return (
-                          <React.Fragment key={idx}>
-                            <div 
-                              className="journey-v-step clickable-journey-step"
-                              onClick={() => openCommunicationModal(item.channel as 'email' | 'sms' | 'whatsapp')}
-                              title="Click to view message preview"
-                              style={{cursor: 'pointer'}}
-                            >
-                              <div className="journey-v-badge">Attempt {item.attempt_number}</div>
-                              <div className="journey-v-card">
-                                <div className="journey-v-top">
-                                  <span className="journey-v-channel">
-                                    {chIcon} {title(item.channel)}
-                                  </span>
-                                  <span className={`journey-v-status outcome-${item.outcome.toLowerCase()}`}>
-                                    {isPaid ? '✓ Paid' : isIgnored ? 'Delivered • No customer engagement' : item.outcome.replace('_', ' ')}
-                                  </span>
-                                </div>
+                    {journey.map((item, idx) => {
+                      const isLinkClicked = item.outcome === 'LINK_CLICKED';
+                      const isIgnored = item.outcome === 'NO_ENGAGEMENT' || item.outcome === 'IGNORED';
+                      const isPaid = item.outcome === 'PAYMENT_COMPLETED';
+                      const isAwaiting = item.outcome === 'AWAITING_RESPONSE';
+                      const chIcon = item.channel === 'whatsapp' ? '💬' : item.channel === 'sms' ? '📱' : '✉️';
+                      const itemId = item.id || `${item.channel}-${item.attempt_number}`;
+                      const isReminder = item.attempt_number > 1 && item.channel === journey[0]?.channel;
+
+                      return (
+                        <React.Fragment key={idx}>
+                          <div 
+                            className="journey-v-step clickable-journey-step"
+                            onClick={() => openCommunicationModal(item.channel as any, itemId)}
+                            title={`Click to view ${title(item.channel)} Attempt ${item.attempt_number} preview`}
+                            style={{cursor: 'pointer'}}
+                          >
+                            <div className="journey-v-badge">Attempt {item.attempt_number}</div>
+                            <div className="journey-v-card">
+                              <div className="journey-v-top">
+                                <span className="journey-v-channel">
+                                  {chIcon} {title(item.channel)}{isReminder ? ' Reminder' : ''}
+                                </span>
+                                <span className={`journey-v-status outcome-${item.outcome.toLowerCase()}`}>
+                                  {isPaid ? '✓ Payment Completed' : 
+                                   isLinkClicked ? '✓ Delivered • 🔗 Payment Link Clicked' : 
+                                   isAwaiting ? '✓ Simulated Sent • ⏳ Awaiting Customer Response' :
+                                   isIgnored ? '✓ Delivered • No customer engagement' : 
+                                   '✓ Delivered'}
+                                </span>
                               </div>
                             </div>
-                            {isIgnored && (
+                          </div>
+                          {isLinkClicked && (
+                            <div className="journey-transition-tag" style={{background: 'rgba(30, 58, 138, 0.3)', color: '#93c5fd', borderColor: '#1d4ed8'}}>
+                              ↓ Wait 24 hours
+                            </div>
+                          )}
+                          {isIgnored && (
+                            <>
+                              <div className="journey-transition-tag" style={{background: 'rgba(51, 65, 85, 0.4)', color: '#94a3b8', borderColor: '#475569'}}>
+                                ↓ Wait 24 hours
+                              </div>
                               <div className="journey-transition-tag">
                                 ↓ {title(item.channel)} deprioritized
                               </div>
-                            )}
-                          </React.Fragment>
-                        );
-                      })
-                    ) : null}
+                            </>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
 
-                    {!isRecovered && !isAbandoned && (
+                    {!isRecovered && !isAbandoned && channelIntel.followup_decision?.next_action !== 'AWAIT_RESPONSE' && (
                       <div 
                         className="journey-v-step next-action-step clickable-journey-step"
-                        onClick={() => openCommunicationModal(recommendedChannel as 'email' | 'sms' | 'whatsapp')}
+                        onClick={() => openCommunicationModal(recommendedChannel as any)}
                         title="Click to view communication preview"
                         style={{cursor: 'pointer'}}
                       >
-                        <div className="journey-v-badge" style={{background: '#2563eb'}}>Next Action</div>
+                        <div className="journey-v-badge" style={{background: '#2563eb'}}>Recommended Next Step</div>
                         <div className="journey-v-card" style={{border: '1px dashed #60a5fa'}}>
                           <div className="journey-v-top">
                             <span className="journey-v-channel">
-                              {recommendedChannel === 'whatsapp' ? '💬 WhatsApp' : recommendedChannel === 'sms' ? '📱 SMS' : '✉️ Email'}
+                              {channelIntel.followup_decision?.selected_channel 
+                                ? `${channelIntel.followup_decision.selected_channel === 'whatsapp' ? '💬' : channelIntel.followup_decision.selected_channel === 'sms' ? '📱' : '✉️'} ${title(channelIntel.followup_decision.selected_channel)} ${channelIntel.followup_decision.next_action === 'RETRY_SAME_CHANNEL' ? 'Reminder' : ''}`
+                                : (recommendedChannel === 'whatsapp' ? '💬 WhatsApp' : recommendedChannel === 'sms' ? '📱 SMS' : '✉️ Email')}
                             </span>
                             <span className="journey-v-status" style={{background: '#1e3a8a', color: '#93c5fd'}}>
-                              {commStatus === 'READY' ? 'Ready for review' : commStatus === 'GENERATED' ? '✓ Generated' : 'Selected'}
+                              {commStatus === 'READY' ? 'Ready for review' : commStatus === 'GENERATED' ? '✓ Generated' : 'Pending'}
                             </span>
                           </div>
                         </div>
                       </div>
                     )}
+
+                    {isAbandoned && (
+                      <div className="journey-transition-tag" style={{background: 'rgba(127, 29, 29, 0.3)', color: '#f87171', borderColor: '#991b1b'}}>
+                        Attempt Limit Reached • Recovery Closed
+                      </div>
+                    )}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* 5. FOLLOW-UP INTELLIGENCE */}
+            {channelIntel?.followup_decision && (
+              <div className="intelligence-card followup-intelligence-card" style={{gridColumn: '1 / -1'}}>
+                <div className="fd-header" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6}}>
+                  <div style={{fontWeight: 700, fontSize: '0.82rem', color: '#60a5fa', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6}}>
+                    <span>🔄</span> 5. Follow-up Intelligence
+                  </div>
+                  <div style={{fontSize: '0.8rem', color: '#cbd5e1', background: '#1e293b', padding: '3px 10px', borderRadius: 4, border: '1px solid #475569'}}>
+                    {formatTiming(channelIntel.followup_decision.recommended_wait_period)}
+                  </div>
+                </div>
+
+                <div className="fd-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12}}>
+                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 12px', borderRadius: 6, border: '1px solid #1e293b'}}>
+                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: '0.04em'}}>Previous Outcome</div>
+                    <div style={{fontSize: '0.88rem', fontWeight: 600, color: '#e2e8f0'}}>
+                      {formatPreviousOutcome(channelIntel.followup_decision.previous_outcome)}
+                    </div>
+                  </div>
+                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 12px', borderRadius: 6, border: '1px solid #1e293b'}}>
+                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: '0.04em'}}>Recommended Action</div>
+                    <div style={{fontSize: '0.88rem', fontWeight: 600, color: '#93c5fd'}}>
+                      {formatNextActionLabel(channelIntel.followup_decision.next_action, channelIntel.followup_decision.selected_channel)}
+                    </div>
+                  </div>
+                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 12px', borderRadius: 6, border: '1px solid #1e293b'}}>
+                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: '0.04em'}}>Timing</div>
+                    <div style={{fontSize: '0.88rem', fontWeight: 600, color: '#fde047'}}>
+                      {formatTiming(channelIntel.followup_decision.recommended_wait_period)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="fd-reason" style={{marginBottom: 12}}>
+                  <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>
+                    Reason
+                  </div>
+                  <p style={{margin: 0, fontSize: '0.88rem', color: '#cbd5e1', lineHeight: 1.5}}>
+                    {channelIntel.followup_decision.reason}
+                  </p>
+                </div>
+
+                {canRunNextStep && (
+                  <div style={{marginTop: 12}}>
+                    <button
+                      className="button primary simulate-step-btn"
+                      onClick={handleRunNextStep}
+                      disabled={isRunningNextStep}
+                      style={{background: '#2563eb', padding: '8px 18px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6}}
+                    >
+                      {isRunningNextStep ? 'Simulating...' : '⚡ Simulate Next Recovery Step'}
+                    </button>
+                    <span style={{display: 'block', marginTop: 6, fontSize: '0.78rem', color: '#94a3b8'}}>
+                      Simulates the recommended follow-up without waiting for the actual follow-up period.
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -471,7 +693,7 @@ export function CaseDetail({
         ) : (
           <div className="payment-recovery-card">
             <div className="pr-header">
-              <h3>⚡ 6. PAYMENT RECOVERY ACTION</h3>
+              <h3>⚡ 7. PAYMENT RECOVERY ACTION</h3>
               <span className={`pr-status-badge ${currentLink ? 'active' : 'pending'}`}>
                 {currentLink ? '🟢 Active Payment Link' : 'PENDING'}
               </span>
@@ -529,22 +751,24 @@ export function CaseDetail({
                   </span>
                 </div>
               </div>
-              {commInfo.canView && (
+              {availableCommunications.length > 0 && (
                 <button
                   id="view-comm-panel-btn"
                   className="button secondary comm-action-btn"
                   onClick={() => openCommunicationModal()}
                 >
-                  View Communication
+                  {availableCommunications.length === 1
+                    ? `View ${title(availableCommunications[0].channel)} Message`
+                    : 'View Communications'}
                 </button>
               )}
             </div>
           </div>
         )}
 
-        {/* 7. CUSTOMER OUTCOME */}
+        {/* 8. CUSTOMER OUTCOME */}
         <div className="intelligence-card customer-outcome-card">
-          <h4>7. Customer Outcome</h4>
+          <h4>8. Customer Outcome</h4>
           <div className="co-body" style={{marginTop: 8}}>
             {isRecovered ? (
               <div>
@@ -615,30 +839,40 @@ export function CaseDetail({
               <button className="comm-modal-close" onClick={() => setShowCommModal(false)}>✕</button>
             </div>
 
-            {/* Channel Tabs */}
+            {/* Dynamic Channel Tabs */}
             <div className="comm-modal-tabs">
-              <button
-                className={`comm-modal-tab ${activeCommTab === 'email' ? 'active' : ''}`}
-                onClick={() => setActiveCommTab('email')}
-              >
-                ✉️ Email Preview
-              </button>
-              <button
-                className={`comm-modal-tab ${activeCommTab === 'sms' ? 'active' : ''}`}
-                onClick={() => setActiveCommTab('sms')}
-              >
-                📱 SMS Preview
-              </button>
-              <button
-                className={`comm-modal-tab ${activeCommTab === 'whatsapp' ? 'active' : ''}`}
-                onClick={() => setActiveCommTab('whatsapp')}
-              >
-                💬 WhatsApp Preview
-              </button>
+              {availableCommunications.map((comm) => {
+                const isActive = selectedCommId ? comm.id === selectedCommId : comm.id === availableCommunications[0]?.id;
+                const chIcon = comm.channel === 'whatsapp' ? '💬' : comm.channel === 'sms' ? '📱' : '✉️';
+                return (
+                  <button
+                    key={comm.id}
+                    className={`comm-modal-tab ${isActive ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedCommId(comm.id);
+                      setActiveCommTab(comm.channel);
+                    }}
+                  >
+                    {chIcon} {title(comm.channel)}
+                    {availableCommunications.length > 1 && ` – Attempt ${comm.attempt}`}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Tab Contents */}
             <div className="comm-modal-content">
+              {/* Payment Completed Attribution banner */}
+              {isRecovered && (
+                <div style={{
+                  background: 'rgba(6, 78, 59, 0.4)', border: '1px solid #059669', color: '#34d399',
+                  padding: '10px 16px', borderRadius: 6, marginBottom: 16, fontSize: '0.88rem', fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: 8
+                }}>
+                  <span>✓</span> Payment completed after this communication.
+                </div>
+              )}
+
               {/* Prepared but not dispatched notice */}
               {commStatus === 'READY' && (!dispatchedChannel || dispatchedChannel !== activeCommTab) && (
                 <div className="comm-ready-banner" style={{

@@ -56,12 +56,24 @@ class DecisionFactorSummary(BaseModel):
     score: float  # 0.0 to 1.0 for UI progress bars
 
 
+class FollowupDecision(BaseModel):
+    previous_outcome: str | None = None
+    recommended_wait_period: str = "None"
+    next_action: str
+    selected_channel: str | None = None
+    reason: str
+
+
 class CommunicationAttemptSummary(BaseModel):
+    id: str | None = None
     attempt_number: int
     channel: str
     status: str
     outcome: str
     simulated: bool
+    recipient: str | None = None
+    message_snippet: str | None = None
+    recovery_attributed: bool = False
     created_at: UTCDateTime | None = None
 
 
@@ -84,6 +96,7 @@ class ChannelIntelligence(BaseModel):
     communication_journey: list[CommunicationAttemptSummary] = Field(default_factory=list)
     opted_out_channels: list[str] = Field(default_factory=list)
     attributed_channel: str | None = None
+    followup_decision: FollowupDecision | None = None
 
 
 class CaseExplanation(CaseSummary):

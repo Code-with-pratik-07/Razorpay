@@ -1,10 +1,12 @@
 import random
 import uuid
 from datetime import timedelta, datetime, timezone
+from sqlalchemy import select
 
 from app.db.database import SessionLocal, init_db, engine
 from app.models.customer import Customer
 from app.models.payment_case import CaseStatus, PaymentCase, RecoveryAction
+from app.models.communication_record import CommunicationRecord
 from app.services.audit_service import log_audit_event
 from app.ml.train import generate_training_data
 
@@ -86,7 +88,7 @@ def seed_demo_data(reset: bool = False):
         log_audit_event(db, case_a.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
         log_audit_event(db, case_a.id, "ai_analysis", {
             "recommended_action": "payment_link",
-            "reasoning": "Automatic Recovery: High recovery probability and policy clearance allow automated payment link generation. The recovery communication should be sent through the highest-ranked appropriate channel.",
+            "reasoning": "The payment has a high predicted recovery probability (95%) and has passed all policy checks. RecoverAI automatically generated a secure payment link and selected WhatsApp as the primary communication channel.",
             "customer_message": "We noticed your recent payment was unsuccessful. Please use the secure payment option to complete your transaction.",
             "confidence": 0.95,
             "source": "groq",
@@ -94,6 +96,11 @@ def seed_demo_data(reset: bool = False):
         
         from app.services.recovery_service import execute_recovery
         execute_recovery(db, case_a, automatic=True)
+        rec_a = db.scalar(select(CommunicationRecord).where(CommunicationRecord.case_id == case_a.id))
+        if rec_a:
+            rec_a.outcome = "LINK_CLICKED"
+            rec_a.message_snippet = "WhatsApp payment link delivered - Clicked by customer"
+            db.commit()
 
         log_audit_event(db, case_b.id, "failure_detected", {"demo": True, "note": "Synthetic Demo B (Uncertain)"})
         log_audit_event(db, case_b.id, "ml_prediction", {"recovery_probability": 0.55})
@@ -146,29 +153,11 @@ def seed_demo_data(reset: bool = False):
             "confidence": 0.25,
             "source": "groq",
         })
+        # Customer 4 (DEMO-B-HUMAN) explicitly prefers Email for high-value transactions
+        customers[4].preferred_channel = "email"
         # Customer 5 opts out of SMS for Scenario E
         customers[5].opted_out_channels = "sms"
         db.commit()
-
-        from app.models.communication_record import CommunicationRecord
-
-        # Seed prior SMS attempt with no engagement for DEMO-B-HUMAN (Scenario B)
-        comm_b_1 = CommunicationRecord(
-            case_id=case_b_human.id,
-            channel="sms",
-            status="SIMULATED",
-            suitability_score=0.49,
-            channel_scores={"email": 0.74, "whatsapp": 0.68, "sms": 0.49},
-            reason="Previous SMS communication received no engagement. Email is currently the next-best available channel.",
-            attempt_number=1,
-            simulated=True,
-            outcome="IGNORED",
-            delivery_status="DELIVERED",
-            recipient=customers[4].phone,
-            message_snippet="Payment recovery notice delivered via SMS",
-            created_at=now - timedelta(hours=4),
-        )
-        db.add(comm_b_1)
 
         # Seed established communication history with attribution for DEMO-C (Scenario C)
         comm_c_1 = CommunicationRecord(
@@ -227,12 +216,15 @@ def seed_demo_data(reset: bool = False):
             "signal": "Attributed recovery signal: Customer completed payment following SMS reminder.",
         })
 
-        # Execute first attempt to create real link
-        execute_recovery(db, case_d, automatic=True)
-        # Simulate payment failing/timeout by resetting to FAILED, then attempting again to trigger exhaustion
-        case_d.status = CaseStatus.FAILED
-        db.commit()
-        execute_recovery(db, case_d, automatic=True)
+        # Seed DEMO-D-STOPPED link and records
+        log_audit_event(db, case_d.id, "payment_link_created", {
+            "payment_link_id": "plink_demo_d",
+            "url": "https://rzp.io/i/demo_d_stopped_link",
+            "expires_at": (now - timedelta(hours=2)).isoformat(),
+        })
+        case_d.retry_count = 2
+        case_d.max_retries = 2
+        case_d.status = CaseStatus.ABANDONED
 
         # Seed Escalation communication records for DEMO-D (Scenario D)
         comm_d_1 = CommunicationRecord(
@@ -244,7 +236,7 @@ def seed_demo_data(reset: bool = False):
             reason="Initial attempt selected WhatsApp based on mobile availability.",
             attempt_number=1,
             simulated=True,
-            outcome="IGNORED",
+            outcome="NO_ENGAGEMENT",
             delivery_status="DELIVERED",
             recipient=customers[3].phone,
             message_snippet="WhatsApp reminder delivered",
@@ -259,7 +251,7 @@ def seed_demo_data(reset: bool = False):
             reason="The previous WHATSAPP notification was delivered but received no engagement. The system has deprioritized WHATSAPP and selected the next best available channel (SMS).",
             attempt_number=2,
             simulated=True,
-            outcome="DELIVERED",
+            outcome="NO_ENGAGEMENT",
             delivery_status="DELIVERED",
             recipient=customers[3].phone,
             message_snippet="SMS escalation reminder delivered",

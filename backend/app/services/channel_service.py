@@ -34,6 +34,7 @@ from app.schemas.recovery import (
     CommunicationAttemptSummary,
     DecisionBasisItem,
     DecisionFactorSummary,
+    FollowupDecision,
 )
 from app.services.audit_service import list_audit_events, log_audit_event
 from app.services.providers import get_communication_provider
@@ -174,22 +175,22 @@ def _compute_comm_history(
     clicked_in_case = 0
     for r in case_records:
         if r.channel == channel:
-            if r.outcome in {"IGNORED", "DELIVERED", "SENT"} and not r.recovery_attributed:
-                unheeded_in_case += 1
-            elif r.outcome in {"CLICKED", "OPENED", "RESPONDED"}:
+            if r.outcome in {"LINK_CLICKED", "CLICKED", "OPENED", "RESPONDED"}:
                 clicked_in_case += 1
+            elif r.outcome in {"NO_ENGAGEMENT", "IGNORED", "DELIVERED", "SENT"} and not r.recovery_attributed:
+                unheeded_in_case += 1
 
-    if unheeded_in_case > 0:
+    if unheeded_in_case > 0 and clicked_in_case == 0:
         penalty = unheeded_in_case * 0.55
         base_engagement -= penalty
         notes.append(f"Unheeded in attempt {unheeded_in_case}")
 
-    if channel == "whatsapp" and any(r.channel == "sms" and r.outcome == "IGNORED" for r in case_records):
+    if channel == "whatsapp" and any(r.channel == "sms" and r.outcome in {"IGNORED", "NO_ENGAGEMENT"} for r in case_records):
         base_engagement -= 0.20
         notes.append("Prior phone notification unheeded")
 
     if clicked_in_case > 0:
-        base_engagement += 0.20
+        base_engagement += 0.25
         notes.append("Link clicked previously")
 
     final_score = max(0.05, min(1.0, base_engagement))
@@ -264,7 +265,12 @@ def evaluate_channel_suitability(
             if avail_score == 0.0:
                 scores[ch] = 0.0
             else:
-                scores[ch] = COLD_START_BASELINE.get(ch, 0.40)
+                base = COLD_START_BASELINE.get(ch, 0.40)
+                if customer and customer.preferred_channel == ch:
+                    base += 0.25
+                if case.amount and case.amount >= 2000000 and ch == "email":
+                    base += 0.15
+                scores[ch] = round(min(1.0, base), 2)
 
         sorted_channels = sorted(scores.keys(), key=lambda c: scores[c], reverse=True)
         recommended = sorted_channels[0]
@@ -429,17 +435,23 @@ def evaluate_channel_suitability(
     for r in reversed(c_records):
         journey.append(
             CommunicationAttemptSummary(
+                id=r.id,
                 attempt_number=r.attempt_number,
                 channel=r.channel,
                 status=r.status,
                 outcome=r.outcome,
                 simulated=r.simulated,
+                recipient=r.recipient,
+                message_snippet=r.message_snippet,
+                recovery_attributed=r.recovery_attributed,
                 created_at=r.created_at,
             )
         )
 
     last_record = c_records[0] if c_records else None
     attributed_rec = next((r for r in c_records if r.recovery_attributed), None)
+
+    followup = evaluate_followup_decision(case, c_records, customer, recommended, alternatives)
 
     return ChannelIntelligence(
         communication_maturity=maturity,
@@ -460,6 +472,120 @@ def evaluate_channel_suitability(
         communication_journey=journey,
         opted_out_channels=list(opted_outs),
         attributed_channel=attributed_rec.channel if attributed_rec else None,
+        followup_decision=followup,
+    )
+
+
+def evaluate_followup_decision(
+    case: PaymentCase,
+    case_records: list[CommunicationRecord],
+    customer: Customer | None,
+    recommended_channel: str,
+    alternatives: list[str],
+) -> FollowupDecision:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    # 1. Terminal states
+    if case.status in {CaseStatus.RECOVERED, CaseStatus.CLOSED}:
+        attributed_rec = next((r for r in case_records if r.recovery_attributed), None)
+        chan = attributed_rec.channel if attributed_rec else (case_records[0].channel if case_records else "sms")
+        return FollowupDecision(
+            previous_outcome="PAYMENT_COMPLETED",
+            recommended_wait_period="None",
+            next_action="STOP_RECOVERY",
+            selected_channel=chan,
+            reason="Payment completed successfully. All automated recovery actions stopped.",
+        )
+
+    if case.status == CaseStatus.ABANDONED or ((case.retry_count or 0) >= (case.max_retries or 3)):
+        latest_out = case_records[0].outcome if case_records else "NO_ENGAGEMENT"
+        return FollowupDecision(
+            previous_outcome=latest_out,
+            recommended_wait_period="None",
+            next_action="STOP_RECOVERY",
+            selected_channel=None,
+            reason="The maximum number of recovery attempts has been reached without successful payment. Further automated contact has stopped to avoid unnecessary customer communication.",
+        )
+
+    # 2. No communication attempts yet
+    if not case_records:
+        if case.status == CaseStatus.HUMAN_REVIEW or (case.policy_check_passed is False and case.status != CaseStatus.RECOVERING):
+            return FollowupDecision(
+                previous_outcome=None,
+                recommended_wait_period="None",
+                next_action="AWAIT_APPROVAL",
+                selected_channel=recommended_channel,
+                reason="The recovery probability is high, but the transaction requires human approval because of the applicable policy and risk context.",
+            )
+        return FollowupDecision(
+            previous_outcome=None,
+            recommended_wait_period="None",
+            next_action="DISPATCH_INITIAL",
+            selected_channel=recommended_channel,
+            reason=f"The payment has a high predicted recovery probability and passed all policy checks. A secure payment link was generated and {recommended_channel.upper()} was selected as the primary communication channel.",
+        )
+
+    # 3. Previous attempt evaluation
+    latest = case_records[0]
+
+    # Rule 5: Link Expired
+    if case.payment_link_expires_at and case.payment_link_expires_at < now:
+        if (case.retry_count or 0) < (case.max_retries or 3):
+            return FollowupDecision(
+                previous_outcome="PAYMENT_LINK_EXPIRED",
+                recommended_wait_period="Immediate",
+                next_action="GENERATE_NEW_LINK",
+                selected_channel=recommended_channel,
+                reason="The previous payment link has expired. Regenerate a new secure link within permitted policy limits.",
+            )
+        else:
+            return FollowupDecision(
+                previous_outcome="PAYMENT_LINK_EXPIRED",
+                recommended_wait_period="None",
+                next_action="STOP_RECOVERY",
+                selected_channel=None,
+                reason="Payment link expired and attempt limit reached. Closing recovery.",
+            )
+
+    # Rule: Currently Awaiting Response after follow-up execution
+    if latest.outcome in {"AWAITING_RESPONSE", "PENDING_RESPONSE"}:
+        return FollowupDecision(
+            previous_outcome="AWAITING_RESPONSE",
+            recommended_wait_period="24 hours",
+            next_action="AWAIT_RESPONSE",
+            selected_channel=latest.channel,
+            reason=f"A follow-up reminder was simulated and delivered via {latest.channel.upper()}. Currently awaiting customer response before evaluating further recovery actions.",
+        )
+
+    # Rule 2: Link Clicked
+    if latest.outcome in {"LINK_CLICKED", "CLICKED"}:
+        return FollowupDecision(
+            previous_outcome="LINK_CLICKED",
+            recommended_wait_period="24 hours",
+            next_action="RETRY_SAME_CHANNEL",
+            selected_channel=latest.channel,
+            reason=f"The customer engaged with the payment link but did not complete payment. A follow-up through {latest.channel.upper()} is preferred because recent engagement indicates the channel remains effective.",
+        )
+
+    # Rule 4: Delivery Failed
+    if latest.outcome in {"FAILED_DELIVERY", "FAILED"}:
+        next_ch = next((a for a in alternatives if a != latest.channel), recommended_channel)
+        return FollowupDecision(
+            previous_outcome="FAILED_DELIVERY",
+            recommended_wait_period="Immediate",
+            next_action="SWITCH_CHANNEL",
+            selected_channel=next_ch,
+            reason=f"Delivery failed on {latest.channel.upper()}. Immediately switching to {next_ch.upper()} without waiting because the customer never received the message.",
+        )
+
+    # Rule 3: No Engagement (or Delivered without click)
+    next_ch = next((a for a in alternatives if a != latest.channel), recommended_channel)
+    return FollowupDecision(
+        previous_outcome="NO_ENGAGEMENT",
+        recommended_wait_period="24 hours",
+        next_action="SWITCH_CHANNEL",
+        selected_channel=next_ch,
+        reason=f"The previous {latest.channel.upper()} communication received no customer engagement. After the follow-up window, {latest.channel.upper()} suitability was reduced and {next_ch.upper()} was selected as the next-best verified channel.",
     )
 
 

@@ -1,13 +1,16 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.database import get_db
-from app.models.payment_case import PaymentCase
+from app.models.payment_case import PaymentCase, CaseStatus, RecoveryAction, NextActionType
+from app.models.communication_record import CommunicationRecord
 from app.schemas.recovery import CaseExplanation, CaseSummary, ExecuteRecoveryResponse, AIDecision
 from app.services.recovery_service import _features, _last_ai_decision, _policy, analyze_case, execute_recovery, ml_routing_decision
-from app.services.audit_service import list_audit_events
-from app.services.channel_service import get_case_channel_intelligence
+from app.services.audit_service import list_audit_events, log_audit_event
+from app.services.channel_service import get_case_channel_intelligence, evaluate_channel_suitability, dispatch_channel_communication
 from app.services.policy_service import check_recovery_policy
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
@@ -197,3 +200,130 @@ def dispatch_communication(case_id: str, req: DispatchCommunicationRequest, db: 
         db, case, url, override_channel=req.channel, automatic=False
     )
     return res
+
+
+@router.post("/{case_id}/next-step")
+def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
+    case = _case(db, case_id)
+    if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
+        raise HTTPException(status_code=400, detail="Cannot run next step on a terminal case.")
+
+    if case.status == CaseStatus.HUMAN_REVIEW and not case.policy_check_passed:
+        raise HTTPException(status_code=400, detail="Case requires human approval before proceeding.")
+
+    # Get communication records
+    case_records = list(
+        db.scalars(
+            select(CommunicationRecord)
+            .where(CommunicationRecord.case_id == case.id)
+            .order_by(CommunicationRecord.created_at.desc())
+        )
+    )
+
+    all_records = list(
+        db.scalars(
+            select(CommunicationRecord)
+            .join(PaymentCase)
+            .where(PaymentCase.customer_id == case.customer_id)
+            .order_by(CommunicationRecord.created_at.desc())
+        )
+    )
+
+    intel = evaluate_channel_suitability(case, case.customer, case_records, all_records)
+    followup = intel.followup_decision
+
+    if not followup:
+        raise HTTPException(status_code=400, detail="No follow-up decision available.")
+
+    events = list_audit_events(db, case.id)
+    last_link_event = next((e for e in reversed(events) if e.event_type == "payment_link_created"), None)
+    url = last_link_event.event_data.get("url") if last_link_event else "https://rzp.io/i/demo_link"
+
+    if (case.retry_count or 0) >= (case.max_retries or 3):
+        raise HTTPException(status_code=400, detail="Maximum recovery attempts reached.")
+
+    # Duplicate prevention: If the latest attempt is already awaiting customer response
+    if case_records and case_records[0].outcome in {"AWAITING_RESPONSE", "PENDING_RESPONSE"}:
+        raise HTTPException(status_code=400, detail="A recovery follow-up has already been simulated and is currently awaiting customer response.")
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    if followup.next_action == "STOP_RECOVERY":
+        case.status = CaseStatus.ABANDONED
+        case.recovery_action = RecoveryAction.NONE
+        db.commit()
+        log_audit_event(db, case.id, "recovery_closed", {"reason": followup.reason})
+        return {"action": "stopped", "message": followup.reason, "explanation": _explanation(db, case)}
+
+    elif followup.next_action == "RETRY_SAME_CHANNEL":
+        channel = followup.selected_channel or "whatsapp"
+        attempt_num = len(case_records) + 1
+        case.retry_count = attempt_num
+        db.commit()
+
+        record = CommunicationRecord(
+            case_id=case.id,
+            channel=channel,
+            status="SIMULATED",
+            suitability_score=intel.suitability_score,
+            channel_scores=intel.channel_scores,
+            reason=followup.reason,
+            attempt_number=attempt_num,
+            simulated=True,
+            outcome="AWAITING_RESPONSE",
+            delivery_status="DELIVERED",
+            recipient=case.customer.phone if channel in {"whatsapp", "sms"} else case.customer.email,
+            message_snippet=f"{channel.capitalize()} reminder delivered — Awaiting customer response",
+            created_at=now,
+        )
+        db.add(record)
+        case.selected_channel = channel
+        case.notification_status = f"{channel.upper()}_SIMULATED"
+        db.commit()
+
+        log_audit_event(db, case.id, "recovery_reminder_dispatched", {
+            "channel": channel,
+            "attempt_number": attempt_num,
+            "wait_period": followup.recommended_wait_period,
+            "reason": followup.reason,
+        })
+        return {"action": "reminder_dispatched", "channel": channel, "attempt": attempt_num, "explanation": _explanation(db, case)}
+
+    elif followup.next_action == "SWITCH_CHANNEL":
+        channel = followup.selected_channel or "sms"
+        attempt_num = len(case_records) + 1
+        case.retry_count = attempt_num
+        db.commit()
+
+        record = CommunicationRecord(
+            case_id=case.id,
+            channel=channel,
+            status="SIMULATED",
+            suitability_score=intel.channel_scores.get(channel, 0.70),
+            channel_scores=intel.channel_scores,
+            reason=followup.reason,
+            attempt_number=attempt_num,
+            simulated=True,
+            outcome="AWAITING_RESPONSE",
+            delivery_status="DELIVERED",
+            recipient=case.customer.phone if channel in {"whatsapp", "sms"} else case.customer.email,
+            message_snippet=f"{channel.capitalize()} escalation notice delivered — Awaiting customer response",
+            created_at=now,
+        )
+        db.add(record)
+        case.selected_channel = channel
+        case.notification_status = f"{channel.upper()}_SIMULATED"
+        db.commit()
+
+        log_audit_event(db, case.id, "channel_switched", {
+            "channel": channel,
+            "attempt_number": attempt_num,
+            "reason": followup.reason,
+        })
+        return {"action": "channel_switched", "channel": channel, "attempt": attempt_num, "explanation": _explanation(db, case)}
+
+    elif followup.next_action == "DISPATCH_INITIAL":
+        res = dispatch_channel_communication(db, case, url, override_channel=followup.selected_channel, automatic=False)
+        return {"action": "dispatched", "result": res, "explanation": _explanation(db, case)}
+
+    return {"action": followup.next_action, "explanation": _explanation(db, case)}

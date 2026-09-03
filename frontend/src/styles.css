@@ -2346,3 +2346,88 @@ h1, h2, h3, h4, p { margin: 0; }
   border-radius: 8px;
   padding: 16px 20px;
 }
+
+/* ---------------------------------------------------------------------------
+   RECOVERY FOLLOW-UP INTELLIGENCE & TRANSITION STYLES
+--------------------------------------------------------------------------- */
+.followup-intelligence-card {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 8px;
+  padding: 14px 18px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.followup-intelligence-card .fd-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.followup-intelligence-card .fd-badge {
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  color: #60a5fa;
+  text-transform: uppercase;
+}
+
+.followup-intelligence-card .fd-wait {
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(71, 85, 105, 0.6);
+  padding: 3px 10px;
+  border-radius: 4px;
+}
+
+.followup-intelligence-card .fd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.followup-intelligence-card .fd-item {
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(30, 41, 59, 0.8);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.followup-intelligence-card .fd-label {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.followup-intelligence-card .fd-value {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.followup-intelligence-card .fd-reason {
+  margin: 0 0 10px 0;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.journey-transition-tag {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin: 6px 0 6px 20px;
+  width: fit-content;
+  border: 1px solid rgba(71, 85, 105, 0.4);
+  background: rgba(30, 41, 59, 0.6);
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

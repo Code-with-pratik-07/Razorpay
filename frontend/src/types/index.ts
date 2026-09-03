@@ -47,12 +47,24 @@ export type DecisionFactorSummary = {
   score: number;
 };
 
+export type FollowupDecision = {
+  previous_outcome: string | null;
+  recommended_wait_period: string;
+  next_action: string;
+  selected_channel: string | null;
+  reason: string;
+};
+
 export type CommunicationAttemptSummary = {
+  id?: string | null;
   attempt_number: number;
   channel: string;
   status: string;
   outcome: string;
   simulated: boolean;
+  recipient?: string | null;
+  message_snippet?: string | null;
+  recovery_attributed?: boolean;
   created_at: string | null;
 };
 
@@ -75,6 +87,7 @@ export type ChannelIntelligence = {
   communication_journey: CommunicationAttemptSummary[];
   opted_out_channels: string[];
   attributed_channel?: string | null;
+  followup_decision?: FollowupDecision | null;
 };
 
 export type Explanation = RecoveryCase & {
