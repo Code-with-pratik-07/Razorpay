@@ -695,10 +695,10 @@ export function CaseDetail({
                         </div>
                         <div className="journey-compact-card" style={{borderColor: '#7f1d1d', background: 'rgba(69, 10, 10, 0.4)', padding: '10px 14px', marginTop: 6}}>
                           <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: 6}}>
-                            <span>■</span> RECOVERY CLOSED
+                            <span>■</span> COMMUNICATION LIMIT REACHED
                           </div>
                           <div style={{fontSize: '0.78rem', color: '#fca5a5', marginTop: 3}}>
-                            Maximum communication attempt limit reached.
+                            Maximum communication attempt limit reached.<br />No further communication attempts will be scheduled.
                           </div>
                         </div>
                       </div>
@@ -786,29 +786,34 @@ export function CaseDetail({
                 PAYMENT SUCCESSFULLY RECOVERED
               </h3>
             </div>
-            <div style={{margin: '8px 0 12px 0', display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap'}}>
-              <span style={{fontSize: '2.4rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.03em', lineHeight: 1.1}}>
+            <div style={{marginTop: 16, marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 4}}>
+              <div style={{fontSize: '2.6rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.03em', lineHeight: 1.1}}>
                 {formatINR(selected.amount)}
-              </span>
-              <span style={{fontSize: '1.15rem', fontWeight: 600, color: '#e6fffa'}}>
-                 recovered successfully.
-              </span>
+              </div>
+              <div style={{fontSize: '1.15rem', fontWeight: 600, color: '#a7f3d0'}}>
+                Recovered successfully
+              </div>
             </div>
-            <div style={{fontSize: '0.95rem', color: '#d1fae5', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8, marginTop: 14}}>
-              <span>Recovery attributed to:</span>
-              <span style={{
-                fontWeight: 700,
-                color: '#ffffff',
-                background: 'rgba(255, 255, 255, 0.18)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                padding: '4px 12px',
-                borderRadius: 4,
-                letterSpacing: '0.05em',
-                fontSize: '0.9rem',
-                marginLeft: 4
-              }}>
-                {channelIntel?.attributed_channel?.toUpperCase() || 'SMS'}
-              </span>
+
+            <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8}}>
+              <div style={{fontSize: '0.85rem', color: '#6ee7b7', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em'}}>
+                Recovery attributed to
+              </div>
+              <div>
+                <span style={{
+                  display: 'inline-block',
+                  fontWeight: 700,
+                  color: '#ffffff',
+                  background: 'rgba(255, 255, 255, 0.15)',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  padding: '4px 12px',
+                  borderRadius: 6,
+                  letterSpacing: '0.1em',
+                  fontSize: '0.85rem'
+                }}>
+                  {channelIntel?.attributed_channel?.toUpperCase() || 'SMS'}
+                </span>
+              </div>
             </div>
           </div>
         ) : isAbandoned ? (
