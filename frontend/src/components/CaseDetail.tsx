@@ -780,36 +780,36 @@ export function CaseDetail({
             color: '#ffffff',
             boxShadow: '0 4px 20px rgba(6, 78, 59, 0.3)'
           }}>
-            <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12}}>
-              <span style={{fontSize: '1.3rem', color: '#6ee7b7', fontWeight: 800}}>✓</span>
-              <h3 style={{margin: 0, color: '#6ee7b7', fontSize: '1.05rem', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase'}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16}}>
+              <span style={{fontSize: '1.2rem', color: '#6ee7b7', fontWeight: 'bold'}}>✓</span>
+              <h3 style={{margin: 0, color: '#6ee7b7', fontSize: '1.1rem', fontWeight: 'bold', letterSpacing: '0.06em', textTransform: 'uppercase'}}>
                 PAYMENT SUCCESSFULLY RECOVERED
               </h3>
             </div>
-            <div style={{marginTop: 16, marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 4}}>
-              <div style={{fontSize: '2.6rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.03em', lineHeight: 1.1}}>
+            <div style={{marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 2}}>
+              <div style={{fontSize: '2.2rem', fontWeight: 'bold', color: '#ffffff', letterSpacing: '-0.02em', lineHeight: 1.1}}>
                 {formatINR(selected.amount)}
               </div>
-              <div style={{fontSize: '1.15rem', fontWeight: 600, color: '#a7f3d0'}}>
+              <div style={{fontSize: '1rem', fontWeight: 500, color: '#a7f3d0'}}>
                 Recovered successfully
               </div>
             </div>
 
-            <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8}}>
-              <div style={{fontSize: '0.85rem', color: '#6ee7b7', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em'}}>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
+              <div style={{fontSize: '0.72rem', color: '#6ee7b7', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.9}}>
                 Recovery attributed to
               </div>
               <div>
                 <span style={{
                   display: 'inline-block',
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: '#ffffff',
                   background: 'rgba(255, 255, 255, 0.15)',
                   border: '1px solid rgba(255, 255, 255, 0.3)',
-                  padding: '4px 12px',
-                  borderRadius: 6,
-                  letterSpacing: '0.1em',
-                  fontSize: '0.85rem'
+                  padding: '3px 8px',
+                  borderRadius: 4,
+                  letterSpacing: '0.05em',
+                  fontSize: '0.8rem'
                 }}>
                   {channelIntel?.attributed_channel?.toUpperCase() || 'SMS'}
                 </span>
