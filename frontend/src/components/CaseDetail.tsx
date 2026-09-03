@@ -15,6 +15,9 @@ interface CaseDetailProps {
   analyze: () => Promise<void>;
   execute: () => Promise<void>;
   setNotice: (n: string) => void;
+  setError?: (e: string | null) => void;
+  loadDetails?: (id: string) => Promise<void>;
+  refreshCases?: (preserveSelection?: boolean) => Promise<RecoveryCase[]>;
 }
 
 function formatNextActionLabel(nextAction: string, channel: string | null): string {
@@ -83,7 +86,10 @@ export function CaseDetail({
   actionLoading,
   analyze,
   execute,
-  setNotice
+  setNotice,
+  setError,
+  loadDetails,
+  refreshCases
 }: CaseDetailProps) {
   if (detailLoading && !selected) {
     return <div className="empty-state">Loading case details...</div>;
@@ -106,26 +112,13 @@ export function CaseDetail({
   const [activeCommTab, setActiveCommTab] = React.useState<'email' | 'sms' | 'whatsapp'>('email');
   const [copied, setCopied] = React.useState(false);
   const [isSending, setIsSending] = React.useState(false);
+  const [isRunningNextStep, setIsRunningNextStep] = React.useState(false);
 
   // Status flags
   const isAbandoned = selected.status === 'abandoned';
   const isHumanReview = selected.status === 'human_review';
   const isRecovering = selected.status === 'recovering';
   const isRecovered = selected.status === 'recovered';
-
-  // Backend workflow state derived from explanation
-  const humanReviewStatus = explanation?.human_review_status ?? (explanation?.manual_execution ? 'APPROVED' : isHumanReview ? 'REQUIRED' : 'NOT_REQUIRED');
-  const commStatus = explanation?.communication_status ?? (isRecovered ? 'COMPLETED' : isAbandoned ? 'EXHAUSTED' : humanReviewStatus === 'REQUIRED' ? 'PAUSED' : 'READY');
-  const recommendedChannel = explanation?.recommended_channel ?? explanation?.channel_intelligence?.recommended_channel ?? 'email';
-  const dispatchedChannel = explanation?.dispatched_channel ?? null;
-  const recChannelName = recommendedChannel === 'whatsapp' ? 'WhatsApp' : recommendedChannel === 'sms' ? 'SMS' : 'Email';
-
-  // Can approve recovery for HUMAN_REVIEW if under retry limit
-  const canApproveRecovery = (isHumanReview || humanReviewStatus === 'REQUIRED') && selected.retry_count < selected.max_retries;
-
-  // Selected communication ID for multi-attempt modal
-  const [selectedCommId, setSelectedCommId] = React.useState<string>('');
-  const [isRunningNextStep, setIsRunningNextStep] = React.useState<boolean>(false);
 
   // Dynamic available communications strictly from backend records & prepared channel
   const journey = explanation?.channel_intelligence?.communication_journey || [];
@@ -143,6 +136,13 @@ export function CaseDetail({
       isPrepared: false,
     }));
 
+  const recommendedChannel = explanation?.recommended_channel || selected.selected_channel || 'whatsapp';
+  const recChannelName = title(recommendedChannel);
+  const commStatus = explanation?.communication_status || selected.notification_status || 'PENDING';
+  const humanReviewStatus = explanation?.human_review_status || 'NOT_REQUIRED';
+  const dispatchedChannel = explanation?.dispatched_channel || selected.selected_channel;
+  const canApproveRecovery = (isHumanReview || humanReviewStatus === 'REQUIRED') && selected.retry_count < selected.max_retries;
+
   if (commStatus === 'READY' && humanReviewStatus !== 'REQUIRED') {
     const hasExisting = actualComms.some(c => c.channel === recommendedChannel.toLowerCase());
     if (!hasExisting) {
@@ -159,6 +159,8 @@ export function CaseDetail({
       });
     }
   }
+
+  const [selectedCommId, setSelectedCommId] = React.useState<string | null>(null);
 
   const availableCommunications = actualComms;
   const selectedComm = availableCommunications.find(c => c.id === selectedCommId) || availableCommunications[0];
@@ -186,21 +188,46 @@ export function CaseDetail({
   };
 
   const handleRunNextStep = async () => {
+    if (!selected) return;
     setIsRunningNextStep(true);
+    if (setError) setError(null);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/cases/${selected.id}/next-step`, {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+      const res = await fetch(`${apiBase}/api/cases/${selected.id}/next-step`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
+      
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err = await res.json();
-        alert(err.detail || 'Failed to execute next recovery step');
+        const errMsg = data.detail || 'Failed to execute next recovery step';
+        if (setError) setError(errMsg);
+        setNotice(`Execution error: ${errMsg}`);
         return;
       }
-      await analyze();
-      setNotice('Next recovery step simulated successfully.');
+
+      if (data.status === 'no_action') {
+        setNotice(data.reason || 'No further action required. The current follow-up step has already been executed.');
+      } else {
+        const channelName = data.channel ? title(data.channel) : 'Communication';
+        setNotice(`Next recovery step (${channelName} Attempt ${data.attempt || 2}) executed successfully.`);
+        if (data.channel) {
+          setActiveCommTab(data.channel.toLowerCase() as 'email' | 'sms' | 'whatsapp');
+        }
+      }
+
+      // Refresh case data immediately
+      if (loadDetails) {
+        await loadDetails(selected.id);
+      }
+      if (refreshCases) {
+        await refreshCases(true);
+      }
     } catch (e) {
-      console.error(e);
+      const errMsg = e instanceof Error ? e.message : 'Network error executing next step';
+      console.error('Failed to run next recovery step:', e);
+      if (setError) setError(errMsg);
+      setNotice(`Network error: ${errMsg}`);
     } finally {
       setIsRunningNextStep(false);
     }
@@ -513,7 +540,7 @@ export function CaseDetail({
                               {isPaid ? '✓ Payment Completed' : 
                                isLinkClicked ? '✓ Delivered • 🔗 Payment Link Clicked' : 
                                isAwaiting ? '✓ Simulated Sent • ⏳ Awaiting Customer Response' :
-                               isIgnored ? '✓ Delivered • No customer engagement' : 
+                               isIgnored ? '✓ Delivered • No Customer Engagement' : 
                                '✓ Delivered'}
                             </span>
                           </div>
@@ -523,14 +550,9 @@ export function CaseDetail({
                             </div>
                           )}
                           {isIgnored && (
-                            <>
-                              <div className="journey-transition-row">
-                                <span>{journey.length > 1 ? 'Waited 24 hours' : 'Follow-up after 24 hours'}</span>
-                              </div>
-                              <div className="journey-transition-row">
-                                <span>{title(item.channel)} deprioritized</span>
-                              </div>
-                            </>
+                            <div className="journey-transition-row">
+                              <span>{journey.length > 1 ? 'Waited 24 hours' : 'Follow-up after 24 hours'}</span>
+                            </div>
                           )}
                         </div>
                       );

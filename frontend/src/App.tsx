@@ -288,6 +288,9 @@ export default function App() {
               analyze={analyze}
               execute={execute}
               setNotice={setNotice}
+              setError={setError}
+              loadDetails={loadDetails}
+              refreshCases={refreshCases}
             />
           </section>
         </div>

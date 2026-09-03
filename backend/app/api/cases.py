@@ -17,8 +17,13 @@ router = APIRouter(prefix="/api/cases", tags=["cases"])
 
 
 def _case(db: Session, case_id: str) -> PaymentCase:
-    case = db.scalar(select(PaymentCase).options(joinedload(PaymentCase.customer)).where(PaymentCase.id == case_id))
-    if case is None: raise HTTPException(status_code=404, detail="Recovery case not found.")
+    case = db.scalar(
+        select(PaymentCase)
+        .options(joinedload(PaymentCase.customer))
+        .where((PaymentCase.id == case_id) | (PaymentCase.case_number == case_id))
+    )
+    if case is None:
+        raise HTTPException(status_code=404, detail="Recovery case not found.")
     return case
 
 

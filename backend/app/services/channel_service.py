@@ -270,6 +270,9 @@ def evaluate_channel_suitability(
                     base += 0.25
                 if case.amount and case.amount >= 2000000 and ch == "email":
                     base += 0.15
+                unheeded_count = sum(1 for r in c_records if r.channel == ch and r.outcome in {"NO_ENGAGEMENT", "IGNORED", "DELIVERED", "SENT"} and not r.recovery_attributed)
+                if unheeded_count > 0:
+                    base = max(0.10, base - (0.25 * unheeded_count))
                 scores[ch] = round(min(1.0, base), 2)
 
         sorted_channels = sorted(scores.keys(), key=lambda c: scores[c], reverse=True)
@@ -346,7 +349,7 @@ def evaluate_channel_suitability(
                 + (WEIGHT_RECOVERY_CONTEXT * ctx_score)
             )
             # Deprioritize unheeded channels from current case
-            unheeded_count = sum(1 for r in c_records if r.channel == ch and r.outcome in {"IGNORED", "DELIVERED", "SENT"} and not r.recovery_attributed)
+            unheeded_count = sum(1 for r in c_records if r.channel == ch and r.outcome in {"NO_ENGAGEMENT", "IGNORED", "DELIVERED", "SENT"} and not r.recovery_attributed)
             if unheeded_count > 0:
                 composite = max(0.05, composite - (0.25 * unheeded_count))
 
@@ -358,7 +361,7 @@ def evaluate_channel_suitability(
         alternatives = [c for c in sorted_channels if c != recommended]
 
         # Check if there was an unheeded previous attempt
-        prior_unheeded = any(r.channel != recommended and r.outcome in {"IGNORED", "DELIVERED", "SENT"} for r in c_records)
+        prior_unheeded = any(r.channel != recommended and r.outcome in {"NO_ENGAGEMENT", "IGNORED", "DELIVERED", "SENT"} for r in c_records)
         prior_channel = c_records[-1].channel if c_records else None
 
         if prior_unheeded and prior_channel and prior_channel != recommended:
@@ -571,7 +574,7 @@ def evaluate_followup_decision(
 
     # Rule 4: Delivery Failed
     if latest.outcome in {"FAILED_DELIVERY", "FAILED"}:
-        next_ch = next((a for a in alternatives if a != latest.channel), recommended_channel)
+        next_ch = recommended_channel if recommended_channel != latest.channel else next((a for a in alternatives if a != latest.channel), "sms")
         return FollowupDecision(
             previous_outcome="FAILED_DELIVERY",
             recommended_wait_period="Immediate",
@@ -581,7 +584,7 @@ def evaluate_followup_decision(
         )
 
     # Rule 3: No Engagement (or Delivered without click)
-    next_ch = next((a for a in alternatives if a != latest.channel), recommended_channel)
+    next_ch = recommended_channel if recommended_channel != latest.channel else next((a for a in alternatives if a != latest.channel), "sms")
     return FollowupDecision(
         previous_outcome="NO_ENGAGEMENT",
         recommended_wait_period="24 hours",
