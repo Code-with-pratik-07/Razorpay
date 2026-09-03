@@ -10,14 +10,18 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
   const prob = explanation?.ml?.recovery_probability;
   const probStr = prob != null ? `${(prob * 100).toFixed(0)}%` : null;
 
-  const isAbandoned = selected.status === 'abandoned';
-  const isRecovering = selected.status === 'recovering';
+  const isAttemptLimitReached = selected.retry_count >= selected.max_retries;
+  const followupAction = explanation?.channel_intelligence?.followup_decision?.next_action;
+  const followupOutcome = explanation?.channel_intelligence?.followup_decision?.previous_outcome;
+  const isRecoveryClosed = selected.status === 'abandoned' || selected.status === 'closed' || isAttemptLimitReached || followupAction === 'STOP_RECOVERY';
+  const isAbandoned = isRecoveryClosed;
+  const isRecovering = !isRecoveryClosed && selected.status === 'recovering';
   const isRecovered = selected.status === 'recovered';
 
   // Derived / backend workflow states
   const humanStatus = explanation?.human_review_status ?? (explanation?.manual_execution ? 'APPROVED' : (explanation?.policy?.requires_human_approval && !explanation?.policy?.allowed) ? 'REQUIRED' : 'NOT_REQUIRED');
-  const payLinkStatus = explanation?.payment_link_status ?? (isRecovered ? 'PAID' : isRecovering ? 'ACTIVE' : isAbandoned ? 'EXPIRED' : 'NONE');
-  const custPayStatus = explanation?.customer_payment_status ?? (isRecovered ? 'RECEIVED' : isAbandoned ? 'EXHAUSTED' : isRecovering ? 'PENDING' : 'NONE');
+  const payLinkStatus = explanation?.payment_link_status ?? (isRecovered ? 'PAID' : isRecovering ? 'ACTIVE' : isRecoveryClosed ? 'EXPIRED' : 'NONE');
+  const custPayStatus = explanation?.customer_payment_status ?? (isRecovered ? 'RECEIVED' : isRecoveryClosed ? 'EXHAUSTED' : isRecovering ? 'PENDING' : 'NONE');
   const commStatus = explanation?.communication_status ?? 'PAUSED';
 
   // Policy step state
@@ -43,13 +47,11 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
     recoveryLabel = 'Automatic Recovery';
   } else if (humanStatus === 'REQUIRED') {
     recoveryLabel = 'Awaiting Approval';
-  } else if (isAbandoned) {
+  } else if (isRecoveryClosed) {
     recoveryLabel = 'No Action';
   }
 
-  const followupAction = explanation?.channel_intelligence?.followup_decision?.next_action;
-  const followupOutcome = explanation?.channel_intelligence?.followup_decision?.previous_outcome;
-  const isAwaitingResponse = !isRecovered && !isAbandoned && (
+  const isAwaitingResponse = !isRecovered && !isRecoveryClosed && (
     followupAction === 'AWAIT_RESPONSE' ||
     followupOutcome === 'AWAITING_RESPONSE'
   );
@@ -59,7 +61,7 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
   let commLabel = 'Communication Ready';
   if (isRecovered) {
     commLabel = `${title(explanation?.channel_intelligence?.attributed_channel || 'SMS')} Sent`;
-  } else if (isAbandoned) {
+  } else if (isRecoveryClosed) {
     commLabel = 'Communication Closed';
   } else if (isAwaitingResponse) {
     commLabel = 'Awaiting Customer Response';

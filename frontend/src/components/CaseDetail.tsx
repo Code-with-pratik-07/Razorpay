@@ -46,7 +46,7 @@ function formatNextActionLabel(nextAction: string, channel: string | null): stri
   }
 }
 
-function formatPreviousOutcome(outcome: string | null): string {
+function formatPreviousOutcome(outcome: string | null, isTerminal = false): string {
   if (!outcome) return 'None';
   switch (outcome) {
     case 'LINK_CLICKED':
@@ -63,7 +63,7 @@ function formatPreviousOutcome(outcome: string | null): string {
     case 'PAYMENT_LINK_EXPIRED':
       return '⏱ Payment Link Expired';
     case 'AWAITING_RESPONSE':
-      return '⏳ Awaiting Customer Response';
+      return isTerminal ? 'Delivered • No Customer Engagement' : '⏳ Awaiting Customer Response';
     default:
       return outcome.replace(/_/g, ' ');
   }
@@ -116,14 +116,12 @@ export function CaseDetail({
 
   // Status flags & unified derived state
   const isRecovered = selected.status === 'recovered';
-  const isAttemptLimitReached =
-    selected.retry_count >= selected.max_retries ||
-    selected.status === 'abandoned' ||
-    explanation?.channel_intelligence?.status === 'ATTEMPT_LIMIT_REACHED';
-  const isAbandoned = selected.status === 'abandoned' || isAttemptLimitReached;
+  const isAttemptLimitReached = selected.retry_count >= selected.max_retries;
   const followupAction = explanation?.channel_intelligence?.followup_decision?.next_action;
   const followupOutcome = explanation?.channel_intelligence?.followup_decision?.previous_outcome;
-  const isTerminalCase = isRecovered || isAbandoned || selected.status === 'closed' || followupAction === 'STOP_RECOVERY';
+  const isRecoveryClosed = selected.status === 'abandoned' || selected.status === 'closed' || isAttemptLimitReached || followupAction === 'STOP_RECOVERY';
+  const isAbandoned = isRecoveryClosed;
+  const isTerminalCase = isRecovered || isRecoveryClosed;
   const isHumanReview = !isTerminalCase && (selected.status === 'human_review' || explanation?.human_review_status === 'REQUIRED');
   const isRecovering = !isTerminalCase && !isHumanReview && (selected.status === 'recovering');
 
@@ -290,7 +288,7 @@ export function CaseDetail({
         isReady: false,
       };
     }
-    if (isTerminalCase || isAttemptLimitReached || isAbandoned || commStatus === 'EXHAUSTED' || selected.status === 'abandoned') {
+    if (isRecoveryClosed || isTerminalCase || isAttemptLimitReached || isAbandoned || commStatus === 'EXHAUSTED' || selected.status === 'abandoned') {
       return {
         icon: "■",
         badge: "Communication Stopped",
@@ -412,6 +410,7 @@ export function CaseDetail({
 
   const canRunNextStep = Boolean(
     !isTerminalCase &&
+    !isRecoveryClosed &&
     !isAttemptLimitReached &&
     !isRecovered &&
     !isAbandoned &&
@@ -492,60 +491,83 @@ export function CaseDetail({
                       {channelIntel.communication_maturity === 'COLD_START' ? '🔵 COLD START' :
                        channelIntel.communication_maturity === 'LEARNING' ? '🟡 LEARNING' : '🟢 ESTABLISHED'}
                     </span>
-                    <span className="comm-profile-desc">{channelIntel.maturity_description}</span>
+                    <span className="comm-profile-desc">
+                      {isRecoveryClosed 
+                        ? `RecoverAI learned from ${channelIntel.attempts_count || selected.retry_count} communication interactions.` 
+                        : channelIntel.maturity_description}
+                    </span>
                   </div>
 
-                  <span className={`channel-status-pill status-${commStatus.toLowerCase()}`}>
-                    {commInfo.badge}
+                  <span className={`channel-status-pill ${isRecoveryClosed ? 'status-exhausted' : `status-${commStatus.toLowerCase()}`}`}>
+                    {isRecoveryClosed ? 'Communication Stopped' : commInfo.badge}
                   </span>
                 </div>
 
-                <div className="comm-primary-focus">
-                  <div className="comm-focus-channel">
-                    <span className="comm-focus-icon">
-                      {channelIntel.recommended_channel === 'whatsapp' ? '💬' :
-                       channelIntel.recommended_channel === 'sms' ? '📱' : '✉️'}
-                    </span>
-                    <div>
-                      <div className="comm-focus-title">
-                        RECOMMENDED CHANNEL: <b>{title(channelIntel.recommended_channel)}</b>
-                      </div>
-                      <div className="comm-focus-metrics">
-                        <span className="comm-suitability-badge">
-                          <b>{(channelIntel.suitability_score * 100).toFixed(0)}%</b> Suitability
-                          <span 
-                            className="info-tooltip-wrap" 
-                            title="Expected effectiveness of this communication channel." 
-                            style={{marginLeft: 6, cursor: 'help', color: '#93c5fd'}}
-                          >ℹ️</span>
-                        </span>
-                        <span className={`comm-conf-badge conf-${channelIntel.confidence}`}>
-                          {title(channelIntel.confidence)} Confidence
-                        </span>
-                      </div>
+                {isRecoveryClosed ? (
+                  <div className="comm-terminal-stopped" style={{
+                    background: 'rgba(39, 18, 18, 0.6)',
+                    border: '1px solid #7f1d1d',
+                    borderRadius: 8,
+                    padding: '16px 20px',
+                    margin: '12px 0 16px 0'
+                  }}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8, color: '#f87171', fontWeight: 800, fontSize: '0.95rem', letterSpacing: '0.04em'}}>
+                      <span>■</span> COMMUNICATION STOPPED
+                    </div>
+                    <div style={{color: '#fca5a5', fontSize: '0.88rem', marginTop: 6, lineHeight: 1.5}}>
+                      Maximum recovery attempts reached.<br />No further automated communication will be scheduled.
                     </div>
                   </div>
-                </div>
-
-                <div className="comm-why-box">
-                  <span className="comm-why-title">Why this channel?</span>
-                  <p className="comm-why-body">{channelIntel.reason}</p>
-                </div>
-
-                <div className="comm-alts-row">
-                  <span className="comm-alts-label">Alternatives:</span>
-                  <div className="comm-alts-list">
-                    {channelIntel.alternatives.map((alt) => {
-                      const score = channelIntel.channel_scores[alt] ?? 0;
-                      const icon = alt === 'whatsapp' ? '💬' : alt === 'sms' ? '📱' : '✉️';
-                      return (
-                        <span key={alt} className="comm-alt-item">
-                          {icon} {title(alt)} — <b>{(score * 100).toFixed(0)}%</b>
+                ) : (
+                  <>
+                    <div className="comm-primary-focus">
+                      <div className="comm-focus-channel">
+                        <span className="comm-focus-icon">
+                          {channelIntel.recommended_channel === 'whatsapp' ? '💬' :
+                           channelIntel.recommended_channel === 'sms' ? '📱' : '✉️'}
                         </span>
-                      );
-                    })}
-                  </div>
-                </div>
+                        <div>
+                          <div className="comm-focus-title">
+                            RECOMMENDED CHANNEL: <b>{title(channelIntel.recommended_channel)}</b>
+                          </div>
+                          <div className="comm-focus-metrics">
+                            <span className="comm-suitability-badge">
+                              <b>{(channelIntel.suitability_score * 100).toFixed(0)}%</b> Suitability
+                              <span 
+                                className="info-tooltip-wrap" 
+                                title="Expected effectiveness of this communication channel." 
+                                style={{marginLeft: 6, cursor: 'help', color: '#93c5fd'}}
+                              >ℹ️</span>
+                            </span>
+                            <span className={`comm-conf-badge conf-${channelIntel.confidence}`}>
+                              {title(channelIntel.confidence)} Confidence
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="comm-why-box">
+                      <span className="comm-why-title">Why this channel?</span>
+                      <p className="comm-why-body">{channelIntel.reason}</p>
+                    </div>
+
+                    <div className="comm-alts-row">
+                      <span className="comm-alts-label">Alternatives:</span>
+                      <div className="comm-alts-list">
+                        {channelIntel.alternatives.map((alt) => {
+                          const score = channelIntel.channel_scores[alt] ?? 0;
+                          const icon = alt === 'whatsapp' ? '💬' : alt === 'sms' ? '📱' : '✉️';
+                          return (
+                            <span key={alt} className="comm-alt-item">
+                              {icon} {title(alt)} — <b>{(score * 100).toFixed(0)}%</b>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <div className="comm-journey-block" style={{marginTop: 18}}>
                   <span className="comm-journey-title">COMMUNICATION JOURNEY</span>
@@ -577,7 +599,7 @@ export function CaseDetail({
                             <span className={`journey-v-status outcome-${item.outcome.toLowerCase()}`} style={{fontSize: '0.72rem', padding: '3px 8px', borderRadius: 4}}>
                               {isPaid ? '✓ Payment Completed' : 
                                isLinkClicked ? '✓ Delivered • 🔗 Payment Link Clicked' : 
-                               isAwaiting ? '✓ Simulated Sent • ⏳ Awaiting Customer Response' :
+                               isAwaiting ? (isRecoveryClosed ? '✓ Sent' : '✓ Simulated Sent • ⏳ Awaiting Customer Response') :
                                isIgnored ? '✓ Delivered • No Customer Engagement' : 
                                '✓ Delivered'}
                             </span>
@@ -596,7 +618,7 @@ export function CaseDetail({
                       );
                     })}
 
-                    {!isTerminalCase && !isAttemptLimitReached && !isAwaitingResponse && channelIntel.followup_decision?.next_action !== 'AWAIT_RESPONSE' && channelIntel.followup_decision?.next_action !== 'STOP_RECOVERY' && (
+                    {!isTerminalCase && !isRecoveryClosed && !isAttemptLimitReached && !isAwaitingResponse && channelIntel.followup_decision?.next_action !== 'AWAIT_RESPONSE' && channelIntel.followup_decision?.next_action !== 'STOP_RECOVERY' && (
                       <div className="journey-v-item next-action-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-pending" />
@@ -620,16 +642,19 @@ export function CaseDetail({
                       </div>
                     )}
 
-                    {(isTerminalCase || isAttemptLimitReached || isAbandoned) && !isRecovered && (
+                    {isRecoveryClosed && !isRecovered && (
                       <div className="journey-v-item terminal-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-terminal" />
                           <span className="journey-v-title-text" style={{color: '#f87171'}}>Recovery Closed</span>
                         </div>
-                        <div className="journey-compact-card" style={{borderColor: '#7f1d1d', background: 'rgba(69, 10, 10, 0.4)'}}>
-                          <span style={{fontSize: '0.82rem', color: '#fca5a5'}}>
+                        <div className="journey-compact-card" style={{borderColor: '#7f1d1d', background: 'rgba(69, 10, 10, 0.4)', padding: '10px 14px'}}>
+                          <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: 6}}>
+                            <span>■</span> RECOVERY CLOSED
+                          </div>
+                          <div style={{fontSize: '0.78rem', color: '#fca5a5', marginTop: 3}}>
                             Maximum recovery attempt limit reached.
-                          </span>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -651,7 +676,7 @@ export function CaseDetail({
                   <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
                     <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>Previous Outcome</div>
                     <div style={{fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0'}}>
-                      {formatPreviousOutcome(channelIntel.followup_decision.previous_outcome)}
+                      {formatPreviousOutcome(channelIntel.followup_decision.previous_outcome, isRecoveryClosed)}
                     </div>
                   </div>
                   <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
@@ -728,25 +753,37 @@ export function CaseDetail({
               </span>
             </div>
           </div>
-        ) : isAbandoned ? (
+        ) : isRecoveryClosed ? (
           <div className="payment-recovery-card terminal-banner terminal-abandoned" style={{
-            background: '#271212', border: '1px solid #7f1d1d', borderRadius: 8, padding: '20px', color: '#fee2e2'
+            background: 'linear-gradient(135deg, #271212 0%, #3b1515 100%)',
+            border: '1.5px solid #7f1d1d',
+            borderRadius: 8,
+            padding: '22px 24px',
+            color: '#fee2e2',
+            boxShadow: '0 4px 20px rgba(127, 29, 29, 0.25)'
           }}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 14}}>
               <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-                <span style={{fontSize: '1.4rem'}}>■</span>
-                <h3 style={{margin: 0, color: '#f87171', fontSize: '1.1rem', letterSpacing: '0.05em'}}>RECOVERY CLOSED</h3>
+                <span style={{fontSize: '1.3rem', color: '#f87171', fontWeight: 800}}>■</span>
+                <h3 style={{margin: 0, color: '#f87171', fontSize: '1.05rem', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase'}}>
+                  RECOVERY CLOSED
+                </h3>
               </div>
-              <span className="pr-status-badge" style={{background: '#450a0a', color: '#fca5a5', border: '1px solid #7f1d1d', fontSize: '0.78rem', padding: '4px 10px', borderRadius: 4}}>
+              <span className="pr-status-badge" style={{background: '#450a0a', color: '#fca5a5', border: '1px solid #7f1d1d', fontSize: '0.78rem', padding: '4px 10px', borderRadius: 4, fontWeight: 700}}>
                 {isLinkExpired ? '🔴 Expired Payment Link' : currentLink ? 'Existing Payment Link' : 'Recovery Closed'}
               </span>
             </div>
-            <div style={{fontSize: '0.95rem', margin: '12px 0 6px 0', color: '#fca5a5'}}>
-              Maximum permitted recovery attempts were reached without payment completion. Automated recovery communication has stopped.
-            </div>
-            {currentLink && !isLinkExpired && (
-              <div style={{fontSize: '0.85rem', color: '#cbd5e1', marginTop: 8}}>
-                Existing Payment Link remains technically valid until {formatExpiryDate(selected.payment_link_expires_at)}, but no further recovery actions will be scheduled.
+
+            {currentLink && !isLinkExpired ? (
+              <div style={{fontSize: '0.92rem', color: '#fca5a5', lineHeight: 1.6}}>
+                The payment link remains available until <b style={{color: '#ffffff'}}>{formatExpiryDate(selected.payment_link_expires_at)}</b>.
+                <div style={{marginTop: 6, color: '#cbd5e1', fontSize: '0.85rem'}}>
+                  No further automated recovery communication will be scheduled.
+                </div>
+              </div>
+            ) : (
+              <div style={{fontSize: '0.92rem', color: '#fca5a5', lineHeight: 1.5}}>
+                No further automated recovery communication will be scheduled.
               </div>
             )}
           </div>
@@ -855,13 +892,13 @@ export function CaseDetail({
                   The payment was successfully completed.
                 </p>
               </div>
-            ) : isAbandoned ? (
+            ) : isRecoveryClosed ? (
               <div>
                 <span className="badge" style={{background: '#7f1d1d', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  RECOVERY CLOSED
+                  ■ RECOVERY CLOSED
                 </span>
                 <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
-                  The maximum number of recovery attempts has been reached without successful payment. Automated recovery communication has been stopped.
+                  Recovery attempts ended without successful payment. Automated communication has been stopped.
                 </p>
               </div>
             ) : selected.last_payment_status === 'FAILED' ? (
@@ -876,16 +913,16 @@ export function CaseDetail({
                   <span style={{fontSize: '0.82rem', color: '#475569', fontWeight: 500}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
                 )}
               </div>
-            ) : isAwaitingResponse || channelIntel?.followup_decision?.next_action === 'AWAIT_RESPONSE' ? (
+            ) : !isTerminalCase && (isAwaitingResponse || channelIntel?.followup_decision?.next_action === 'AWAIT_RESPONSE') ? (
               <div>
                 <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
                   ⏳ CUSTOMER RESPONSE PENDING
                 </span>
                 <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
-                  A WhatsApp reminder has been sent. RecoverAI is waiting for customer activity before taking another recovery action.
+                  A {title(channelIntel?.followup_decision?.selected_channel || latestComm?.channel || 'WhatsApp')} reminder has been sent. RecoverAI is waiting for customer activity before taking another recovery action.
                 </p>
               </div>
-            ) : channelIntel?.followup_decision?.previous_outcome === 'LINK_CLICKED' ? (
+            ) : !isTerminalCase && channelIntel?.followup_decision?.previous_outcome === 'LINK_CLICKED' ? (
               <div>
                 <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
                   ⏳ CUSTOMER PAYMENT PENDING
@@ -894,7 +931,7 @@ export function CaseDetail({
                   The customer opened the payment link but has not completed the payment.
                 </p>
               </div>
-            ) : isRecovering ? (
+            ) : !isTerminalCase && isRecovering ? (
               <div>
                 <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
                   ⏳ CUSTOMER PAYMENT PENDING
