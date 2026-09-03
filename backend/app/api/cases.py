@@ -192,6 +192,26 @@ def dispatch_communication(case_id: str, req: DispatchCommunicationRequest, db: 
     case = _case(db, case_id)
     if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
         raise HTTPException(status_code=400, detail="Cannot dispatch communication for a terminal case.")
+    
+    # Idempotency guard: prevent duplicate dispatches for the same channel on rapid repeated clicks
+    recent = list(
+        db.scalars(
+            select(CommunicationRecord)
+            .where(CommunicationRecord.case_id == case.id)
+            .order_by(CommunicationRecord.created_at.desc())
+            .limit(1)
+        )
+    )
+    if recent and req.channel and recent[0].channel == req.channel.lower():
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        time_diff = (now - recent[0].created_at).total_seconds()
+        if time_diff < 60:
+            return {
+                "status": "no_action",
+                "reason": "The current follow-up action has already been executed.",
+                "explanation": _explanation(db, case),
+            }
+
     events = list_audit_events(db, case.id)
     last_link_event = next((e for e in reversed(events) if e.event_type == "payment_link_created"), None)
     url = last_link_event.event_data.get("url") if last_link_event else "https://rzp.io/i/demo_link"
@@ -242,9 +262,13 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
     if (case.retry_count or 0) >= (case.max_retries or 3):
         raise HTTPException(status_code=400, detail="Maximum recovery attempts reached.")
 
-    # Duplicate prevention: If the latest attempt is already awaiting customer response
-    if case_records and case_records[0].outcome in {"AWAITING_RESPONSE", "PENDING_RESPONSE"}:
-        raise HTTPException(status_code=400, detail="A recovery follow-up has already been simulated and is currently awaiting customer response.")
+    # Duplicate / Idempotency prevention: If the latest attempt is already awaiting customer response
+    if (case_records and case_records[0].outcome in {"AWAITING_RESPONSE", "PENDING_RESPONSE"}) or followup.next_action == "AWAIT_RESPONSE":
+        return {
+            "status": "no_action",
+            "reason": "The current follow-up action has already been executed.",
+            "explanation": _explanation(db, case)
+        }
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -261,6 +285,7 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
         case.retry_count = attempt_num
         db.commit()
 
+        ch_name = "WhatsApp" if channel == "whatsapp" else "SMS" if channel == "sms" else "Email"
         record = CommunicationRecord(
             case_id=case.id,
             channel=channel,
@@ -273,7 +298,7 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
             outcome="AWAITING_RESPONSE",
             delivery_status="DELIVERED",
             recipient=case.customer.phone if channel in {"whatsapp", "sms"} else case.customer.email,
-            message_snippet=f"{channel.capitalize()} reminder delivered — Awaiting customer response",
+            message_snippet=f"{ch_name} reminder delivered — Awaiting customer response",
             created_at=now,
         )
         db.add(record)
@@ -295,6 +320,7 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
         case.retry_count = attempt_num
         db.commit()
 
+        ch_name = "WhatsApp" if channel == "whatsapp" else "SMS" if channel == "sms" else "Email"
         record = CommunicationRecord(
             case_id=case.id,
             channel=channel,
@@ -307,7 +333,7 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
             outcome="AWAITING_RESPONSE",
             delivery_status="DELIVERED",
             recipient=case.customer.phone if channel in {"whatsapp", "sms"} else case.customer.email,
-            message_snippet=f"{channel.capitalize()} escalation notice delivered — Awaiting customer response",
+            message_snippet=f"{ch_name} escalation notice delivered — Awaiting customer response",
             created_at=now,
         )
         db.add(record)

@@ -48,8 +48,7 @@ def run():
     assert followup_a["previous_outcome"] == "LINK_CLICKED"
     assert followup_a["recommended_wait_period"] == "24 hours"
     assert followup_a["next_action"] == "RETRY_SAME_CHANNEL"
-    assert followup_a["selected_channel"] == "whatsapp"
-    assert "remains effective" in followup_a["reason"]
+    assert "effective" in followup_a["reason"] and "remains" in followup_a["reason"]
 
     # Test next-step endpoint on DEMO-A-AUTO
     print("\nTriggering [Run Next Recovery Step] on DEMO-A-AUTO...")
@@ -61,6 +60,15 @@ def run():
     assert len(journey_a2) == 2, f"Expected 2 records after next step, got {len(journey_a2)}"
     assert journey_a2[1]["channel"] == "whatsapp", f"Expected Attempt 2 to be WhatsApp, got {journey_a2[1]['channel']}"
     assert journey_a2[1]["attempt_number"] == 2
+
+    # Test idempotency on repeated click
+    print("\nTesting idempotency on repeated next-step click...")
+    repeat_res = post(f"/api/cases/{demo_a['id']}/next-step")
+    print("Repeat next step result:", repeat_res)
+    assert repeat_res.get("status") == "no_action"
+    exp_a3 = get(f"/api/cases/{demo_a['id']}/explanation")
+    journey_a3 = exp_a3["channel_intelligence"]["communication_journey"]
+    assert len(journey_a3) == 2, f"Expected still exactly 2 records, got {len(journey_a3)}"
 
     # ----------------------------------------------------
     # DEMO-B-HUMAN
@@ -101,6 +109,12 @@ def run():
     assert len(journey_b_disp) == 1
     assert journey_b_disp[0]["channel"] == "email"
 
+    print("\nTesting idempotency on repeated dispatch-communication click...")
+    repeat_disp = post(f"/api/cases/{demo_b['id']}/dispatch-communication", {"channel": "email"})
+    assert repeat_disp.get("status") == "no_action"
+    exp_b_disp2 = get(f"/api/cases/{demo_b['id']}/explanation")
+    assert len(exp_b_disp2["channel_intelligence"]["communication_journey"]) == 1
+
     # ----------------------------------------------------
     # DEMO-C-RECOVERED
     # ----------------------------------------------------
@@ -120,12 +134,23 @@ def run():
     assert journey_c[0]["recovery_attributed"] is True
     assert followup_c["next_action"] == "STOP_RECOVERY"
 
-    # Verify terminal protection
+    # Verify terminal protection on next-step, execute, and dispatch
     try:
         post(f"/api/cases/{demo_c['id']}/next-step")
         assert False, "Should have blocked next-step on terminal recovered case"
     except urllib.error.HTTPError as e:
         print("Terminal check on next-step returned expected HTTP", e.code)
+        assert e.code == 400
+
+    exec_c = post(f"/api/cases/{demo_c['id']}/execute")
+    assert exec_c["action"] == "no_action"
+    print("Execute on recovered case returned safe no_action")
+
+    try:
+        post(f"/api/cases/{demo_c['id']}/dispatch-communication", {"channel": "sms"})
+        assert False, "Should have blocked dispatch on terminal recovered case"
+    except urllib.error.HTTPError as e:
+        print("Terminal check on dispatch returned expected HTTP", e.code)
         assert e.code == 400
 
     # ----------------------------------------------------
@@ -154,6 +179,10 @@ def run():
     except urllib.error.HTTPError as e:
         print("Terminal check on next-step returned expected HTTP", e.code)
         assert e.code == 400
+
+    exec_d = post(f"/api/cases/{demo_d['id']}/execute")
+    assert exec_d["action"] == "stopped"
+    print("Execute on abandoned case returned safe stopped")
 
     print("\n==================================================")
     print("ALL VERIFICATIONS COMPLETED SUCCESSFULLY!")

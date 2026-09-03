@@ -147,8 +147,15 @@ export type DashboardStats = {
 export const formatINR = (paise: number) =>
   `₹${(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
-export const title = (value: string | null) =>
-  value ? value.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()) : "—";
+export const title = (value: string | null) => {
+  if (!value) return "—";
+  const lower = value.toLowerCase().trim();
+  if (lower === "whatsapp") return "WhatsApp";
+  if (lower === "sms") return "SMS";
+  if (lower === "email") return "Email";
+  let formatted = value.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase());
+  return formatted.replace(/\bWhatsapp\b/g, "WhatsApp").replace(/\bSms\b/g, "SMS");
+};
 
 export const formatDate = (timestamp: string | null | undefined): string => {
   if (!timestamp) return "—";

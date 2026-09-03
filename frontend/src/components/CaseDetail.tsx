@@ -33,7 +33,7 @@ function formatNextActionLabel(nextAction: string, channel: string | null): stri
     case 'AWAIT_APPROVAL':
       return '⏳ Await Human Approval';
     case 'AWAIT_RESPONSE':
-      return '⏳ Awaiting Customer Response';
+      return 'Wait for Customer Response';
     case 'GENERATE_NEW_LINK':
       return '🔄 Generate New Payment Link';
     case 'STOP_RECOVERY':
@@ -60,15 +60,16 @@ function formatPreviousOutcome(outcome: string | null): string {
     case 'PAYMENT_LINK_EXPIRED':
       return '⏱ Payment Link Expired';
     case 'AWAITING_RESPONSE':
-      return '✓ Simulated Sent • Awaiting Response';
+      return '⏳ Awaiting Customer Response';
     default:
       return outcome.replace(/_/g, ' ');
   }
 }
 
-function formatTiming(waitPeriod: string): string {
+function formatTiming(waitPeriod: string, nextAction?: string): string {
   if (!waitPeriod || waitPeriod === 'None' || waitPeriod === 'none') return '⏱ None';
-  if (waitPeriod.toLowerCase().includes('24')) return '⏱ After 24 hours';
+  if (nextAction === 'AWAIT_RESPONSE') return '⏱ 24 Hours';
+  if (waitPeriod.toLowerCase().includes('24')) return '⏱ After 24 Hours';
   if (waitPeriod.toLowerCase().includes('immediate')) return '⏱ Immediate';
   return `⏱ ${waitPeriod}`;
 }
@@ -160,6 +161,7 @@ export function CaseDetail({
   }
 
   const availableCommunications = actualComms;
+  const selectedComm = availableCommunications.find(c => c.id === selectedCommId) || availableCommunications[0];
 
   const openCommunicationModal = (channelOverride?: 'email' | 'sms' | 'whatsapp', commIdOverride?: string) => {
     if (commIdOverride) {
@@ -219,6 +221,10 @@ export function CaseDetail({
   const formattedExpiry = selected.payment_link_expires_at
     ? formatDate(selected.payment_link_expires_at)
     : "10 Sep 2026, 12:39 AM";
+
+  const isLinkExpired = selected.payment_link_expires_at
+    ? new Date(selected.payment_link_expires_at).getTime() < Date.now()
+    : false;
 
   // Normalized Communication Status Display
   const getCommunicationStatusInfo = () => {
@@ -505,74 +511,82 @@ export function CaseDetail({
                       const isReminder = item.attempt_number > 1 && item.channel === journey[0]?.channel;
 
                       return (
-                        <React.Fragment key={idx}>
+                        <div key={idx} className="journey-v-item">
+                          <div className="journey-v-node-header">
+                            <span className="journey-v-dot" />
+                            <span className="journey-v-title-text">Attempt {item.attempt_number}</span>
+                          </div>
                           <div 
-                            className="journey-v-step clickable-journey-step"
+                            className="journey-compact-card clickable-journey-step"
                             onClick={() => openCommunicationModal(item.channel as any, itemId)}
                             title={`Click to view ${title(item.channel)} Attempt ${item.attempt_number} preview`}
                             style={{cursor: 'pointer'}}
                           >
-                            <div className="journey-v-badge">Attempt {item.attempt_number}</div>
-                            <div className="journey-v-card">
-                              <div className="journey-v-top">
-                                <span className="journey-v-channel">
-                                  {chIcon} {title(item.channel)}{isReminder ? ' Reminder' : ''}
-                                </span>
-                                <span className={`journey-v-status outcome-${item.outcome.toLowerCase()}`}>
-                                  {isPaid ? '✓ Payment Completed' : 
-                                   isLinkClicked ? '✓ Delivered • 🔗 Payment Link Clicked' : 
-                                   isAwaiting ? '✓ Simulated Sent • ⏳ Awaiting Customer Response' :
-                                   isIgnored ? '✓ Delivered • No customer engagement' : 
-                                   '✓ Delivered'}
-                                </span>
-                              </div>
-                            </div>
+                            <span className="journey-v-channel" style={{fontSize: '0.85rem', fontWeight: 600}}>
+                              {chIcon} {title(item.channel)}{isReminder ? ' Reminder' : ''}
+                            </span>
+                            <span className={`journey-v-status outcome-${item.outcome.toLowerCase()}`} style={{fontSize: '0.72rem', padding: '3px 8px', borderRadius: 4}}>
+                              {isPaid ? '✓ Payment Completed' : 
+                               isLinkClicked ? '✓ Delivered • 🔗 Payment Link Clicked' : 
+                               isAwaiting ? '✓ Simulated Sent • ⏳ Awaiting Customer Response' :
+                               isIgnored ? '✓ Delivered • No customer engagement' : 
+                               '✓ Delivered'}
+                            </span>
                           </div>
                           {isLinkClicked && (
-                            <div className="journey-transition-tag" style={{background: 'rgba(30, 58, 138, 0.3)', color: '#93c5fd', borderColor: '#1d4ed8'}}>
-                              ↓ Wait 24 hours
+                            <div className="journey-transition-row">
+                              <span>⏱ {journey.length > 1 ? 'Waited 24 hours' : 'Follow-up after 24 hours'}</span>
                             </div>
                           )}
                           {isIgnored && (
                             <>
-                              <div className="journey-transition-tag" style={{background: 'rgba(51, 65, 85, 0.4)', color: '#94a3b8', borderColor: '#475569'}}>
-                                ↓ Wait 24 hours
+                              <div className="journey-transition-row">
+                                <span>⏱ {journey.length > 1 ? 'Waited 24 hours' : 'Follow-up after 24 hours'}</span>
                               </div>
-                              <div className="journey-transition-tag">
-                                ↓ {title(item.channel)} deprioritized
+                              <div className="journey-transition-row">
+                                <span>↓ {title(item.channel)} deprioritized</span>
                               </div>
                             </>
                           )}
-                        </React.Fragment>
+                        </div>
                       );
                     })}
 
                     {!isRecovered && !isAbandoned && channelIntel.followup_decision?.next_action !== 'AWAIT_RESPONSE' && (
-                      <div 
-                        className="journey-v-step next-action-step clickable-journey-step"
-                        onClick={() => openCommunicationModal(recommendedChannel as any)}
-                        title="Click to view communication preview"
-                        style={{cursor: 'pointer'}}
-                      >
-                        <div className="journey-v-badge" style={{background: '#2563eb'}}>Recommended Next Step</div>
-                        <div className="journey-v-card" style={{border: '1px dashed #60a5fa'}}>
-                          <div className="journey-v-top">
-                            <span className="journey-v-channel">
-                              {channelIntel.followup_decision?.selected_channel 
-                                ? `${channelIntel.followup_decision.selected_channel === 'whatsapp' ? '💬' : channelIntel.followup_decision.selected_channel === 'sms' ? '📱' : '✉️'} ${title(channelIntel.followup_decision.selected_channel)} ${channelIntel.followup_decision.next_action === 'RETRY_SAME_CHANNEL' ? 'Reminder' : ''}`
-                                : (recommendedChannel === 'whatsapp' ? '💬 WhatsApp' : recommendedChannel === 'sms' ? '📱 SMS' : '✉️ Email')}
-                            </span>
-                            <span className="journey-v-status" style={{background: '#1e3a8a', color: '#93c5fd'}}>
-                              {commStatus === 'READY' ? 'Ready for review' : commStatus === 'GENERATED' ? '✓ Generated' : 'Pending'}
-                            </span>
-                          </div>
+                      <div className="journey-v-item next-action-item">
+                        <div className="journey-v-node-header">
+                          <span className="journey-v-dot dot-pending" />
+                          <span className="journey-v-title-text" style={{color: '#60a5fa'}}>Next Recommended Action</span>
+                        </div>
+                        <div 
+                          className="journey-compact-card clickable-journey-step"
+                          onClick={() => openCommunicationModal(recommendedChannel as any)}
+                          title="Click to view communication preview"
+                          style={{cursor: 'pointer', border: '1px dashed #60a5fa'}}
+                        >
+                          <span className="journey-v-channel" style={{fontSize: '0.85rem', fontWeight: 600}}>
+                            {channelIntel.followup_decision?.selected_channel 
+                              ? `${channelIntel.followup_decision.selected_channel === 'whatsapp' ? '💬' : channelIntel.followup_decision.selected_channel === 'sms' ? '📱' : '✉️'} ${title(channelIntel.followup_decision.selected_channel)} ${channelIntel.followup_decision.next_action === 'RETRY_SAME_CHANNEL' ? 'Reminder' : ''}`
+                              : (recommendedChannel === 'whatsapp' ? '💬 WhatsApp' : recommendedChannel === 'sms' ? '📱 SMS' : '✉️ Email')}
+                          </span>
+                          <span className="journey-v-status" style={{background: '#1e3a8a', color: '#93c5fd', fontSize: '0.72rem', padding: '3px 8px', borderRadius: 4}}>
+                            ⏳ Scheduled
+                          </span>
                         </div>
                       </div>
                     )}
 
                     {isAbandoned && (
-                      <div className="journey-transition-tag" style={{background: 'rgba(127, 29, 29, 0.3)', color: '#f87171', borderColor: '#991b1b'}}>
-                        Attempt Limit Reached • Recovery Closed
+                      <div className="journey-v-item terminal-item">
+                        <div className="journey-v-node-header">
+                          <span className="journey-v-dot dot-terminal" />
+                          <span className="journey-v-title-text" style={{color: '#f87171'}}>Recovery Closed</span>
+                        </div>
+                        <div className="journey-compact-card" style={{borderColor: '#7f1d1d', background: 'rgba(69, 10, 10, 0.4)'}}>
+                          <span style={{fontSize: '0.82rem', color: '#fca5a5'}}>
+                            Attempt Limit Reached • Recovery Closed
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -580,19 +594,19 @@ export function CaseDetail({
               </div>
             )}
 
-            {/* 5. FOLLOW-UP INTELLIGENCE */}
+            {/* FOLLOW-UP INTELLIGENCE */}
             {channelIntel?.followup_decision && (
               <div className="intelligence-card followup-intelligence-card" style={{gridColumn: '1 / -1'}}>
                 <div className="fd-header" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6}}>
                   <div style={{fontWeight: 700, fontSize: '0.82rem', color: '#60a5fa', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6}}>
-                    <span>🔄</span> 5. Follow-up Intelligence
+                    <span>🔄</span> FOLLOW-UP INTELLIGENCE
                   </div>
                   <div style={{fontSize: '0.8rem', color: '#cbd5e1', background: '#1e293b', padding: '3px 10px', borderRadius: 4, border: '1px solid #475569'}}>
-                    {formatTiming(channelIntel.followup_decision.recommended_wait_period)}
+                    {formatTiming(channelIntel.followup_decision.recommended_wait_period, channelIntel.followup_decision.next_action)}
                   </div>
                 </div>
 
-                <div className="fd-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12}}>
+                <div className="fd-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 12}}>
                   <div className="fd-item" style={{background: '#0f172a', padding: '10px 12px', borderRadius: 6, border: '1px solid #1e293b'}}>
                     <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: '0.04em'}}>Previous Outcome</div>
                     <div style={{fontSize: '0.88rem', fontWeight: 600, color: '#e2e8f0'}}>
@@ -608,14 +622,20 @@ export function CaseDetail({
                   <div className="fd-item" style={{background: '#0f172a', padding: '10px 12px', borderRadius: 6, border: '1px solid #1e293b'}}>
                     <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: '0.04em'}}>Timing</div>
                     <div style={{fontSize: '0.88rem', fontWeight: 600, color: '#fde047'}}>
-                      {formatTiming(channelIntel.followup_decision.recommended_wait_period)}
+                      {formatTiming(channelIntel.followup_decision.recommended_wait_period, channelIntel.followup_decision.next_action)}
+                    </div>
+                  </div>
+                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 12px', borderRadius: 6, border: '1px solid #1e293b'}}>
+                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: '0.04em'}}>Target Channel</div>
+                    <div style={{fontSize: '0.88rem', fontWeight: 600, color: '#38bdf8'}}>
+                      {title(channelIntel.followup_decision.selected_channel || recommendedChannel)}
                     </div>
                   </div>
                 </div>
 
                 <div className="fd-reason" style={{marginBottom: 12}}>
-                  <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>
-                    Reason
+                  <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em', fontWeight: 600}}>
+                    Why?
                   </div>
                   <p style={{margin: 0, fontSize: '0.88rem', color: '#cbd5e1', lineHeight: 1.5}}>
                     {channelIntel.followup_decision.reason}
@@ -693,26 +713,26 @@ export function CaseDetail({
         ) : (
           <div className="payment-recovery-card">
             <div className="pr-header">
-              <h3>⚡ 7. PAYMENT RECOVERY ACTION</h3>
-              <span className={`pr-status-badge ${currentLink ? 'active' : 'pending'}`}>
-                {currentLink ? '🟢 Active Payment Link' : 'PENDING'}
+              <h3>⚡ PAYMENT RECOVERY</h3>
+              <span className={`pr-status-badge ${isLinkExpired ? 'expired' : currentLink ? 'active' : 'pending'}`}>
+                {isLinkExpired ? '🔴 Expired Payment Link' : currentLink ? '🟢 Active Payment Link' : 'PENDING'}
               </span>
             </div>
 
             <div className="pr-body-grid">
               <div className="pr-info-col">
                 <div className="pr-meta-item">
-                  <span className="pr-label">Recovery Method:</span>
+                  <span className="pr-label">Recovery Method</span>
                   <b>{executionMode}</b>
                 </div>
                 <div className="pr-meta-item">
-                  <span className="pr-label">Expires:</span>
-                  <b>{formattedExpiry}</b>
+                  <span className="pr-label">Expires</span>
+                  <b>{formattedExpiry}{isLinkExpired ? ' (Expired)' : ''}</b>
                 </div>
               </div>
 
               <div className="pr-actions-col">
-                {currentLink && (
+                {currentLink && !isLinkExpired && (
                   <div className="pr-link-buttons">
                     <a
                       className="button primary"
@@ -734,6 +754,11 @@ export function CaseDetail({
                     >
                       {copied ? "✓ Link Copied" : "Copy Link"}
                     </button>
+                  </div>
+                )}
+                {isLinkExpired && (
+                  <div style={{color: '#fca5a5', fontSize: '0.85rem', fontWeight: 500, padding: '6px 12px', background: 'rgba(127, 29, 29, 0.3)', borderRadius: 6, border: '1px solid #7f1d1d'}}>
+                    ⚠️ Payment link has expired. Regenerating a new link is recommended.
                   </div>
                 )}
               </div>
@@ -800,6 +825,27 @@ export function CaseDetail({
                   <span style={{fontSize: '0.8rem', color: '#94a3b8'}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
                 )}
               </div>
+            ) : channelIntel?.followup_decision?.next_action === 'AWAIT_RESPONSE' ? (
+              <div>
+                <span className="badge" style={{background: '#1e3a8a', color: '#93c5fd', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                  ⏳ CUSTOMER RESPONSE PENDING
+                </span>
+                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5}}>
+                  A WhatsApp reminder has been sent. RecoverAI is waiting for customer activity before taking another recovery action.
+                </p>
+              </div>
+            ) : channelIntel?.followup_decision?.previous_outcome === 'LINK_CLICKED' ? (
+              <div>
+                <span className="badge" style={{background: '#1e3a8a', color: '#93c5fd', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
+                  ⏳ CUSTOMER PAYMENT PENDING
+                </span>
+                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5}}>
+                  The customer opened the payment link but has not completed the payment.
+                </p>
+                <div style={{fontSize: '0.85rem', color: '#93c5fd', marginTop: 4}}>
+                  Next action: WhatsApp reminder after the follow-up period.
+                </div>
+              </div>
             ) : isRecovering ? (
               <div>
                 <span className="badge" style={{background: '#1e3a8a', color: '#93c5fd', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
@@ -844,6 +890,10 @@ export function CaseDetail({
               {availableCommunications.map((comm) => {
                 const isActive = selectedCommId ? comm.id === selectedCommId : comm.id === availableCommunications[0]?.id;
                 const chIcon = comm.channel === 'whatsapp' ? '💬' : comm.channel === 'sms' ? '📱' : '✉️';
+                const isReminder = comm.attempt > 1 && comm.channel === availableCommunications[0]?.channel;
+                const label = comm.isPrepared 
+                  ? `${chIcon} ${title(comm.channel)} — Prepared`
+                  : `${chIcon} ${title(comm.channel)}${isReminder ? ' Reminder' : ''} — Attempt ${comm.attempt}`;
                 return (
                   <button
                     key={comm.id}
@@ -853,8 +903,7 @@ export function CaseDetail({
                       setActiveCommTab(comm.channel);
                     }}
                   >
-                    {chIcon} {title(comm.channel)}
-                    {availableCommunications.length > 1 && ` – Attempt ${comm.attempt}`}
+                    {label}
                   </button>
                 );
               })}
@@ -907,31 +956,28 @@ export function CaseDetail({
                     <span className="email-badge">FAILED PAYMENT RECOVERY</span>
                   </div>
                   <div className="email-preview-body">
-                    <h3 style={{marginTop: 0, color: '#1e293b'}}>Failed Payment Recovery</h3>
-                    <p style={{color: '#475569'}}>Hi Customer,</p>
-                    <p style={{color: '#475569'}}>
-                      We noticed that your recent payment could not be completed.
+                    <h3 style={{marginTop: 0, color: '#1e293b', fontSize: '1.05rem', fontWeight: 700}}>Payment Requires Your Attention</h3>
+                    <p style={{color: '#475569', margin: '12px 0 6px 0'}}>Hello,</p>
+                    <p style={{color: '#475569', margin: '0 0 10px 0'}}>
+                      Your recent payment of {formatINR(selected.amount)} could not be completed.
                     </p>
-                    <div className="email-meta-box">
-                      <div><span>Amount:</span> <b>{formatINR(selected.amount)}</b></div>
-                      <div><span>Order:</span> <b>#{selected.case_number}</b></div>
-                      <div><span>Reason:</span> <b>{title(selected.failure_reason || 'Insufficient Funds')}</b></div>
-                      <div><span>Payment Deadline:</span> <b>{formattedExpiry}</b></div>
-                    </div>
-                    <p style={{color: '#475569', fontWeight: 500}}>
-                      Complete your payment securely before the recovery link expires.
+                    <p style={{color: '#475569', fontWeight: 500, margin: '0 0 16px 0'}}>
+                      Please complete your payment securely before the payment link expires.
                     </p>
-                    <div style={{textAlign: 'center', margin: '24px 0'}}>
+                    <div style={{textAlign: 'center', margin: '20px 0'}}>
                       <button
                         className="button email-complete-btn"
                         onClick={handlePaymentClick}
+                        style={{background: '#2563eb', color: '#fff', padding: '10px 24px', borderRadius: 6, fontWeight: 600, border: 'none', cursor: 'pointer'}}
                       >
                         Complete Payment
                       </button>
                     </div>
-                    <div className="email-footer-note">
-                      Secure 256-bit encrypted checkout powered by Razorpay.<br/>
-                      Payment link expires on {formattedExpiry}.
+                    <div className="email-meta-box" style={{background: '#f8fafc', padding: '10px 14px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: '0.85rem'}}>
+                      <div><span style={{color: '#64748b'}}>Payment Link Expiry:</span> <b style={{color: '#1e293b'}}>{formattedExpiry}</b></div>
+                    </div>
+                    <div className="email-footer-note" style={{fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center', marginTop: 14}}>
+                      Secure 256-bit encrypted checkout powered by Razorpay.
                     </div>
                   </div>
                 </div>
@@ -957,10 +1003,16 @@ export function CaseDetail({
                     <div className="sms-chat-body">
                       <div className="sms-timestamp">Today 9:41 AM</div>
                       <div className="sms-bubble">
-                        <div className="sms-text" style={{whiteSpace: 'pre-line', lineHeight: 1.6}}>
+                        <div className="sms-text" style={{whiteSpace: 'pre-line', lineHeight: 1.5}}>
                           <strong>RecoverAI</strong>{"\n\n"}
                           Your payment of {formatINR(selected.amount)} requires attention.{"\n\n"}
-                          Complete your payment securely:
+                          Complete payment securely:{"\n"}
+                          <span
+                            onClick={handlePaymentClick}
+                            style={{color: '#38bdf8', textDecoration: 'underline', cursor: 'pointer', fontWeight: 600, wordBreak: 'break-all'}}
+                          >
+                            {currentLink ? (currentLink.includes('rzp.io') ? currentLink.replace(/^https?:\/\//, '') : `rzp.io/pay_${selected.case_number.toLowerCase().replace(/[^a-z0-9]/g, '')}`) : 'rzp.io/demo_pay'}
+                          </span>
                         </div>
                         <button
                           className="button sms-action-btn"
@@ -969,7 +1021,6 @@ export function CaseDetail({
                         >
                           Complete Payment
                         </button>
-                        <div className="sms-expiry" style={{marginTop: 10}}>Link expires: {formattedExpiry}.</div>
                       </div>
                     </div>
                     <div className="phone-bottom-indicator" />
@@ -984,43 +1035,69 @@ export function CaseDetail({
               {activeCommTab === 'whatsapp' && (
                 <div className="wa-tab-container">
                   <div className="wa-chat-frame">
-                    <div className="wa-header">
-                      <div className="wa-header-avatar">R</div>
-                      <div className="wa-header-info">
-                        <div className="wa-header-name">
-                          RecoverAI <span className="wa-verified-badge" title="Verified Business">✓</span>
+                    <div className="wa-header" style={{display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#075e54', color: '#fff'}}>
+                      <span className="wa-back-arrow" style={{fontSize: '1.2rem', cursor: 'pointer', marginRight: 2}}>←</span>
+                      <div className="wa-header-avatar" style={{width: 36, height: 36, borderRadius: '50%', background: '#128c7e', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.85rem', border: '1px solid rgba(255,255,255,0.25)'}}>
+                        RA
+                      </div>
+                      <div className="wa-header-info" style={{flex: 1}}>
+                        <div className="wa-header-name" style={{fontWeight: 700, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: 4}}>
+                          RecoverAI <span className="wa-verified-badge" style={{fontSize: '0.75rem', color: '#4ade80'}} title="Verified Business">✓</span>
                         </div>
-                        <div className="wa-header-sub">Official Business Account</div>
+                        <div className="wa-header-sub" style={{fontSize: '0.7rem', color: '#e0f2fe', opacity: 0.9}}>
+                          Official Business Account
+                        </div>
                       </div>
                     </div>
-                    <div className="wa-chat-body">
-                      <div className="wa-date-chip">TODAY</div>
-                      <div className="wa-bubble">
-                        <div className="wa-greeting" style={{fontWeight: 700}}>RecoverAI ✓</div>
-                        <p className="wa-body-text" style={{margin: '10px 0 6px 0'}}>
-                          Your recent payment could not be completed.
+                    <div className="wa-chat-body" style={{background: '#efeae2', padding: '16px 12px'}}>
+                      <div className="wa-date-chip" style={{textAlign: 'center', margin: '0 auto 12px auto', fontSize: '0.72rem', background: 'rgba(255,255,255,0.85)', padding: '3px 10px', borderRadius: 6, width: 'fit-content', color: '#54656f', fontWeight: 600}}>
+                        TODAY
+                      </div>
+                      <div className="wa-bubble" style={{background: '#ffffff', borderRadius: '8px 8px 8px 2px', padding: '12px 14px', maxWidth: '320px', boxShadow: '0 1px 2px rgba(0,0,0,0.15)', color: '#111b21'}}>
+                        <div className="wa-greeting" style={{fontWeight: 700, color: '#075e54', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8}}>
+                          RecoverAI <span style={{color: '#22c55e', fontSize: '0.85rem'}}>✓</span>
+                        </div>
+                        <p className="wa-body-text" style={{margin: '0 0 10px 0', fontSize: '0.9rem', lineHeight: 1.45, color: '#111b21'}}>
+                          {selectedComm?.attempt && selectedComm.attempt > 1 ? "Payment Reminder: Your recent payment could not be completed." : "Your recent payment could not be completed."}
                         </p>
-                        <div style={{margin: '8px 0 12px 0', fontSize: '0.95rem', color: '#1e293b'}}>
-                          Amount: <b>{formatINR(selected.amount)}</b>
+                        <div style={{margin: '0 0 12px 0', fontSize: '0.85rem', color: '#64748b'}}>
+                          <div style={{fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#64748b', marginBottom: 2}}>Amount Due</div>
+                          <b style={{fontSize: '1.05rem', color: '#111b21'}}>{formatINR(selected.amount)}</b>
                         </div>
                         <button
                           className="wa-btn"
-                          style={{marginTop: 4}}
+                          style={{
+                            width: '100%',
+                            background: '#25d366',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: 6,
+                            padding: '9px 14px',
+                            fontWeight: 700,
+                            fontSize: '0.9rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.2)'
+                          }}
                           onClick={handlePaymentClick}
                         >
                           ⚡ Complete Payment
                         </button>
-                        <div className="wa-footer-msg" style={{marginTop: 12}}>
-                          Payment link expires on {formattedExpiry}.
+                        <div className="wa-footer-msg" style={{marginTop: 12, fontSize: '0.78rem', color: '#667781', lineHeight: 1.4}}>
+                          This payment link expires on<br />
+                          <b>{formattedExpiry}</b>
                         </div>
-                        <div className="wa-bubble-time">
-                          09:41 AM <span className="wa-receipts">✓✓</span>
+                        <div className="wa-bubble-time" style={{textAlign: 'right', fontSize: '0.68rem', color: '#667781', marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3}}>
+                          09:41 AM <span className="wa-receipts" style={{color: '#53bdeb'}}>✓✓</span>
                         </div>
                       </div>
                     </div>
                   </div>
-                  <div className="simulation-disclaimer">
-                    WhatsApp message simulated for demonstration purposes.
+                  <div className="simulation-disclaimer" style={{textAlign: 'center', fontSize: '0.74rem', color: '#94a3b8', marginTop: 12, fontStyle: 'italic'}}>
+                    Simulated WhatsApp communication for demonstration purposes.
                   </div>
                 </div>
               )}

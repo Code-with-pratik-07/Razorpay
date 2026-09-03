@@ -549,22 +549,24 @@ def evaluate_followup_decision(
 
     # Rule: Currently Awaiting Response after follow-up execution
     if latest.outcome in {"AWAITING_RESPONSE", "PENDING_RESPONSE"}:
+        ch_name = "WhatsApp" if latest.channel == "whatsapp" else "SMS" if latest.channel == "sms" else "Email"
         return FollowupDecision(
             previous_outcome="AWAITING_RESPONSE",
             recommended_wait_period="24 hours",
             next_action="AWAIT_RESPONSE",
             selected_channel=latest.channel,
-            reason=f"A follow-up reminder was simulated and delivered via {latest.channel.upper()}. Currently awaiting customer response before evaluating further recovery actions.",
+            reason=f"A {ch_name} reminder has been sent. RecoverAI is waiting for customer activity before taking another recovery action.",
         )
 
     # Rule 2: Link Clicked
     if latest.outcome in {"LINK_CLICKED", "CLICKED"}:
+        ch_name = "WhatsApp" if latest.channel == "whatsapp" else "SMS" if latest.channel == "sms" else "Email"
         return FollowupDecision(
             previous_outcome="LINK_CLICKED",
             recommended_wait_period="24 hours",
             next_action="RETRY_SAME_CHANNEL",
             selected_channel=latest.channel,
-            reason=f"The customer engaged with the payment link but did not complete payment. A follow-up through {latest.channel.upper()} is preferred because recent engagement indicates the channel remains effective.",
+            reason=f"The customer engaged with the payment link but did not complete payment. Recent engagement indicates that {ch_name} remains an effective communication channel.",
         )
 
     # Rule 4: Delivery Failed

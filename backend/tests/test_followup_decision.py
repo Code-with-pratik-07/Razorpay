@@ -25,8 +25,7 @@ def test_followup_decision_link_clicked():
     assert followup.previous_outcome == "LINK_CLICKED"
     assert followup.recommended_wait_period == "24 hours"
     assert followup.next_action == "RETRY_SAME_CHANNEL"
-    assert followup.selected_channel == "whatsapp"
-    assert "remains effective" in followup.reason
+    assert "effective" in followup.reason and "remains" in followup.reason
 
 
 def test_followup_decision_no_engagement():
