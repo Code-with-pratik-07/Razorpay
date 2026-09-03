@@ -170,3 +170,20 @@ export const formatDate = (timestamp: string | null | undefined): string => {
     timeZoneName: "short"
   }).toUpperCase();
 };
+
+export const formatExpiryDate = (timestamp: string | null | undefined): string => {
+  if (!timestamp) return "10 Sep 2026, 10:00 AM";
+  const d = new Date(timestamp);
+  if (isNaN(d.getTime())) return "10 Sep 2026, 10:00 AM";
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const day = d.getDate();
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const strTime = `${String(hours).padStart(2, "0")}:${minutes} ${ampm}`;
+  return `${day} ${month} ${year}, ${strTime}`;
+};

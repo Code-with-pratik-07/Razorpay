@@ -2525,9 +2525,8 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 
 .journey-transition-row::before {
-  content: '├──';
-  color: #475569;
-  font-family: monospace;
+  content: '↓';
+  color: #60a5fa;
   font-weight: 700;
-  margin-right: 2px;
+  margin-right: 4px;
 }

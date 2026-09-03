@@ -1,5 +1,5 @@
 import React from 'react';
-import { RecoveryCase, Explanation, AuditEvent, Execution, formatINR, title, formatDate } from '../types';
+import { RecoveryCase, Explanation, AuditEvent, Execution, formatINR, title, formatDate, formatExpiryDate } from '../types';
 import { Badge } from './Badge';
 import { DecisionPipeline } from './DecisionPipeline';
 import { AIAdvisorCard } from './AIAdvisorCard';
@@ -219,8 +219,8 @@ export function CaseDetail({
 
   // Formatted date helper
   const formattedExpiry = selected.payment_link_expires_at
-    ? formatDate(selected.payment_link_expires_at)
-    : "10 Sep 2026, 12:39 AM";
+    ? formatExpiryDate(selected.payment_link_expires_at)
+    : "10 Sep 2026, 10:00 AM";
 
   const isLinkExpired = selected.payment_link_expires_at
     ? new Date(selected.payment_link_expires_at).getTime() < Date.now()
@@ -373,22 +373,6 @@ export function CaseDetail({
           <div className="details-meta">
             {selected.customer_email ?? 'Customer'} • {title(selected.payment_method)}
           </div>
-          <div className="details-meta notification-meta">
-            <span className={`notif-indicator ${commInfo.cls}`}>
-              {commInfo.icon} {commInfo.badge}
-            </span>
-            {availableCommunications.length > 0 && (
-              <button
-                id="view-comm-header-btn"
-                className="button secondary view-comm-header-btn"
-                onClick={() => openCommunicationModal()}
-              >
-                {availableCommunications.length === 1
-                  ? `View ${title(availableCommunications[0].channel)} Message`
-                  : 'View Communications'}
-              </button>
-            )}
-          </div>
         </div>
       </header>
 
@@ -535,16 +519,16 @@ export function CaseDetail({
                           </div>
                           {isLinkClicked && (
                             <div className="journey-transition-row">
-                              <span>⏱ {journey.length > 1 ? 'Waited 24 hours' : 'Follow-up after 24 hours'}</span>
+                              <span>{journey.length > 1 ? 'Waited 24 hours' : 'Follow-up after 24 hours'}</span>
                             </div>
                           )}
                           {isIgnored && (
                             <>
                               <div className="journey-transition-row">
-                                <span>⏱ {journey.length > 1 ? 'Waited 24 hours' : 'Follow-up after 24 hours'}</span>
+                                <span>{journey.length > 1 ? 'Waited 24 hours' : 'Follow-up after 24 hours'}</span>
                               </div>
                               <div className="journey-transition-row">
-                                <span>↓ {title(item.channel)} deprioritized</span>
+                                <span>{title(item.channel)} deprioritized</span>
                               </div>
                             </>
                           )}
@@ -556,7 +540,7 @@ export function CaseDetail({
                       <div className="journey-v-item next-action-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-pending" />
-                          <span className="journey-v-title-text" style={{color: '#60a5fa'}}>Next Recommended Action</span>
+                          <span className="journey-v-title-text" style={{color: '#60a5fa'}}>Next Action</span>
                         </div>
                         <div 
                           className="journey-compact-card clickable-journey-step"
@@ -594,52 +578,34 @@ export function CaseDetail({
               </div>
             )}
 
-            {/* FOLLOW-UP INTELLIGENCE */}
+            {/* 5. FOLLOW-UP DECISION */}
             {channelIntel?.followup_decision && (
               <div className="intelligence-card followup-intelligence-card" style={{gridColumn: '1 / -1'}}>
-                <div className="fd-header" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6}}>
-                  <div style={{fontWeight: 700, fontSize: '0.82rem', color: '#60a5fa', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6}}>
-                    <span>🔄</span> FOLLOW-UP INTELLIGENCE
-                  </div>
-                  <div style={{fontSize: '0.8rem', color: '#cbd5e1', background: '#1e293b', padding: '3px 10px', borderRadius: 4, border: '1px solid #475569'}}>
-                    {formatTiming(channelIntel.followup_decision.recommended_wait_period, channelIntel.followup_decision.next_action)}
+                <div className="fd-header" style={{marginBottom: 12}}>
+                  <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#60a5fa', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6}}>
+                    <span>🔄</span> FOLLOW-UP DECISION
                   </div>
                 </div>
 
-                <div className="fd-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 12}}>
-                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 12px', borderRadius: 6, border: '1px solid #1e293b'}}>
-                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: '0.04em'}}>Previous Outcome</div>
-                    <div style={{fontSize: '0.88rem', fontWeight: 600, color: '#e2e8f0'}}>
+                <div className="fd-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: canRunNextStep ? 14 : 0}}>
+                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
+                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>Previous Outcome</div>
+                    <div style={{fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0'}}>
                       {formatPreviousOutcome(channelIntel.followup_decision.previous_outcome)}
                     </div>
                   </div>
-                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 12px', borderRadius: 6, border: '1px solid #1e293b'}}>
-                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: '0.04em'}}>Recommended Action</div>
-                    <div style={{fontSize: '0.88rem', fontWeight: 600, color: '#93c5fd'}}>
+                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
+                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>Next Action</div>
+                    <div style={{fontSize: '0.9rem', fontWeight: 600, color: '#93c5fd'}}>
                       {formatNextActionLabel(channelIntel.followup_decision.next_action, channelIntel.followup_decision.selected_channel)}
                     </div>
                   </div>
-                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 12px', borderRadius: 6, border: '1px solid #1e293b'}}>
-                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: '0.04em'}}>Timing</div>
-                    <div style={{fontSize: '0.88rem', fontWeight: 600, color: '#fde047'}}>
+                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
+                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>When</div>
+                    <div style={{fontSize: '0.9rem', fontWeight: 600, color: '#fde047'}}>
                       {formatTiming(channelIntel.followup_decision.recommended_wait_period, channelIntel.followup_decision.next_action)}
                     </div>
                   </div>
-                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 12px', borderRadius: 6, border: '1px solid #1e293b'}}>
-                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: '0.04em'}}>Target Channel</div>
-                    <div style={{fontSize: '0.88rem', fontWeight: 600, color: '#38bdf8'}}>
-                      {title(channelIntel.followup_decision.selected_channel || recommendedChannel)}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="fd-reason" style={{marginBottom: 12}}>
-                  <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em', fontWeight: 600}}>
-                    Why?
-                  </div>
-                  <p style={{margin: 0, fontSize: '0.88rem', color: '#cbd5e1', lineHeight: 1.5}}>
-                    {channelIntel.followup_decision.reason}
-                  </p>
                 </div>
 
                 {canRunNextStep && (
@@ -652,9 +618,6 @@ export function CaseDetail({
                     >
                       {isRunningNextStep ? 'Simulating...' : '⚡ Simulate Next Recovery Step'}
                     </button>
-                    <span style={{display: 'block', marginTop: 6, fontSize: '0.78rem', color: '#94a3b8'}}>
-                      Simulates the recommended follow-up without waiting for the actual follow-up period.
-                    </span>
                   </div>
                 )}
               </div>
@@ -662,10 +625,10 @@ export function CaseDetail({
           </div>
         )}
 
-        {/* 5. AI ADVISOR */}
+        {/* 6. AI ADVISOR */}
         {explanation?.ai && <AIAdvisorCard explanation={explanation} />}
 
-        {/* 6. PAYMENT RECOVERY ACTION */}
+        {/* 7. PAYMENT RECOVERY ACTION */}
         {isRecovered ? (
           <div className="payment-recovery-card terminal-banner terminal-recovered" style={{
             background: '#064e3b', border: '1px solid #059669', borderRadius: 8, padding: '20px', color: '#ecfdf5'
@@ -767,12 +730,9 @@ export function CaseDetail({
             <div className="pr-comm-row">
               <div className="pr-comm-status-wrap">
                 <span className="pr-label">CUSTOMER COMMUNICATION</span>
-                <div style={{display: 'flex', alignItems: 'center', gap: 10, marginTop: 4}}>
+                <div style={{marginTop: 4}}>
                   <span className={`pr-comm-pill ${commInfo.cls}`}>
                     {commInfo.icon} {commInfo.badge}
-                  </span>
-                  <span style={{fontSize: '0.85rem', color: '#94a3b8'}}>
-                    {commInfo.text}
                   </span>
                 </div>
               </div>
@@ -831,7 +791,7 @@ export function CaseDetail({
                   ⏳ CUSTOMER RESPONSE PENDING
                 </span>
                 <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5}}>
-                  A WhatsApp reminder has been sent. RecoverAI is waiting for customer activity before taking another recovery action.
+                  A recovery reminder has been sent. RecoverAI is waiting for customer activity.
                 </p>
               </div>
             ) : channelIntel?.followup_decision?.previous_outcome === 'LINK_CLICKED' ? (
@@ -842,9 +802,6 @@ export function CaseDetail({
                 <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5}}>
                   The customer opened the payment link but has not completed the payment.
                 </p>
-                <div style={{fontSize: '0.85rem', color: '#93c5fd', marginTop: 4}}>
-                  Next action: WhatsApp reminder after the follow-up period.
-                </div>
               </div>
             ) : isRecovering ? (
               <div>
@@ -880,20 +837,19 @@ export function CaseDetail({
             <div className="comm-modal-header">
               <div className="comm-modal-title">
                 <h3>Customer Communication Preview</h3>
-                <span className="comm-modal-sub">Realistic customer preview for {selected.case_number}</span>
               </div>
               <button className="comm-modal-close" onClick={() => setShowCommModal(false)}>✕</button>
             </div>
 
-            {/* Dynamic Channel Tabs */}
+            {/* Dynamic Channel Tabs / Selector */}
             <div className="comm-modal-tabs">
               {availableCommunications.map((comm) => {
                 const isActive = selectedCommId ? comm.id === selectedCommId : comm.id === availableCommunications[0]?.id;
                 const chIcon = comm.channel === 'whatsapp' ? '💬' : comm.channel === 'sms' ? '📱' : '✉️';
                 const isReminder = comm.attempt > 1 && comm.channel === availableCommunications[0]?.channel;
                 const label = comm.isPrepared 
-                  ? `${chIcon} ${title(comm.channel)} — Prepared`
-                  : `${chIcon} ${title(comm.channel)}${isReminder ? ' Reminder' : ''} — Attempt ${comm.attempt}`;
+                  ? `${chIcon} ${title(comm.channel)} • Prepared`
+                  : `${chIcon} ${title(comm.channel)}${isReminder ? ' Reminder' : ''} • Attempt ${comm.attempt}`;
                 return (
                   <button
                     key={comm.id}
@@ -1054,14 +1010,22 @@ export function CaseDetail({
                         TODAY
                       </div>
                       <div className="wa-bubble" style={{background: '#ffffff', borderRadius: '8px 8px 8px 2px', padding: '12px 14px', maxWidth: '320px', boxShadow: '0 1px 2px rgba(0,0,0,0.15)', color: '#111b21'}}>
-                        <div className="wa-greeting" style={{fontWeight: 700, color: '#075e54', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8}}>
-                          RecoverAI <span style={{color: '#22c55e', fontSize: '0.85rem'}}>✓</span>
-                        </div>
-                        <p className="wa-body-text" style={{margin: '0 0 10px 0', fontSize: '0.9rem', lineHeight: 1.45, color: '#111b21'}}>
-                          {selectedComm?.attempt && selectedComm.attempt > 1 ? "Payment Reminder: Your recent payment could not be completed." : "Your recent payment could not be completed."}
-                        </p>
-                        <div style={{margin: '0 0 12px 0', fontSize: '0.85rem', color: '#64748b'}}>
-                          <div style={{fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#64748b', marginBottom: 2}}>Amount Due</div>
+                        {selectedComm?.attempt && selectedComm.attempt > 1 ? (
+                          <>
+                            <div style={{fontWeight: 700, fontSize: '0.92rem', color: '#075e54', marginBottom: 6}}>
+                              Payment Reminder
+                            </div>
+                            <p className="wa-body-text" style={{margin: '0 0 10px 0', fontSize: '0.88rem', lineHeight: 1.45, color: '#111b21'}}>
+                              Your payment is still pending. Please complete it securely using the payment link below.
+                            </p>
+                          </>
+                        ) : (
+                          <p className="wa-body-text" style={{margin: '0 0 10px 0', fontSize: '0.88rem', lineHeight: 1.45, color: '#111b21'}}>
+                            Your recent payment could not be completed.
+                          </p>
+                        )}
+                        <div style={{margin: '0 0 12px 0'}}>
+                          <div style={{fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#64748b', marginBottom: 2}}>Amount Due</div>
                           <b style={{fontSize: '1.05rem', color: '#111b21'}}>{formatINR(selected.amount)}</b>
                         </div>
                         <button
@@ -1091,7 +1055,7 @@ export function CaseDetail({
                           <b>{formattedExpiry}</b>
                         </div>
                         <div className="wa-bubble-time" style={{textAlign: 'right', fontSize: '0.68rem', color: '#667781', marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3}}>
-                          09:41 AM <span className="wa-receipts" style={{color: '#53bdeb'}}>✓✓</span>
+                          09:41 <span className="wa-receipts" style={{color: '#53bdeb'}}>✓✓</span>
                         </div>
                       </div>
                     </div>

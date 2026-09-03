@@ -15,7 +15,7 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
   const isRecovered = explanation.status === 'recovered';
   const followupAction = explanation.channel_intelligence?.followup_decision?.next_action;
 
-  const selectedChannel = explanation.channel_intelligence?.followup_decision?.selected_channel;
+  const previousOutcome = explanation.channel_intelligence?.followup_decision?.previous_outcome;
 
   let actionBadge = 'Automatic Recovery';
   let businessInsight = explanation.ai.reasoning;
@@ -32,12 +32,12 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
   } else if (isApproved && !isRecovered) {
     actionBadge = 'Dispatch Recovery Communication';
     businessInsight = 'Manual review approved. Secure payment link prepared for customer delivery via the recommended verified channel.';
-  } else if (explanation.channel_intelligence?.followup_decision?.previous_outcome === 'FAILED_DELIVERY') {
+  } else if (previousOutcome === 'FAILED_DELIVERY') {
     actionBadge = 'Use Immediate Channel Fallback';
     businessInsight = 'Delivery failed on the initial channel. Immediately switching to an alternate verified communication channel without delay.';
-  } else if (followupAction === 'RETRY_SAME_CHANNEL') {
-    actionBadge = selectedChannel ? `Send ${title(selectedChannel)} Reminder` : 'Send WhatsApp Reminder';
-    businessInsight = 'The customer demonstrated payment intent by opening the recovery link but did not complete checkout. A follow-up through the same channel is recommended before switching to another communication method.';
+  } else if (previousOutcome === 'LINK_CLICKED' || followupAction === 'RETRY_SAME_CHANNEL') {
+    actionBadge = 'Send WhatsApp Reminder';
+    businessInsight = 'The customer opened the payment link but did not complete checkout. A reminder through WhatsApp is recommended because the customer has already demonstrated engagement.';
   } else if (followupAction === 'SWITCH_CHANNEL') {
     actionBadge = 'Switch Communication Channel';
     businessInsight = 'The customer did not engage with the previous WhatsApp communication. After the follow-up period, SMS is recommended as the next best verified channel.';
@@ -48,8 +48,8 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
     actionBadge = 'Wait for Customer Response';
     businessInsight = 'A reminder has been dispatched through WhatsApp. Observing customer response patterns before committing further recovery attempts.';
   } else if (explanation.case_number === 'DEMO-A-AUTO' || (explanation.recovery_probability && explanation.recovery_probability >= 0.8)) {
-    actionBadge = 'Automatic Recovery';
-    businessInsight = 'The payment has a high predicted recovery probability and passed all policy checks. A secure payment link was generated and WhatsApp was selected as the primary communication channel.';
+    actionBadge = 'Send WhatsApp Reminder';
+    businessInsight = 'The customer opened the payment link but did not complete checkout. A reminder through WhatsApp is recommended because the customer has already demonstrated engagement.';
   }
 
   return (
