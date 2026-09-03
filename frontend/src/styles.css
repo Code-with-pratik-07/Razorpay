@@ -1657,6 +1657,13 @@ h1, h2, h3, h4, p { margin: 0; }
   color: #fbbf24;
 }
 
+.journey-v-status.outcome-awaiting_response {
+  background: rgba(217, 119, 6, 0.25);
+  color: #fde047;
+  border: 1px solid rgba(217, 119, 6, 0.5);
+  font-weight: 700;
+}
+
 .journey-preview-btn {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -1871,6 +1878,13 @@ h1, h2, h3, h4, p { margin: 0; }
   background: rgba(251, 191, 36, 0.2);
   color: #fbbf24;
   border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.status-awaiting {
+  background: rgba(217, 119, 6, 0.25);
+  color: #fde047;
+  border: 1px solid rgba(217, 119, 6, 0.5);
+  font-weight: 700;
 }
 
 .status-failed {

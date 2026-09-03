@@ -920,9 +920,9 @@ export function CaseDetail({
           </div>
         )}
 
-        {/* 8. CUSTOMER OUTCOME */}
+        {/* CUSTOMER OUTCOME */}
         <div className="intelligence-card customer-outcome-card">
-          <h4>8. Customer Outcome</h4>
+          <h4>Customer Outcome</h4>
           <div className="co-body" style={{marginTop: 8}}>
             {isRecovered ? (
               <div>
