@@ -120,7 +120,7 @@ export function CaseDetail({
   const followupAction = explanation?.channel_intelligence?.followup_decision?.next_action;
   const followupOutcome = explanation?.channel_intelligence?.followup_decision?.previous_outcome;
   const isRecoveryClosed = selected.status === 'abandoned' || selected.status === 'closed' || isAttemptLimitReached || followupAction === 'STOP_RECOVERY';
-  const isAbandoned = isRecoveryClosed;
+  const isAbandoned = isRecoveryClosed && !isRecovered;
   const isTerminalCase = isRecovered || isRecoveryClosed;
   const isHumanReview = !isTerminalCase && (selected.status === 'human_review' || explanation?.human_review_status === 'REQUIRED') && explanation?.human_review_status !== 'APPROVED';
   const isRecovering = !isTerminalCase && !isHumanReview && (
@@ -521,32 +521,49 @@ export function CaseDetail({
                        channelIntel.communication_maturity === 'LEARNING' ? '🟡 LEARNING' : '🟢 ESTABLISHED'}
                     </span>
                     <span className="comm-profile-desc">
-                      {isRecoveryClosed 
+                      {isTerminalCase 
                         ? `RecoverAI learned from ${channelIntel.attempts_count || selected.retry_count} communication interactions.` 
                         : channelIntel.maturity_description}
                     </span>
                   </div>
 
-                  <span className={`channel-status-pill ${isRecoveryClosed ? 'status-exhausted' : (isAwaitingResponse ? 'status-awaiting' : `status-${commStatus.toLowerCase()}`)}`}>
-                    {isRecoveryClosed ? 'Communication Stopped' : (isAwaitingResponse ? 'Awaiting Customer Response' : commInfo.badge)}
+                  <span className={`channel-status-pill ${isTerminalCase ? (isRecovered ? 'status-completed' : 'status-exhausted') : (isAwaitingResponse ? 'status-awaiting' : `status-${commStatus.toLowerCase()}`)}`}>
+                    {isTerminalCase ? (isRecovered ? 'Recovery Completed' : 'Communication Stopped') : (isAwaitingResponse ? 'Awaiting Customer Response' : commInfo.badge)}
                   </span>
                 </div>
 
-                {isRecoveryClosed ? (
-                  <div className="comm-terminal-stopped" style={{
-                    background: 'rgba(39, 18, 18, 0.6)',
-                    border: '1px solid #7f1d1d',
-                    borderRadius: 8,
-                    padding: '16px 20px',
-                    margin: '12px 0 16px 0'
-                  }}>
-                    <div style={{display: 'flex', alignItems: 'center', gap: 8, color: '#f87171', fontWeight: 800, fontSize: '0.95rem', letterSpacing: '0.04em'}}>
-                      <span>■</span> COMMUNICATION STOPPED
+                {isTerminalCase ? (
+                  isRecovered ? (
+                    <div className="comm-terminal-stopped" style={{
+                      background: 'rgba(6, 78, 59, 0.2)',
+                      border: '1px solid #059669',
+                      borderRadius: 8,
+                      padding: '16px 20px',
+                      margin: '12px 0 16px 0'
+                    }}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: 8, color: '#34d399', fontWeight: 800, fontSize: '0.95rem', letterSpacing: '0.04em'}}>
+                        <span>✓</span> RECOVERY COMPLETED
+                      </div>
+                      <div style={{color: '#6ee7b7', fontSize: '0.88rem', marginTop: 6, lineHeight: 1.5}}>
+                        Payment was successfully recovered.<br />No further automated communication is required.
+                      </div>
                     </div>
-                    <div style={{color: '#fca5a5', fontSize: '0.88rem', marginTop: 6, lineHeight: 1.5}}>
-                      Maximum recovery attempts reached.<br />No further automated communication will be scheduled.
+                  ) : (
+                    <div className="comm-terminal-stopped" style={{
+                      background: 'rgba(39, 18, 18, 0.6)',
+                      border: '1px solid #7f1d1d',
+                      borderRadius: 8,
+                      padding: '16px 20px',
+                      margin: '12px 0 16px 0'
+                    }}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: 8, color: '#f87171', fontWeight: 800, fontSize: '0.95rem', letterSpacing: '0.04em'}}>
+                        <span>■</span> <span style={{marginLeft: 4}}>COMMUNICATION STOPPED</span>
+                      </div>
+                      <div style={{color: '#fca5a5', fontSize: '0.88rem', marginTop: 6, lineHeight: 1.5}}>
+                        Maximum recovery attempts reached.<br />No further automated communication will be scheduled.
+                      </div>
                     </div>
-                  </div>
+                  )
                 ) : (
                   <>
                     <div className="comm-primary-focus">
@@ -557,7 +574,7 @@ export function CaseDetail({
                         </span>
                         <div>
                           <div className="comm-focus-title">
-                            RECOMMENDED CHANNEL: <b>{title(channelIntel.recommended_channel)}</b>
+                            RECOMMENDED CHANNEL: <b style={{marginLeft: 4}}>{title(channelIntel.recommended_channel)}</b>
                           </div>
                           <div className="comm-focus-metrics">
                             <span className="comm-suitability-badge">
@@ -628,7 +645,7 @@ export function CaseDetail({
                             <span className={`journey-v-status outcome-${item.outcome.toLowerCase()}`} style={{fontSize: '0.72rem', padding: '3px 8px', borderRadius: 4}}>
                               {isPaid ? '✓ Payment Completed' : 
                                isLinkClicked ? '✓ Delivered • 🔗 Payment Link Clicked' : 
-                               isAwaiting ? (isRecoveryClosed ? '✓ Sent' : '✓ Simulated Sent • ⏳ Awaiting Customer Response') :
+                               isAwaiting ? (isTerminalCase ? '✓ Sent' : '✓ Simulated Sent • ⏳ Awaiting Customer Response') :
                                isIgnored ? '✓ Delivered • No Customer Engagement' : 
                                '✓ Delivered'}
                             </span>
@@ -671,11 +688,13 @@ export function CaseDetail({
                       </div>
                     )}
 
-                    {isRecoveryClosed && !isRecovered && (
+                    {isAbandoned && (
                       <div className="journey-v-item terminal-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-terminal" />
-                          <span className="journey-v-title-text" style={{color: '#f87171'}}>Recovery Closed</span>
+                          <span className="journey-v-title-text" style={{color: '#f87171'}}>
+                            <span style={{marginRight: 6}}>■</span> RECOVERY CLOSED
+                          </span>
                         </div>
                         <div className="journey-compact-card" style={{borderColor: '#7f1d1d', background: 'rgba(69, 10, 10, 0.4)', padding: '10px 14px'}}>
                           <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: 6}}>
@@ -717,7 +736,7 @@ export function CaseDetail({
                   <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
                     <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>Previous Outcome</div>
                     <div style={{fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0'}}>
-                      {formatPreviousOutcome(channelIntel.followup_decision.previous_outcome, isRecoveryClosed)}
+                      {formatPreviousOutcome(channelIntel.followup_decision.previous_outcome, isAbandoned)}
                     </div>
                   </div>
                   <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
@@ -771,30 +790,31 @@ export function CaseDetail({
               </h3>
             </div>
             <div style={{margin: '8px 0 12px 0', display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap'}}>
-              <span style={{fontSize: '2rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.03em', lineHeight: 1.1}}>
+              <span style={{fontSize: '2.4rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.03em', lineHeight: 1.1}}>
                 {formatINR(selected.amount)}
               </span>
-              <span style={{fontSize: '1.05rem', fontWeight: 600, color: '#e6fffa'}}>
-                recovered successfully.
+              <span style={{fontSize: '1.15rem', fontWeight: 600, color: '#e6fffa'}}>
+                 recovered successfully.
               </span>
             </div>
-            <div style={{fontSize: '0.92rem', color: '#d1fae5', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8, marginTop: 10}}>
+            <div style={{fontSize: '0.95rem', color: '#d1fae5', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8, marginTop: 14}}>
               <span>Recovery attributed to:</span>
               <span style={{
                 fontWeight: 700,
                 color: '#ffffff',
                 background: 'rgba(255, 255, 255, 0.18)',
                 border: '1px solid rgba(255, 255, 255, 0.3)',
-                padding: '3px 10px',
+                padding: '4px 12px',
                 borderRadius: 4,
-                letterSpacing: '0.04em',
-                fontSize: '0.85rem'
+                letterSpacing: '0.05em',
+                fontSize: '0.9rem',
+                marginLeft: 4
               }}>
                 {channelIntel?.attributed_channel?.toUpperCase() || 'SMS'}
               </span>
             </div>
           </div>
-        ) : isRecoveryClosed ? (
+        ) : isAbandoned ? (
           <div className="payment-recovery-card terminal-banner terminal-abandoned" style={{
             background: 'linear-gradient(135deg, #271212 0%, #3b1515 100%)',
             border: '1.5px solid #7f1d1d',
@@ -933,10 +953,10 @@ export function CaseDetail({
                   The payment was successfully completed.
                 </p>
               </div>
-            ) : isRecoveryClosed ? (
+            ) : isAbandoned ? (
               <div>
                 <span className="badge" style={{background: '#7f1d1d', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  ■ RECOVERY CLOSED
+                  ■ <span style={{marginLeft: 4}}>RECOVERY CLOSED</span>
                 </span>
                 <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
                   Recovery attempts ended without successful payment. Automated communication has been stopped.

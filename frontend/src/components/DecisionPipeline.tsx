@@ -14,8 +14,8 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
   const followupAction = explanation?.channel_intelligence?.followup_decision?.next_action;
   const followupOutcome = explanation?.channel_intelligence?.followup_decision?.previous_outcome;
   const isRecoveryClosed = selected.status === 'abandoned' || selected.status === 'closed' || isAttemptLimitReached || followupAction === 'STOP_RECOVERY';
-  const isAbandoned = isRecoveryClosed;
   const isRecovered = selected.status === 'recovered';
+  const isAbandoned = isRecoveryClosed && !isRecovered;
   const isRecovering = !isRecoveryClosed && !isRecovered && (
     selected.status === 'recovering' ||
     explanation?.payment_link_status === 'ACTIVE' ||
