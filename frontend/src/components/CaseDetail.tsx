@@ -70,8 +70,8 @@ function formatPreviousOutcome(outcome: string | null): string {
 }
 
 function formatTiming(waitPeriod: string, nextAction?: string): string {
-  if (!waitPeriod || waitPeriod === 'None' || waitPeriod === 'none') return '⏱ None';
-  if (nextAction === 'AWAIT_RESPONSE') return '⏱ 24 Hours';
+  if (!waitPeriod || waitPeriod === 'None' || waitPeriod === 'none' || nextAction === 'STOP_RECOVERY') return 'None';
+  if (nextAction === 'AWAIT_RESPONSE') return '⏱ Review after 24 hours';
   if (waitPeriod.toLowerCase().includes('24')) return '⏱ After 24 Hours';
   if (waitPeriod.toLowerCase().includes('immediate')) return '⏱ Immediate';
   return `⏱ ${waitPeriod}`;
@@ -122,12 +122,20 @@ export function CaseDetail({
     explanation?.channel_intelligence?.status === 'ATTEMPT_LIMIT_REACHED';
   const isAbandoned = selected.status === 'abandoned' || isAttemptLimitReached;
   const followupAction = explanation?.channel_intelligence?.followup_decision?.next_action;
+  const followupOutcome = explanation?.channel_intelligence?.followup_decision?.previous_outcome;
   const isTerminalCase = isRecovered || isAbandoned || selected.status === 'closed' || followupAction === 'STOP_RECOVERY';
   const isHumanReview = !isTerminalCase && (selected.status === 'human_review' || explanation?.human_review_status === 'REQUIRED');
   const isRecovering = !isTerminalCase && !isHumanReview && (selected.status === 'recovering');
 
   // Dynamic available communications strictly from backend records & prepared channel
   const journey = explanation?.channel_intelligence?.communication_journey || [];
+  const latestComm = journey.length > 0 ? journey[journey.length - 1] : null;
+  const isAwaitingResponse = !isTerminalCase && (
+    followupAction === 'AWAIT_RESPONSE' ||
+    followupOutcome === 'AWAITING_RESPONSE' ||
+    latestComm?.outcome === 'AWAITING_RESPONSE'
+  );
+
   const actualComms = journey
     .filter(r => r.channel)
     .map(r => ({
@@ -192,6 +200,17 @@ export function CaseDetail({
     }
     setShowCommModal(true);
   };
+
+  React.useEffect(() => {
+    if (!showCommModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowCommModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showCommModal]);
 
   const handleRunNextStep = async () => {
     if (!selected) return;
@@ -291,6 +310,16 @@ export function CaseDetail({
         isReady: false,
       };
     }
+    if (isAwaitingResponse) {
+      return {
+        icon: "⏳",
+        badge: "Awaiting Customer Response",
+        text: "Recovery communication dispatched; observing customer activity",
+        cls: "status-awaiting",
+        canView: true,
+        isReady: false,
+      };
+    }
     if (commStatus === 'READY') {
       return {
         icon: recommendedChannel === 'whatsapp' ? "💬" : recommendedChannel === 'sms' ? "📱" : "✉️",
@@ -387,6 +416,7 @@ export function CaseDetail({
     !isRecovered &&
     !isAbandoned &&
     !isHumanReview &&
+    !isAwaitingResponse &&
     channelIntel?.followup_decision &&
     channelIntel.followup_decision.next_action !== 'STOP_RECOVERY' &&
     channelIntel.followup_decision.next_action !== 'AWAIT_RESPONSE' &&
@@ -405,7 +435,7 @@ export function CaseDetail({
             </span>
             <Badge value={isRecovered ? 'recovered' : isAbandoned ? 'abandoned' : selected.status} />
           </h2>
-          <div className="details-meta">
+          <div className="details-meta" style={{wordBreak: 'break-word'}}>
             {selected.customer_email ?? 'Customer'} • {title(selected.payment_method)}
           </div>
         </div>
@@ -566,7 +596,7 @@ export function CaseDetail({
                       );
                     })}
 
-                    {!isTerminalCase && !isAttemptLimitReached && channelIntel.followup_decision?.next_action !== 'AWAIT_RESPONSE' && channelIntel.followup_decision?.next_action !== 'STOP_RECOVERY' && (
+                    {!isTerminalCase && !isAttemptLimitReached && !isAwaitingResponse && channelIntel.followup_decision?.next_action !== 'AWAIT_RESPONSE' && channelIntel.followup_decision?.next_action !== 'STOP_RECOVERY' && (
                       <div className="journey-v-item next-action-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-pending" />
@@ -798,7 +828,7 @@ export function CaseDetail({
                   ✓ PAYMENT COMPLETED
                 </span>
                 <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem'}}>
-                  Payment successfully captured via {channelIntel?.attributed_channel?.toUpperCase() || 'SMS'} recovery notice.
+                  The payment was successfully completed.
                 </p>
               </div>
             ) : isAbandoned ? (
@@ -822,13 +852,13 @@ export function CaseDetail({
                   <span style={{fontSize: '0.8rem', color: '#94a3b8'}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
                 )}
               </div>
-            ) : channelIntel?.followup_decision?.next_action === 'AWAIT_RESPONSE' ? (
+            ) : isAwaitingResponse || channelIntel?.followup_decision?.next_action === 'AWAIT_RESPONSE' ? (
               <div>
                 <span className="badge" style={{background: '#1e3a8a', color: '#93c5fd', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
                   ⏳ CUSTOMER RESPONSE PENDING
                 </span>
                 <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5}}>
-                  A recovery reminder has been sent. RecoverAI is waiting for customer activity.
+                  A WhatsApp reminder has been sent. RecoverAI is waiting for customer activity before taking another recovery action.
                 </p>
               </div>
             ) : channelIntel?.followup_decision?.previous_outcome === 'LINK_CLICKED' ? (

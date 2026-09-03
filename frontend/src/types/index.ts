@@ -153,8 +153,14 @@ export const title = (value: string | null) => {
   if (lower === "whatsapp") return "WhatsApp";
   if (lower === "sms") return "SMS";
   if (lower === "email") return "Email";
+  if (!value.includes("_") && value.includes(" ")) {
+    return value.replace(/\bWhatsapp\b/g, "WhatsApp").replace(/\bSms\b/g, "SMS");
+  }
   let formatted = value.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase());
-  return formatted.replace(/\bWhatsapp\b/g, "WhatsApp").replace(/\bSms\b/g, "SMS");
+  return formatted
+    .replace(/\bWhatsapp\b/g, "WhatsApp")
+    .replace(/\bSms\b/g, "SMS")
+    .replace(/\bFor\b/g, "for");
 };
 
 export const formatDate = (timestamp: string | null | undefined): string => {

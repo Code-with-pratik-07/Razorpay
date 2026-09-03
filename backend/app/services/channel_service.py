@@ -74,9 +74,9 @@ def evaluate_customer_maturity(
     if count == 0:
         return "COLD_START", "No previous communication history. RecoverAI is using a verified-contact fallback strategy."
     elif count < THRESHOLD_ESTABLISHED:
-        return "LEARNING", f"Building communication preferences ({count} interaction{'s' if count > 1 else ''})."
+        return "LEARNING", f"Building communication preferences ({count} interaction{'s' if count > 1 else ''}). RecoverAI is learning customer communication preferences from recent interactions."
     else:
-        return "ESTABLISHED", f"Personalized based on {count} previous interactions."
+        return "ESTABLISHED", f"Personalized based on {count} previous interactions. Channel recommendations are based primarily on observed customer engagement patterns."
 
 
 # ---------------------------------------------------------------------------
@@ -244,12 +244,9 @@ def evaluate_channel_suitability(
     if customer and customer.opted_out_channels:
         opted_outs = {ch.strip().lower() for ch in customer.opted_out_channels.split(",") if ch.strip()}
 
-    # Customer communication maturity
-    if getattr(case, "case_number", None) == "DEMO-A-AUTO":
-        maturity = "COLD_START"
-        maturity_desc = "No previous communication history. RecoverAI is using a verified-contact fallback strategy."
-    else:
-        maturity, maturity_desc = evaluate_customer_maturity(customer, all_records)
+    # Customer communication maturity derived dynamically from interaction history
+    records_for_maturity = all_records if all_records else c_records
+    maturity, maturity_desc = evaluate_customer_maturity(customer, records_for_maturity)
 
     scores: dict[str, float] = {}
     decision_basis: list[DecisionBasisItem] = []
@@ -315,9 +312,6 @@ def evaluate_channel_suitability(
 
     # 2. LEARNING OR ESTABLISHED STRATEGY
     else:
-        confidence = "high" if maturity == "ESTABLISHED" else "medium"
-        confidence_score = 0.85 if maturity == "ESTABLISHED" else 0.72
-
         factor_scores_history: list[float] = []
         factor_scores_success: list[float] = []
         factor_scores_pref: list[float] = []
@@ -360,11 +354,34 @@ def evaluate_channel_suitability(
         suitability = scores[recommended]
         alternatives = [c for c in sorted_channels if c != recommended]
 
+        if maturity == "ESTABLISHED":
+            confidence = "high"
+            confidence_score = 0.85
+        else:
+            confidence = "medium"
+            confidence_score = 0.72
+
         # Check if there was an unheeded previous attempt
         prior_unheeded = any(r.channel != recommended and r.outcome in {"NO_ENGAGEMENT", "IGNORED", "DELIVERED", "SENT"} for r in c_records)
         prior_channel = c_records[-1].channel if c_records else None
 
-        if prior_unheeded and prior_channel and prior_channel != recommended:
+        has_clicked = any(r.outcome in {"LINK_CLICKED", "CLICKED"} for r in c_records)
+        is_awaiting = any(r.outcome in {"AWAITING_RESPONSE", "PENDING_RESPONSE"} for r in c_records)
+        reminders_sent = sum(1 for r in c_records if r.channel == recommended and r.attempt_number > 1)
+
+        if has_clicked and recommended == "whatsapp":
+            if reminders_sent > 0 or is_awaiting:
+                reason = (
+                    "WhatsApp demonstrated positive engagement when the customer opened the payment link "
+                    "after the initial communication. The reminder was sent through the same channel while "
+                    "RecoverAI continues to evaluate customer response patterns."
+                )
+            else:
+                reason = (
+                    "WhatsApp demonstrated positive engagement when the customer opened the payment link "
+                    "after the initial communication. A reminder through the same channel is recommended."
+                )
+        elif prior_unheeded and prior_channel and prior_channel != recommended:
             reason = (
                 f"The previous {prior_channel.upper()} notification was delivered but received no engagement. "
                 f"The system has deprioritized {prior_channel.upper()} and selected the next best available channel ({recommended.upper()})."

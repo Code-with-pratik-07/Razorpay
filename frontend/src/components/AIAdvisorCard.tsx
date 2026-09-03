@@ -46,10 +46,10 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
   } else if (followupAction === 'GENERATE_NEW_LINK') {
     actionBadge = 'Generate New Payment Link';
     businessInsight = 'The previous recovery link has expired. Regenerating a new secure payment link within policy limits is recommended.';
-  } else if (followupAction === 'AWAIT_RESPONSE') {
+  } else if (followupAction === 'AWAIT_RESPONSE' || previousOutcome === 'AWAITING_RESPONSE') {
     actionBadge = 'Wait for Customer Response';
-    businessInsight = 'A reminder has been dispatched. Observing customer response patterns before committing further recovery attempts.';
-  } else if (explanation.case_number === 'DEMO-A-AUTO' || (explanation.recovery_probability && explanation.recovery_probability >= 0.8)) {
+    businessInsight = "A WhatsApp reminder has been sent following the customer's earlier payment-link engagement. RecoverAI is currently waiting for customer activity before determining whether another recovery action is necessary.";
+  } else if (explanation.recovery_probability && explanation.recovery_probability >= 0.8 && !isTerminalCase) {
     actionBadge = 'Send WhatsApp Reminder';
     businessInsight = 'The customer opened the payment link but did not complete checkout. A reminder through WhatsApp is recommended because the customer has already demonstrated engagement.';
   }

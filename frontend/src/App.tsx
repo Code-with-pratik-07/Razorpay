@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RecoveryCase, Explanation, AuditEvent, Execution, DashboardStats } from "./types";
 import { TopNav } from "./components/TopNav";
 import { DemoControlCenter } from "./components/DemoControlCenter";
@@ -109,7 +109,10 @@ export default function App() {
     }
   }, []);
 
+  const activeRequestIdRef = useRef<string | null>(null);
+
   const loadDetails = useCallback(async (id: string) => {
+    activeRequestIdRef.current = id;
     setDetailLoading(true);
     try {
       const [caseData, explanationData, auditData] = await Promise.all([
@@ -117,14 +120,19 @@ export default function App() {
         api<Explanation>(`/api/cases/${id}/explanation`),
         api<AuditEvent[]>(`/api/cases/${id}/audit`),
       ]);
+      // Discard response if user already switched to another case
+      if (activeRequestIdRef.current !== id) return;
       setSelected(caseData);
       setExplanation(explanationData);
       setAudit(auditData);
       setError(null);
     } catch (requestError) {
+      if (activeRequestIdRef.current !== id) return;
       setError(extractErrorMessage(requestError, "Could not load case details."));
     } finally {
-      setDetailLoading(false);
+      if (activeRequestIdRef.current === id) {
+        setDetailLoading(false);
+      }
     }
   }, []);
 
@@ -186,6 +194,10 @@ export default function App() {
   useEffect(() => {
     setExecution(null);
     if (selectedId) {
+      // Clear out previous case data immediately when switching cases so no stale data from the previous case is displayed
+      setSelected((prev) => (prev?.id === selectedId ? prev : null));
+      setExplanation((prev) => (prev?.id === selectedId ? prev : null));
+      setAudit([]);
       void loadDetails(selectedId);
     } else {
       setSelected(null);

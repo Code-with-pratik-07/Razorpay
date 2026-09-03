@@ -7,5 +7,6 @@ interface BadgeProps {
 }
 
 export function Badge({ value, kind = "status" }: BadgeProps) {
-  return <span className={`badge ${kind} ${value.replaceAll("_", "-")}`}>{title(value)}</span>;
+  const displayVal = value.includes(" ") ? value : title(value);
+  return <span className={`badge ${kind} ${value.replaceAll(" ", "-").replaceAll("_", "-").toLowerCase()}`}>{displayVal}</span>;
 }

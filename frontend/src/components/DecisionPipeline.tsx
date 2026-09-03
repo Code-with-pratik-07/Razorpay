@@ -47,10 +47,23 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
     recoveryLabel = 'No Action';
   }
 
+  const followupAction = explanation?.channel_intelligence?.followup_decision?.next_action;
+  const followupOutcome = explanation?.channel_intelligence?.followup_decision?.previous_outcome;
+  const isAwaitingResponse = !isRecovered && !isAbandoned && (
+    followupAction === 'AWAIT_RESPONSE' ||
+    followupOutcome === 'AWAITING_RESPONSE'
+  );
+
   // Stage 5 Communication label
   const chName = title(explanation?.dispatched_channel || explanation?.recommended_channel || 'Email');
   let commLabel = 'Communication Ready';
-  if (commStatus === 'PAUSED' || humanStatus === 'REQUIRED') {
+  if (isRecovered) {
+    commLabel = `${title(explanation?.channel_intelligence?.attributed_channel || 'SMS')} Sent`;
+  } else if (isAbandoned) {
+    commLabel = 'Communication Closed';
+  } else if (isAwaitingResponse) {
+    commLabel = 'Awaiting Customer Response';
+  } else if (commStatus === 'PAUSED' || humanStatus === 'REQUIRED') {
     commLabel = 'Communication Paused';
   } else if (commStatus === 'READY') {
     commLabel = `${chName} Ready`;
@@ -60,16 +73,12 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
     commLabel = `${chName} Simulated`;
   } else if (commStatus === 'SENT') {
     commLabel = `${chName} Sent`;
-  } else if (isRecovered) {
-    commLabel = `${title(explanation?.channel_intelligence?.attributed_channel || 'SMS')} Sent`;
-  } else if (isAbandoned) {
-    commLabel = 'Communication Closed';
   }
 
   // Stage 6 Customer Outcome label
   let outcomeLabel = 'Awaiting Payment';
   if (isRecovered) {
-    outcomeLabel = 'Payment Completed';
+    outcomeLabel = 'Payment Recovered';
   } else if (isAbandoned) {
     outcomeLabel = 'Recovery Closed';
   } else if (custPayStatus === 'FAILED') {
@@ -119,8 +128,8 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
       </div>
 
       {/* Stage 5: COMMUNICATION */}
-      <div className={`pipeline-step ${commStatus === 'SENT' || commStatus === 'SIMULATED' || commStatus === 'GENERATED' || isRecovered ? 'completed' : commStatus === 'READY' ? 'active' : commStatus === 'PAUSED' ? 'warning' : 'active'}`}>
-        <div className="step-icon">{commStatus === 'SENT' || commStatus === 'SIMULATED' || isRecovered ? '✓' : commStatus === 'READY' || commStatus === 'GENERATED' ? '✉️' : commStatus === 'PAUSED' ? '⏳' : '•'}</div>
+      <div className={`pipeline-step ${commStatus === 'SENT' || commStatus === 'SIMULATED' || commStatus === 'GENERATED' || isAwaitingResponse || isRecovered ? 'completed' : commStatus === 'READY' ? 'active' : commStatus === 'PAUSED' ? 'warning' : 'active'}`}>
+        <div className="step-icon">{commStatus === 'SENT' || commStatus === 'SIMULATED' || isAwaitingResponse || isRecovered ? '✓' : commStatus === 'READY' || commStatus === 'GENERATED' ? '✉️' : commStatus === 'PAUSED' ? '⏳' : '•'}</div>
         <div className="step-content">
           <div className="step-title">5. COMMUNICATION</div>
           <div className="step-meta">{commLabel}</div>

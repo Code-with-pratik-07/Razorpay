@@ -225,7 +225,7 @@ class DispatchCommunicationRequest(BaseModel):
 @router.post("/{case_id}/dispatch-communication")
 def dispatch_communication(case_id: str, req: DispatchCommunicationRequest, db: Session = Depends(get_db)):
     case = _case(db, case_id)
-    if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
+    if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED} or (case.retry_count or 0) >= (case.max_retries or 3):
         raise HTTPException(status_code=400, detail="Cannot dispatch communication for a terminal case.")
     
     # Idempotency guard: prevent duplicate dispatches for the same channel on rapid repeated clicks
