@@ -61,3 +61,39 @@ def test_no_automatic_recovery_after_abandonment():
         assert res.status_code == 200
         assert res.json().get("status") == "abandoned"
         assert res.json().get("action") == "stopped"
+
+
+def test_attempt_limit_exhausted_consistency():
+    """Verify strict state consistency when retry_count >= max_retries."""
+    init_db()
+    with SessionLocal() as db:
+        case = db.query(PaymentCase).filter(PaymentCase.case_number.like("%DEMO%")).first()
+        assert case is not None
+        case.status = CaseStatus.RECOVERING
+        case.retry_count = 2
+        case.max_retries = 2
+        db.commit()
+        case_id = case.id
+
+    client = TestClient(app)
+
+    # 1. Case summary must reflect terminal ABANDONED status
+    res = client.get(f"/api/cases/{case_id}")
+    assert res.status_code == 200
+    assert res.json()["status"] == "abandoned"
+
+    # 2. Case explanation must have consistent terminal state across all sections
+    exp_res = client.get(f"/api/cases/{case_id}/explanation")
+    assert exp_res.status_code == 200
+    exp = exp_res.json()
+    assert exp["status"] == "abandoned"
+    assert exp["customer_payment_status"] == "EXHAUSTED"
+    assert exp["communication_status"] == "EXHAUSTED"
+    assert exp["channel_intelligence"]["status"] == "ATTEMPT_LIMIT_REACHED"
+    assert exp["channel_intelligence"]["followup_decision"]["next_action"] == "STOP_RECOVERY"
+    assert exp["channel_intelligence"]["followup_decision"]["recommended_wait_period"] == "None"
+
+    # 3. Next step must reject with HTTP 400
+    next_step_res = client.post(f"/api/cases/{case_id}/next-step")
+    assert next_step_res.status_code == 400
+    assert "terminal case" in next_step_res.json()["detail"].lower()

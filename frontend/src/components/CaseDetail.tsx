@@ -114,11 +114,17 @@ export function CaseDetail({
   const [isSending, setIsSending] = React.useState(false);
   const [isRunningNextStep, setIsRunningNextStep] = React.useState(false);
 
-  // Status flags
-  const isAbandoned = selected.status === 'abandoned';
-  const isHumanReview = selected.status === 'human_review';
-  const isRecovering = selected.status === 'recovering';
+  // Status flags & unified derived state
   const isRecovered = selected.status === 'recovered';
+  const isAttemptLimitReached =
+    selected.retry_count >= selected.max_retries ||
+    selected.status === 'abandoned' ||
+    explanation?.channel_intelligence?.status === 'ATTEMPT_LIMIT_REACHED';
+  const isAbandoned = selected.status === 'abandoned' || isAttemptLimitReached;
+  const followupAction = explanation?.channel_intelligence?.followup_decision?.next_action;
+  const isTerminalCase = isRecovered || isAbandoned || selected.status === 'closed' || followupAction === 'STOP_RECOVERY';
+  const isHumanReview = !isTerminalCase && (selected.status === 'human_review' || explanation?.human_review_status === 'REQUIRED');
+  const isRecovering = !isTerminalCase && !isHumanReview && (selected.status === 'recovering');
 
   // Dynamic available communications strictly from backend records & prepared channel
   const journey = explanation?.channel_intelligence?.communication_journey || [];
@@ -141,9 +147,9 @@ export function CaseDetail({
   const commStatus = explanation?.communication_status || selected.notification_status || 'PENDING';
   const humanReviewStatus = explanation?.human_review_status || 'NOT_REQUIRED';
   const dispatchedChannel = explanation?.dispatched_channel || selected.selected_channel;
-  const canApproveRecovery = (isHumanReview || humanReviewStatus === 'REQUIRED') && selected.retry_count < selected.max_retries;
+  const canApproveRecovery = (isHumanReview || humanReviewStatus === 'REQUIRED') && !isTerminalCase && !isAttemptLimitReached && selected.retry_count < selected.max_retries;
 
-  if (commStatus === 'READY' && humanReviewStatus !== 'REQUIRED') {
+  if (commStatus === 'READY' && humanReviewStatus !== 'REQUIRED' && !isTerminalCase && !isAttemptLimitReached) {
     const hasExisting = actualComms.some(c => c.channel === recommendedChannel.toLowerCase());
     if (!hasExisting) {
       actualComms.push({
@@ -255,6 +261,26 @@ export function CaseDetail({
 
   // Normalized Communication Status Display
   const getCommunicationStatusInfo = () => {
+    if (isRecovered || commStatus === 'COMPLETED' || selected.status === 'recovered') {
+      return {
+        icon: "✓",
+        badge: "Communication Completed",
+        text: "Payment recovered successfully",
+        cls: "status-completed",
+        canView: true,
+        isReady: false,
+      };
+    }
+    if (isTerminalCase || isAttemptLimitReached || isAbandoned || commStatus === 'EXHAUSTED' || selected.status === 'abandoned') {
+      return {
+        icon: "■",
+        badge: "Communication Stopped",
+        text: "Maximum recovery attempt limit reached",
+        cls: "status-exhausted",
+        canView: true,
+        isReady: false,
+      };
+    }
     if (humanReviewStatus === 'REQUIRED') {
       return {
         icon: "⏳",
@@ -302,26 +328,6 @@ export function CaseDetail({
         badge: "Email Sent",
         text: "Email delivered to customer",
         cls: "status-sent",
-        canView: true,
-        isReady: false,
-      };
-    }
-    if (commStatus === 'COMPLETED' || selected.status === 'recovered') {
-      return {
-        icon: "✓",
-        badge: "Communication Completed",
-        text: "Payment recovered successfully",
-        cls: "status-completed",
-        canView: true,
-        isReady: false,
-      };
-    }
-    if (commStatus === 'EXHAUSTED' || selected.status === 'abandoned') {
-      return {
-        icon: "■",
-        badge: "Communication Stopped",
-        text: "Maximum attempt limit reached",
-        cls: "status-exhausted",
         canView: true,
         isReady: false,
       };
@@ -376,6 +382,8 @@ export function CaseDetail({
   const channelIntel = explanation?.channel_intelligence;
 
   const canRunNextStep = Boolean(
+    !isTerminalCase &&
+    !isAttemptLimitReached &&
     !isRecovered &&
     !isAbandoned &&
     !isHumanReview &&
@@ -395,7 +403,7 @@ export function CaseDetail({
             <span style={{marginLeft: 12, fontSize: '1.25rem', color: '#10b981', fontWeight: 600}}>
               {formatINR(selected.amount)}
             </span>
-            <Badge value={selected.status} />
+            <Badge value={isRecovered ? 'recovered' : isAbandoned ? 'abandoned' : selected.status} />
           </h2>
           <div className="details-meta">
             {selected.customer_email ?? 'Customer'} • {title(selected.payment_method)}
@@ -558,7 +566,7 @@ export function CaseDetail({
                       );
                     })}
 
-                    {!isRecovered && !isAbandoned && channelIntel.followup_decision?.next_action !== 'AWAIT_RESPONSE' && (
+                    {!isTerminalCase && !isAttemptLimitReached && channelIntel.followup_decision?.next_action !== 'AWAIT_RESPONSE' && channelIntel.followup_decision?.next_action !== 'STOP_RECOVERY' && (
                       <div className="journey-v-item next-action-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-pending" />
@@ -582,7 +590,7 @@ export function CaseDetail({
                       </div>
                     )}
 
-                    {isAbandoned && (
+                    {(isTerminalCase || isAttemptLimitReached || isAbandoned) && !isRecovered && (
                       <div className="journey-v-item terminal-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-terminal" />
@@ -590,7 +598,7 @@ export function CaseDetail({
                         </div>
                         <div className="journey-compact-card" style={{borderColor: '#7f1d1d', background: 'rgba(69, 10, 10, 0.4)'}}>
                           <span style={{fontSize: '0.82rem', color: '#fca5a5'}}>
-                            Attempt Limit Reached • Recovery Closed
+                            Maximum recovery attempt limit reached.
                           </span>
                         </div>
                       </div>
@@ -670,16 +678,23 @@ export function CaseDetail({
           <div className="payment-recovery-card terminal-banner terminal-abandoned" style={{
             background: '#271212', border: '1px solid #7f1d1d', borderRadius: 8, padding: '20px', color: '#fee2e2'
           }}>
-            <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-              <span style={{fontSize: '1.4rem'}}>■</span>
-              <h3 style={{margin: 0, color: '#f87171', fontSize: '1.1rem', letterSpacing: '0.05em'}}>RECOVERY CLOSED</h3>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+                <span style={{fontSize: '1.4rem'}}>■</span>
+                <h3 style={{margin: 0, color: '#f87171', fontSize: '1.1rem', letterSpacing: '0.05em'}}>RECOVERY CLOSED</h3>
+              </div>
+              <span className="pr-status-badge" style={{background: '#450a0a', color: '#fca5a5', border: '1px solid #7f1d1d', fontSize: '0.78rem', padding: '4px 10px', borderRadius: 4}}>
+                {isLinkExpired ? '🔴 Expired Payment Link' : currentLink ? 'Existing Payment Link' : 'Recovery Closed'}
+              </span>
             </div>
-            <div style={{fontSize: '0.95rem', margin: '10px 0 4px 0', color: '#fca5a5'}}>
-              Maximum permitted recovery attempts were reached without payment completion.
+            <div style={{fontSize: '0.95rem', margin: '12px 0 6px 0', color: '#fca5a5'}}>
+              Maximum permitted recovery attempts were reached without payment completion. Automated recovery communication has stopped.
             </div>
-            <div style={{fontSize: '0.85rem', color: '#cbd5e1'}}>
-              No further automated recovery actions will be performed.
-            </div>
+            {currentLink && !isLinkExpired && (
+              <div style={{fontSize: '0.85rem', color: '#cbd5e1', marginTop: 8}}>
+                Existing Payment Link remains technically valid until {formatExpiryDate(selected.payment_link_expires_at)}, but no further recovery actions will be scheduled.
+              </div>
+            )}
           </div>
         ) : canApproveRecovery ? (
           <div className="action-panel" style={{background: '#1e293b', border: '1px solid #f59e0b', borderRadius: 8, padding: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12}}>
@@ -791,8 +806,8 @@ export function CaseDetail({
                 <span className="badge" style={{background: '#3b1515', color: '#f87171', fontWeight: 600, padding: '4px 10px', borderRadius: 4}}>
                   RECOVERY CLOSED
                 </span>
-                <p style={{margin: '8px 0 0 0', color: '#94a3b8', fontSize: '0.9rem'}}>
-                  Maximum permitted recovery attempts were reached without payment completion.
+                <p style={{margin: '8px 0 0 0', color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5}}>
+                  The maximum number of recovery attempts has been reached without successful payment. Automated recovery communication has been stopped.
                 </p>
               </div>
             ) : selected.last_payment_status === 'FAILED' ? (

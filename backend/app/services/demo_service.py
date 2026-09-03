@@ -11,10 +11,13 @@ from app.services.audit_service import log_audit_event
 from app.ml.train import generate_training_data
 
 def _simulate_execution(db, case):
-    case.status = CaseStatus.RECOVERING
     case.retry_count += 1
     case.last_retry_at = datetime.now(timezone.utc).replace(tzinfo=None)
     case.recovery_action = RecoveryAction.PAYMENT_LINK
+    if case.retry_count >= case.max_retries:
+        case.status = CaseStatus.ABANDONED
+    else:
+        case.status = CaseStatus.RECOVERING
     log_audit_event(db, case.id, "recovery_started", {"advisory_action": "payment_link", "executed_action": "payment_link", "automatic": True})
     log_audit_event(db, case.id, "payment_link_created", {"payment_link_id": f"inv_sim_{uuid.uuid4().hex[:8]}", "url": "mock_demo_real_simulated"})
     from app.services.notification_service import send_recovery_email

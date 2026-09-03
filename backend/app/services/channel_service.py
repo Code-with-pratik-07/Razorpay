@@ -426,8 +426,10 @@ def evaluate_channel_suitability(
     # Status evaluation
     if case.status in {CaseStatus.RECOVERED, CaseStatus.CLOSED}:
         status = "COMPLETED"
+        reason = "Payment completed successfully. All automated recovery actions stopped."
     elif case.status == CaseStatus.ABANDONED or ((case.retry_count or 0) >= (case.max_retries or 3)):
         status = "ATTEMPT_LIMIT_REACHED"
+        reason = f"Maximum recovery attempts ({case.max_retries}) exhausted. Communication stopped."
     elif case.status == CaseStatus.HUMAN_REVIEW or (case.policy_check_passed is False and case.status != CaseStatus.RECOVERING):
         status = "POLICY_BLOCKED"
     else:

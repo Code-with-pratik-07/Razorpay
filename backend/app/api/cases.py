@@ -24,13 +24,24 @@ def _case(db: Session, case_id: str) -> PaymentCase:
     )
     if case is None:
         raise HTTPException(status_code=404, detail="Recovery case not found.")
+
+    # Precedence: If retry limit reached and not recovered/closed, transition to ABANDONED
+    if case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED} and (case.retry_count or 0) >= (case.max_retries or 3):
+        if case.status != CaseStatus.ABANDONED:
+            case.status = CaseStatus.ABANDONED
+            case.recovery_action = RecoveryAction.NONE
+            db.commit()
     return case
 
 
 def _summary(case: PaymentCase) -> dict:
+    status_val = case.status.value
+    if case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED} and (case.retry_count or 0) >= (case.max_retries or 3):
+        status_val = CaseStatus.ABANDONED.value
+
     return {
         "id": case.id, "case_number": case.case_number, "customer_email": case.customer.email, 
-        "amount": case.amount, "currency": case.currency, "status": case.status.value, 
+        "amount": case.amount, "currency": case.currency, "status": status_val, 
         "failure_reason": case.failure_reason, "payment_method": case.payment_method, 
         "recovery_probability": case.recovery_probability, "recovery_action": case.recovery_action.value, 
         "retry_count": case.retry_count, "max_retries": case.max_retries, 
@@ -72,12 +83,20 @@ def explanation(case_id: str, db: Session = Depends(get_db)) -> CaseExplanation:
 
 from datetime import datetime, timezone
 from pydantic import BaseModel
-from app.models.payment_case import CaseStatus
-from app.services.channel_service import dispatch_channel_communication
+from app.models.payment_case import CaseStatus, RecoveryAction
+from app.models.communication_record import CommunicationRecord
+from app.services.channel_service import dispatch_channel_communication, evaluate_channel_suitability, get_case_channel_intelligence
 
 def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
     events = list_audit_events(db, case.id)
-    
+
+    is_attempt_exhausted = (case.retry_count or 0) >= (case.max_retries or 3)
+    if is_attempt_exhausted and case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED}:
+        if case.status != CaseStatus.ABANDONED:
+            case.status = CaseStatus.ABANDONED
+            case.recovery_action = RecoveryAction.NONE
+            db.commit()
+
     first_policy_check = next((e for e in events if e.event_type == "policy_check"), None)
     if first_policy_check:
         policy = {
@@ -122,10 +141,10 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
     else:
         payment_link_status = "NONE"
 
-    # 3. Customer payment workflow state
+    # 3. Customer payment workflow state (Precedence: RECOVERED > ABANDONED/EXHAUSTED > FAILED > PENDING > NONE)
     if case.status == CaseStatus.RECOVERED:
         customer_payment_status = "RECEIVED"
-    elif case.status == CaseStatus.ABANDONED:
+    elif case.status in {CaseStatus.ABANDONED, CaseStatus.CLOSED} or is_attempt_exhausted:
         customer_payment_status = "EXHAUSTED"
     elif case.last_payment_status == "FAILED":
         customer_payment_status = "FAILED"
@@ -141,10 +160,10 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
         last_dispatched = channel_intelligence.last_channel_used or case.selected_channel
     dispatched_channel = last_dispatched
 
-    # 5. Communication workflow state
+    # 5. Communication workflow state (Precedence: RECOVERED/CLOSED > ABANDONED/EXHAUSTED > HUMAN_REVIEW > Notification states)
     if case.status in {CaseStatus.RECOVERED, CaseStatus.CLOSED}:
         communication_status = "COMPLETED"
-    elif case.status == CaseStatus.ABANDONED:
+    elif case.status == CaseStatus.ABANDONED or is_attempt_exhausted:
         communication_status = "EXHAUSTED"
     elif human_review_status == "REQUIRED":
         communication_status = "PAUSED"
@@ -163,11 +182,22 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
     else:
         communication_status = "PAUSED"
 
+    # 6. AI Advisor Decision (Retain historical analysis event from audit trail with fallback)
+    ai_decision = _last_ai_decision(db, case.id)
+    if not ai_decision and (case.status == CaseStatus.ABANDONED or is_attempt_exhausted):
+        ai_decision = AIDecision(
+            recommended_action="none",
+            reasoning="The maximum permitted recovery attempts have been reached without successful payment. Further automated communication should stop to prevent unnecessary customer outreach.",
+            customer_message="Recovery closed.",
+            confidence=0.95,
+            source="groq",
+        )
+
     return CaseExplanation(
         **_summary(case),
         ml={"recovery_probability": case.recovery_probability, "features": _features(case)},
         policy=policy,
-        ai=_last_ai_decision(db, case.id),
+        ai=ai_decision,
         customer_history=history,
         ml_decision=ml_routing_decision(case.recovery_probability, is_cold_start),
         execution_error=execution_error,
@@ -317,6 +347,13 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
             "wait_period": followup.recommended_wait_period,
             "reason": followup.reason,
         })
+
+        if attempt_num >= (case.max_retries or 3):
+            case.status = CaseStatus.ABANDONED
+            case.recovery_action = RecoveryAction.NONE
+            db.commit()
+            log_audit_event(db, case.id, "recovery_closed", {"reason": "Maximum recovery attempts reached."})
+
         return {"action": "reminder_dispatched", "channel": channel, "attempt": attempt_num, "explanation": _explanation(db, case)}
 
     elif followup.next_action == "SWITCH_CHANNEL":
@@ -351,6 +388,13 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
             "attempt_number": attempt_num,
             "reason": followup.reason,
         })
+
+        if attempt_num >= (case.max_retries or 3):
+            case.status = CaseStatus.ABANDONED
+            case.recovery_action = RecoveryAction.NONE
+            db.commit()
+            log_audit_event(db, case.id, "recovery_closed", {"reason": "Maximum recovery attempts reached."})
+
         return {"action": "channel_switched", "channel": channel, "attempt": attempt_num, "explanation": _explanation(db, case)}
 
     elif followup.next_action == "DISPATCH_INITIAL":
