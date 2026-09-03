@@ -560,7 +560,7 @@ export function CaseDetail({
                         <span>■</span> <span style={{marginLeft: 4}}>COMMUNICATION STOPPED</span>
                       </div>
                       <div style={{color: '#fca5a5', fontSize: '0.88rem', marginTop: 6, lineHeight: 1.5}}>
-                        Maximum recovery attempts reached.<br />No further automated communication will be scheduled.
+                        Maximum communication attempts reached.<br />No further automated communication will be scheduled.
                       </div>
                     </div>
                   )
@@ -692,16 +692,13 @@ export function CaseDetail({
                       <div className="journey-v-item terminal-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-terminal" />
-                          <span className="journey-v-title-text" style={{color: '#f87171'}}>
-                            <span style={{marginRight: 6}}>■</span> RECOVERY CLOSED
-                          </span>
                         </div>
-                        <div className="journey-compact-card" style={{borderColor: '#7f1d1d', background: 'rgba(69, 10, 10, 0.4)', padding: '10px 14px'}}>
+                        <div className="journey-compact-card" style={{borderColor: '#7f1d1d', background: 'rgba(69, 10, 10, 0.4)', padding: '10px 14px', marginTop: 6}}>
                           <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: 6}}>
                             <span>■</span> RECOVERY CLOSED
                           </div>
                           <div style={{fontSize: '0.78rem', color: '#fca5a5', marginTop: 3}}>
-                            Maximum recovery attempt limit reached.
+                            Maximum communication attempt limit reached.
                           </div>
                         </div>
                       </div>
@@ -825,13 +822,15 @@ export function CaseDetail({
           }}>
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 14}}>
               <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-                <span style={{fontSize: '1.3rem', color: '#f87171', fontWeight: 800}}>■</span>
+                <span style={{fontSize: '1.3rem', color: '#f87171', fontWeight: 800}}>
+                  {isLinkExpired ? '🔴' : currentLink ? '🔗' : '■'}
+                </span>
                 <h3 style={{margin: 0, color: '#f87171', fontSize: '1.05rem', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase'}}>
-                  RECOVERY CLOSED
+                  {isLinkExpired ? 'EXPIRED PAYMENT LINK' : currentLink ? 'EXISTING PAYMENT LINK' : 'NO PAYMENT LINK'}
                 </h3>
               </div>
               <span className="pr-status-badge" style={{background: '#450a0a', color: '#fca5a5', border: '1px solid #7f1d1d', fontSize: '0.78rem', padding: '4px 10px', borderRadius: 4, fontWeight: 700}}>
-                {isLinkExpired ? '🔴 Expired Payment Link' : currentLink ? 'Existing Payment Link' : 'Recovery Closed'}
+                {isLinkExpired ? 'Expired' : currentLink ? 'Available' : 'Unavailable'}
               </span>
             </div>
 
