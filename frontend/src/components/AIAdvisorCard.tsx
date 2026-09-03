@@ -65,7 +65,9 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
   else if (lastPaymentFailed) {
     actionBadge = isAwaitingResponse ? 'Wait for Customer Response' : 'Follow-up on Payment Intent';
     const sameMethodFailures = attempts.filter(a => a.status === 'failed' && a.payment_method?.toLowerCase() === paymentAttemptMethod.toLowerCase()).length;
-    if (sameMethodFailures >= 2) {
+    if (isAwaitingResponse) {
+      businessInsight = 'The customer demonstrated payment intent by attempting payment through the recovery link, but the transaction was unsuccessful. The payment attempt has been recorded independently and did not consume a communication attempt. RecoverAI is currently evaluating customer activity before deciding whether to use the remaining recovery communication opportunity.';
+    } else if (sameMethodFailures >= 2) {
       businessInsight = `The customer engaged with the recovery payment link and repeatedly attempted payment using ${title(paymentAttemptMethod)}, but transactions were unsuccessful. This indicates clear payment intent; recommending an alternative payment method (such as UPI or Card) is advised.`;
     } else {
       businessInsight = `The customer engaged with the recovery payment link and attempted to complete payment using ${title(paymentAttemptMethod)}, but the transaction was unsuccessful. This indicates payment intent and RecoverAI should consider the failed payment attempt when determining the next recovery action.`;

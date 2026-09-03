@@ -496,9 +496,15 @@ export function CaseDetail({
                 </div>
               )}
               <div className="stat-row">
-                <span>Attempts Used</span>
+                <span>Communication Attempts</span>
                 <b>{selected.retry_count} of {selected.max_retries}</b>
               </div>
+              {paymentAttempts.length > 0 && (
+                <div className="stat-row">
+                  <span>Recovery Payment Attempts</span>
+                  <b>{paymentAttempts.length}</b>
+                </div>
+              )}
               <div className="stat-row">
                 <span>Customer Lifetime Value</span>
                 <b>{formatINR(explanation.customer_history.lifetime_value)}</b>
@@ -694,6 +700,18 @@ export function CaseDetail({
                     <span>🔄</span> FOLLOW-UP DECISION
                   </div>
                 </div>
+
+                {isAwaitingResponse && selected.retry_count < selected.max_retries && (
+                  <div style={{background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: 6, padding: '12px 14px', marginBottom: 14, fontSize: '0.85rem', color: '#93c5fd', lineHeight: 1.5}}>
+                    <b>{selected.max_retries - selected.retry_count} communication attempt{selected.max_retries - selected.retry_count > 1 ? 's' : ''} remain{selected.max_retries - selected.retry_count > 1 ? '' : 's'}.</b> RecoverAI is currently observing customer activity before deciding whether the final recovery communication is necessary.
+                  </div>
+                )}
+                
+                {isAwaitingResponse && latestPaymentAttempt?.status === 'failed' && (
+                  <div style={{background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 6, padding: '12px 14px', marginBottom: 14, fontSize: '0.85rem', color: '#fcd34d', lineHeight: 1.5}}>
+                    <b>Payment activity detected:</b> The customer attempted payment using {title(latestPaymentAttempt.payment_method || 'Netbanking')}, but the transaction failed. This does not consume a communication attempt. RecoverAI will consider this payment intent during the next recovery evaluation.
+                  </div>
+                )}
 
                 <div className="fd-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: canRunNextStep ? 14 : 0}}>
                   <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
