@@ -132,8 +132,12 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
             "ml_decision": ml_decision,
         })
     else:
+        status_to_keep = (
+            CaseStatus.HUMAN_REVIEW if original_status == CaseStatus.HUMAN_REVIEW
+            else (CaseStatus.RECOVERING if original_status == CaseStatus.RECOVERING else CaseStatus.FAILED)
+        )
         if ml_decision == "LOW":
-            case.status = CaseStatus.HUMAN_REVIEW if original_status == CaseStatus.HUMAN_REVIEW else CaseStatus.FAILED
+            case.status = status_to_keep
             log_audit_event(db, case.id, "low_probability_routing", {
                 "reason": "Predicted recovery probability is low. 1 recovery attempt allowed.",
                 "recovery_probability": case.recovery_probability,
@@ -142,7 +146,7 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
                 "threshold": ML_UNCERTAIN_THRESHOLD,
             })
         elif ml_decision == "UNCERTAIN":
-            case.status = CaseStatus.HUMAN_REVIEW if original_status == CaseStatus.HUMAN_REVIEW else CaseStatus.FAILED
+            case.status = status_to_keep
             log_audit_event(db, case.id, "uncertain_probability_routing", {
                 "reason": "Recovery confidence is uncertain, but an automatic recovery attempt is permitted.",
                 "recovery_probability": case.recovery_probability,
@@ -151,10 +155,10 @@ def analyze_case(db: Session, case: PaymentCase, advisor: GroqRecoveryAdvisor | 
                 "source": "ml_routing",
             })
         elif ml_decision == "COLD_START":
-            case.status = CaseStatus.HUMAN_REVIEW if original_status == CaseStatus.HUMAN_REVIEW else CaseStatus.FAILED
+            case.status = status_to_keep
             log_audit_event(db, case.id, "cold_start_routing", {"message": "Using COLD_START recovery policy", "max_retries": 2})
         else:  # HIGH
-            case.status = CaseStatus.HUMAN_REVIEW if original_status == CaseStatus.HUMAN_REVIEW else CaseStatus.FAILED
+            case.status = status_to_keep
 
     # -----------------------------------------------------------------
     # Channel Intelligence evaluation
@@ -363,6 +367,7 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
     if updated == 0:
         db.rollback()
         return {"action": "no_action", "status": case.status.value, "message": "Concurrent recovery blocked.", "payment_link_url": None}
+    case.status = CaseStatus.RECOVERING
     db.commit()
 
     # Razorpay expiry: 7 days

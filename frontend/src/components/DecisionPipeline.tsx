@@ -15,8 +15,13 @@ export function DecisionPipeline({ selected, explanation }: DecisionPipelineProp
   const followupOutcome = explanation?.channel_intelligence?.followup_decision?.previous_outcome;
   const isRecoveryClosed = selected.status === 'abandoned' || selected.status === 'closed' || isAttemptLimitReached || followupAction === 'STOP_RECOVERY';
   const isAbandoned = isRecoveryClosed;
-  const isRecovering = !isRecoveryClosed && selected.status === 'recovering';
   const isRecovered = selected.status === 'recovered';
+  const isRecovering = !isRecoveryClosed && !isRecovered && (
+    selected.status === 'recovering' ||
+    explanation?.payment_link_status === 'ACTIVE' ||
+    (selected.retry_count > 0) ||
+    explanation?.human_review_status === 'APPROVED'
+  );
 
   // Derived / backend workflow states
   const humanStatus = explanation?.human_review_status ?? (explanation?.manual_execution ? 'APPROVED' : (explanation?.policy?.requires_human_approval && !explanation?.policy?.allowed) ? 'REQUIRED' : 'NOT_REQUIRED');

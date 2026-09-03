@@ -38,6 +38,11 @@ def _summary(case: PaymentCase) -> dict:
     status_val = case.status.value
     if case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED} and (case.retry_count or 0) >= (case.max_retries or 3):
         status_val = CaseStatus.ABANDONED.value
+    elif case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED, CaseStatus.ABANDONED}:
+        now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+        has_active_link = bool(case.payment_link_expires_at and case.payment_link_expires_at > now_dt)
+        if case.status == CaseStatus.FAILED and (has_active_link or (case.retry_count or 0) > 0 or case.notification_status in {"SENT", "SIMULATED", "WHATSAPP_SIMULATED", "SMS_SIMULATED"}):
+            status_val = CaseStatus.RECOVERING.value
 
     return {
         "id": case.id, "case_number": case.case_number, "customer_email": case.customer.email, 
@@ -95,6 +100,13 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
         if case.status != CaseStatus.ABANDONED:
             case.status = CaseStatus.ABANDONED
             case.recovery_action = RecoveryAction.NONE
+            db.commit()
+    elif case.status == CaseStatus.FAILED and case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED, CaseStatus.ABANDONED}:
+        now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+        has_active_link = bool(case.payment_link_expires_at and case.payment_link_expires_at > now_dt)
+        has_human_approval = any(e.event_type in {"human_approval", "manual_review_approved"} for e in events)
+        if has_active_link or (case.retry_count or 0) > 0 or has_human_approval:
+            case.status = CaseStatus.RECOVERING
             db.commit()
 
     first_policy_check = next((e for e in events if e.event_type == "policy_check"), None)

@@ -122,8 +122,13 @@ export function CaseDetail({
   const isRecoveryClosed = selected.status === 'abandoned' || selected.status === 'closed' || isAttemptLimitReached || followupAction === 'STOP_RECOVERY';
   const isAbandoned = isRecoveryClosed;
   const isTerminalCase = isRecovered || isRecoveryClosed;
-  const isHumanReview = !isTerminalCase && (selected.status === 'human_review' || explanation?.human_review_status === 'REQUIRED');
-  const isRecovering = !isTerminalCase && !isHumanReview && (selected.status === 'recovering');
+  const isHumanReview = !isTerminalCase && (selected.status === 'human_review' || explanation?.human_review_status === 'REQUIRED') && explanation?.human_review_status !== 'APPROVED';
+  const isRecovering = !isTerminalCase && !isHumanReview && (
+    selected.status === 'recovering' ||
+    explanation?.payment_link_status === 'ACTIVE' ||
+    (selected.retry_count > 0) ||
+    explanation?.human_review_status === 'APPROVED'
+  );
 
   // Dynamic available communications strictly from backend records & prepared channel
   const journey = explanation?.channel_intelligence?.communication_journey || [];
@@ -432,7 +437,7 @@ export function CaseDetail({
             <span style={{marginLeft: 12, fontSize: '1.25rem', color: '#10b981', fontWeight: 600}}>
               {formatINR(selected.amount)}
             </span>
-            <Badge value={isRecovered ? 'recovered' : isAbandoned ? 'abandoned' : selected.status} />
+            <Badge value={isRecovered ? 'recovered' : isAbandoned ? 'abandoned' : (isHumanReview ? 'human_review' : (isRecovering ? 'recovering' : selected.status))} />
           </h2>
           <div className="details-meta" style={{wordBreak: 'break-word'}}>
             {selected.customer_email ?? 'Customer'} • {title(selected.payment_method)}
@@ -498,8 +503,8 @@ export function CaseDetail({
                     </span>
                   </div>
 
-                  <span className={`channel-status-pill ${isRecoveryClosed ? 'status-exhausted' : `status-${commStatus.toLowerCase()}`}`}>
-                    {isRecoveryClosed ? 'Communication Stopped' : commInfo.badge}
+                  <span className={`channel-status-pill ${isRecoveryClosed ? 'status-exhausted' : (isAwaitingResponse ? 'status-awaiting' : `status-${commStatus.toLowerCase()}`)}`}>
+                    {isRecoveryClosed ? 'Communication Stopped' : (isAwaitingResponse ? 'Awaiting Customer Response' : commInfo.badge)}
                   </span>
                 </div>
 

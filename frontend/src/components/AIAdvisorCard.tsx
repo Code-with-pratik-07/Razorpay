@@ -9,32 +9,65 @@ interface AIAdvisorCardProps {
 export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
   if (!explanation?.ai) return null;
 
+  const journey = explanation.channel_intelligence?.communication_journey || [];
+  const latestComm = journey.length > 0 ? journey[journey.length - 1] : null;
+  const followupDecision = explanation.channel_intelligence?.followup_decision;
+  const followupAction = followupDecision?.next_action;
+  const previousOutcome = followupDecision?.previous_outcome;
+
   const isRecovered = explanation.status === 'recovered';
   const isAttemptLimitReached = explanation.retry_count >= explanation.max_retries;
-  const followupAction = explanation.channel_intelligence?.followup_decision?.next_action;
   const isRecoveryClosed = explanation.status === 'abandoned' || explanation.status === 'closed' || isAttemptLimitReached || followupAction === 'STOP_RECOVERY';
   const isTerminalCase = isRecovered || isRecoveryClosed;
 
   const isApproved = explanation.human_review_status === 'APPROVED' || explanation.manual_execution;
-  const isHumanReview = explanation.human_review_status === 'REQUIRED' || explanation.status === 'human_review';
-  const previousOutcome = explanation.channel_intelligence?.followup_decision?.previous_outcome;
+  const isHumanReview = !isTerminalCase && (explanation.human_review_status === 'REQUIRED' || explanation.status === 'human_review') && !isApproved;
+
+  // Authoritative Awaiting Response check
+  const isAwaitingResponse = !isTerminalCase && (
+    latestComm?.outcome === 'AWAITING_RESPONSE' ||
+    latestComm?.status === 'AWAITING_RESPONSE' ||
+    followupAction === 'AWAIT_RESPONSE' ||
+    previousOutcome === 'AWAITING_RESPONSE'
+  );
+
+  // Prepared communication ready for initial dispatch (after manual approval)
+  const isPreparedNotDispatched = !isTerminalCase && !isAwaitingResponse && isApproved && (
+    explanation.communication_status === 'READY' ||
+    explanation.communication_status === 'GENERATED' ||
+    journey.length === 0
+  );
 
   let actionBadge = 'Automatic Recovery';
   let businessInsight = explanation.ai.reasoning;
 
+  // 1. RECOVERED
   if (isRecovered) {
     actionBadge = 'Close Recovery Successfully';
-    businessInsight = `Payment recovery completed successfully. The customer captured payment following ${title(explanation.channel_intelligence?.attributed_channel || 'SMS')} recovery communication.`;
-  } else if (isRecoveryClosed) {
+    businessInsight = `Payment recovery completed successfully. The customer captured payment following ${title(explanation.channel_intelligence?.attributed_channel || latestComm?.channel || 'SMS')} recovery communication.`;
+  } 
+  // 2. ABANDONED / CLOSED / Attempt limit reached
+  else if (isRecoveryClosed) {
     actionBadge = 'Close Recovery';
     businessInsight = 'The maximum permitted recovery attempts have been reached without successful payment. Further automated communication should stop to prevent unnecessary customer outreach.';
-  } else if (isHumanReview && !isApproved) {
+  } 
+  // 3. HUMAN_REVIEW and not yet approved
+  else if (isHumanReview) {
     actionBadge = 'Manual Review Required';
     businessInsight = 'Transaction policy requires manual oversight. Human approval ensures compliance before recovery outreach begins.';
-  } else if (isApproved && !isRecovered) {
+  } 
+  // 4. AWAITING_RESPONSE (takes strict precedence over approved / manual recovery state)
+  else if (isAwaitingResponse) {
+    actionBadge = 'Wait for Customer Response';
+    businessInsight = 'The latest recovery communication has been delivered and RecoverAI is currently waiting for customer activity before determining whether another recovery action is necessary.';
+  } 
+  // 5. Communication prepared but not dispatched
+  else if (isPreparedNotDispatched) {
     actionBadge = 'Dispatch Recovery Communication';
     businessInsight = 'Manual review approved. Secure payment link prepared for customer delivery via the recommended verified channel.';
-  } else if (previousOutcome === 'FAILED_DELIVERY') {
+  } 
+  // 6. Otherwise: follow-up or fallback decision
+  else if (previousOutcome === 'FAILED_DELIVERY') {
     actionBadge = 'Use Immediate Channel Fallback';
     businessInsight = 'Delivery failed on the initial channel. Immediately switching to an alternate verified communication channel without delay.';
   } else if (previousOutcome === 'LINK_CLICKED' || followupAction === 'RETRY_SAME_CHANNEL') {
@@ -46,9 +79,6 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
   } else if (followupAction === 'GENERATE_NEW_LINK') {
     actionBadge = 'Generate New Payment Link';
     businessInsight = 'The previous recovery link has expired. Regenerating a new secure payment link within policy limits is recommended.';
-  } else if (followupAction === 'AWAIT_RESPONSE' || previousOutcome === 'AWAITING_RESPONSE') {
-    actionBadge = 'Wait for Customer Response';
-    businessInsight = "A WhatsApp reminder has been sent following the customer's earlier payment-link engagement. RecoverAI is currently waiting for customer activity before determining whether another recovery action is necessary.";
   } else if (explanation.recovery_probability && explanation.recovery_probability >= 0.8 && !isTerminalCase) {
     actionBadge = 'Send WhatsApp Reminder';
     businessInsight = 'The customer opened the payment link but did not complete checkout. A reminder through WhatsApp is recommended because the customer has already demonstrated engagement.';

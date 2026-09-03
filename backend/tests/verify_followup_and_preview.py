@@ -115,6 +115,21 @@ def run():
     exp_b_disp2 = get(f"/api/cases/{demo_b['id']}/explanation")
     assert len(exp_b_disp2["channel_intelligence"]["communication_journey"]) == 1
 
+    print("\nSimulating next recovery step for DEMO-B-HUMAN (Attempt 2 - WhatsApp)...")
+    step_res = post(f"/api/cases/{demo_b['id']}/next-step")
+    exp_b_step = get(f"/api/cases/{demo_b['id']}/explanation")
+    journey_b_step = exp_b_step["channel_intelligence"]["communication_journey"]
+    followup_b_step = exp_b_step["channel_intelligence"]["followup_decision"]
+    print("Post-step journey:", [f"{j['channel']} (Attempt {j['attempt_number']}, outcome={j.get('outcome')})" for j in journey_b_step])
+    print("Post-step follow-up decision:", followup_b_step)
+    assert len(journey_b_step) == 2
+    assert journey_b_step[-1]["channel"] == "whatsapp"
+    assert journey_b_step[-1]["outcome"] == "AWAITING_RESPONSE"
+    assert followup_b_step["next_action"] == "AWAIT_RESPONSE"
+    assert followup_b_step["previous_outcome"] == "AWAITING_RESPONSE"
+    assert followup_b_step["selected_channel"] == "whatsapp"
+    assert exp_b_step["status"] == "recovering"
+
     # ----------------------------------------------------
     # DEMO-C-RECOVERED
     # ----------------------------------------------------
