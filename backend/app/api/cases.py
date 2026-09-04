@@ -8,7 +8,7 @@ from app.db.database import get_db
 from app.models.payment_case import PaymentCase, CaseStatus, RecoveryAction, NextActionType
 from app.models.communication_record import CommunicationRecord
 from app.schemas.recovery import CaseExplanation, CaseSummary, ExecuteRecoveryResponse, AIDecision, PaymentAttemptSummary, RecordPaymentAttemptRequest
-from app.services.recovery_service import _features, _last_ai_decision, _policy, analyze_case, execute_recovery, ml_routing_decision, record_payment_attempt
+from app.services.recovery_service import _features, _last_ai_decision, _policy, analyze_case, execute_recovery, ml_routing_decision, record_payment_attempt, track_payment_link_click
 from app.services.audit_service import list_audit_events, log_audit_event
 from app.services.channel_service import get_case_channel_intelligence, evaluate_channel_suitability, dispatch_channel_communication
 from app.services.policy_service import check_recovery_policy
@@ -457,3 +457,12 @@ def get_case_payment_attempts(
 ) -> list[PaymentAttemptSummary]:
     case = _case(db, case_id)
     return [PaymentAttemptSummary.model_validate(pa) for pa in case.payment_attempts]
+
+
+@router.post("/{case_id}/track-click")
+def track_case_payment_link_click(
+    case_id: str,
+    db: Session = Depends(get_db),
+):
+    case = _case(db, case_id)
+    return track_payment_link_click(db=db, case=case)

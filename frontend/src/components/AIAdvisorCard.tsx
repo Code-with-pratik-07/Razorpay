@@ -88,7 +88,10 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
   else if (previousOutcome === 'FAILED_DELIVERY') {
     actionBadge = 'Use Immediate Channel Fallback';
     businessInsight = 'Delivery failed on the initial channel. Immediately switching to an alternate verified communication channel without delay.';
-  } else if (previousOutcome === 'LINK_CLICKED' || followupAction === 'RETRY_SAME_CHANNEL') {
+  } else if (previousOutcome === 'LINK_CLICKED') {
+    actionBadge = 'Observe Payment Outcome';
+    businessInsight = 'The customer opened the recovery payment link, indicating engagement and potential payment intent. RecoverAI should observe the payment outcome before deciding whether another communication is necessary.';
+  } else if (followupAction === 'RETRY_SAME_CHANNEL') {
     actionBadge = 'Send WhatsApp Reminder';
     businessInsight = 'The customer opened the payment link but did not complete checkout. A reminder through WhatsApp is recommended because the customer has already demonstrated engagement.';
   } else if (followupAction === 'SWITCH_CHANNEL') {

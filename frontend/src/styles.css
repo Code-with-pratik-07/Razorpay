@@ -832,6 +832,17 @@ h1, h2, h3, h4, p { margin: 0; }
   letter-spacing: 0.03em;
   text-transform: none;
 }
+.badge.observe-payment-outcome {
+  background: rgba(30, 58, 138, 0.4);
+  color: #93c5fd;
+  border: 1.5px solid #3b82f6;
+  font-size: 12px;
+  padding: 5px 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
 .badge.send-whatsapp-reminder,
 .badge.automatic-recovery,
 .badge.dispatch-recovery-communication {

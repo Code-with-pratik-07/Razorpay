@@ -22,6 +22,8 @@ export const SimulatedPayment = ({ caseId }: { caseId: string }) => {
         if (data.payment_method) {
           setSelectedMethod(data.payment_method.toLowerCase());
         }
+        // Register payment link open event idempotently
+        void fetch(`${API_BASE_URL}/api/cases/${caseId}/track-click`, { method: "POST" }).catch(() => {});
       } catch (err) {
         setError(extractErrorMessage(err, "An error occurred."));
       } finally {

@@ -584,3 +584,84 @@ def record_payment_attempt(
             },
         }
 
+
+def track_payment_link_click(db: Session, case: PaymentCase) -> dict[str, Any]:
+    """Record a customer payment link opened/clicked event.
+
+    Data independence rules:
+    - Does NOT increment case.retry_count
+    - Does NOT consume a communication attempt
+    - Does NOT mark case as RECOVERED
+    - Does NOT overwrite original failure/transaction data
+    """
+    from app.models.communication_record import CommunicationRecord
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    # 1. Guard against terminal states (reject invalid mutations)
+    if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
+        return {
+            "success": False,
+            "case_id": case.id,
+            "status": case.status.value,
+            "message": f"Case is already in terminal state '{case.status.value}'. No engagement mutation allowed.",
+        }
+
+    # 2. Retrieve latest communication record
+    latest = db.scalar(
+        select(CommunicationRecord)
+        .where(CommunicationRecord.case_id == case.id)
+        .order_by(CommunicationRecord.created_at.desc())
+    )
+
+    # 3. Idempotency check:
+    # If already LINK_CLICKED, return success without duplicate audit logging or writes
+    if latest and latest.outcome == "LINK_CLICKED":
+        return {
+            "success": True,
+            "case_id": case.id,
+            "outcome": "LINK_CLICKED",
+            "message": "Payment link click already registered.",
+        }
+
+    # Debounce check: recent payment_link_clicked event within 3 seconds
+    recent_events = list_audit_events(db, case.id)
+    last_click_event = next((e for e in reversed(recent_events) if e.event_type == "payment_link_clicked"), None)
+    if last_click_event and (now - last_click_event.timestamp).total_seconds() < 3.0:
+        return {
+            "success": True,
+            "case_id": case.id,
+            "outcome": latest.outcome if latest else "LINK_CLICKED",
+            "message": "Payment link click already registered recently.",
+        }
+
+    # 4. Update the latest communication record outcome
+    channel_name = "WhatsApp"
+    if latest:
+        latest.outcome = "LINK_CLICKED"
+        if latest.delivery_status != "DELIVERED":
+            latest.delivery_status = "DELIVERED"
+        ch = latest.channel.lower()
+        channel_name = "WhatsApp" if ch == "whatsapp" else "SMS" if ch == "sms" else "Email"
+        if latest.message_snippet:
+            latest.message_snippet = f"{channel_name} reminder delivered — Payment link clicked"
+        db.add(latest)
+
+    # 5. Log audit event
+    log_audit_event(db, case.id, "payment_link_clicked", {
+        "channel": latest.channel if latest else (case.selected_channel or "link"),
+        "attempt_number": latest.attempt_number if latest else 1,
+        "source": "payment_link",
+        "timestamp": now.isoformat(),
+    })
+
+    db.commit()
+
+    return {
+        "success": True,
+        "case_id": case.id,
+        "outcome": "LINK_CLICKED",
+        "message": "Payment link click registered successfully.",
+    }
+
+

@@ -393,14 +393,45 @@ export function CaseDetail({
 
   const commInfo = getCommunicationStatusInfo();
 
+  // Track payment link click and refresh state
+  const trackLinkClick = async () => {
+    try {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+      await fetch(`${apiBase}/api/cases/${selected.id}/track-click`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (loadDetails) {
+        await loadDetails(selected.id);
+      } else if (analyze) {
+        await analyze();
+      }
+    } catch (err) {
+      console.warn("Failed to register payment link click:", err);
+    }
+  };
+
   // Handler for Complete Payment in all previews
   const handlePaymentClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (currentLink && (currentLink.startsWith("http://") || currentLink.startsWith("https://"))) {
-      window.open(currentLink, "_blank", "noopener,noreferrer");
-    } else {
-      window.location.href = `/simulate-payment/${selected.id}`;
+    void trackLinkClick();
+    const targetUrl = currentLink && (currentLink.startsWith("http://") || currentLink.startsWith("https://"))
+      ? currentLink
+      : `/simulate-payment/${selected.id}`;
+    window.open(targetUrl, "_blank", "noopener,noreferrer");
+  };
+
+  // Handler for Open Payment Page button
+  const handleOpenPaymentLink = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
     }
+    void trackLinkClick();
+    const targetUrl = currentLink && (currentLink.startsWith("http://") || currentLink.startsWith("https://"))
+      ? currentLink
+      : `/simulate-payment/${selected.id}`;
+    window.open(targetUrl, "_blank", "noopener,noreferrer");
   };
 
   // Handler for demo simulation sending
@@ -897,8 +928,9 @@ export function CaseDetail({
                     <a
                       className="button primary"
                       href={currentLink.startsWith("http") ? currentLink : `/simulate-payment/${selected.id}`}
-                      target={currentLink.startsWith("http") ? "_blank" : "_self"}
+                      target="_blank"
                       rel="noopener noreferrer"
+                      onClick={handleOpenPaymentLink}
                     >
                       Open Payment Page ↗
                     </a>
@@ -982,6 +1014,15 @@ export function CaseDetail({
                   <span style={{fontSize: '0.82rem', color: '#475569', fontWeight: 500}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
                 )}
               </div>
+            ) : !isTerminalCase && (channelIntel?.followup_decision?.previous_outcome === 'LINK_CLICKED' || latestComm?.outcome === 'LINK_CLICKED') ? (
+              <div>
+                <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
+                  🔗 PAYMENT ACTIVITY DETECTED
+                </span>
+                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                  The customer opened the recovery payment page but has not completed payment.
+                </p>
+              </div>
             ) : !isTerminalCase && (isAwaitingResponse || channelIntel?.followup_decision?.next_action === 'AWAIT_RESPONSE') ? (
               <div>
                 <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
@@ -989,15 +1030,6 @@ export function CaseDetail({
                 </span>
                 <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
                   A {title(channelIntel?.followup_decision?.selected_channel || latestComm?.channel || 'WhatsApp')} reminder has been sent. RecoverAI is waiting for customer activity before taking another recovery action.
-                </p>
-              </div>
-            ) : !isTerminalCase && channelIntel?.followup_decision?.previous_outcome === 'LINK_CLICKED' ? (
-              <div>
-                <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  ⏳ CUSTOMER PAYMENT PENDING
-                </span>
-                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
-                  The customer opened the payment link but has not completed the payment.
                 </p>
               </div>
             ) : !isTerminalCase && isRecovering ? (
