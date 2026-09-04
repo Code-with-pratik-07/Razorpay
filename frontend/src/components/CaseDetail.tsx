@@ -313,8 +313,8 @@ export function CaseDetail({
     if (isRecoveryClosed || isTerminalCase || isAttemptLimitReached || isAbandoned || commStatus === 'EXHAUSTED' || selected.status === 'abandoned') {
       return {
         icon: "■",
-        badge: "Communication Stopped",
-        text: "Maximum recovery attempt limit reached",
+        badge: "Communication Complete",
+        text: "Maximum allowed communication attempts have been completed.",
         cls: "status-exhausted",
         canView: true,
         isReady: false,
@@ -528,7 +528,7 @@ export function CaseDetail({
                   </div>
 
                   <span className={`channel-status-pill ${isTerminalCase ? (isRecovered ? 'status-completed' : 'status-exhausted') : (isAwaitingResponse ? 'status-awaiting' : `status-${commStatus.toLowerCase()}`)}`}>
-                    {isTerminalCase ? (isRecovered ? 'Recovery Completed' : 'Communication Stopped') : (isAwaitingResponse ? 'Awaiting Customer Response' : commInfo.badge)}
+                    {isTerminalCase ? (isRecovered ? 'Recovery Completed' : 'Communication Complete') : (isAwaitingResponse ? 'Awaiting Customer Response' : commInfo.badge)}
                   </span>
                 </div>
 
@@ -550,17 +550,17 @@ export function CaseDetail({
                     </div>
                   ) : (
                     <div className="comm-terminal-stopped" style={{
-                      background: 'rgba(39, 18, 18, 0.6)',
-                      border: '1px solid #7f1d1d',
-                      borderRadius: 8,
-                      padding: '16px 20px',
+                      background: 'rgba(30, 41, 59, 0.5)',
+                      border: '1px solid #334155',
+                      borderRadius: 6,
+                      padding: '12px 16px',
                       margin: '12px 0 16px 0'
                     }}>
-                      <div style={{display: 'flex', alignItems: 'center', gap: 8, color: '#f87171', fontWeight: 800, fontSize: '0.95rem', letterSpacing: '0.04em'}}>
-                        <span>■</span> <span style={{marginLeft: 4}}>COMMUNICATION STOPPED</span>
+                      <div style={{color: '#f1f5f9', fontWeight: 700, fontSize: '0.9rem', letterSpacing: '0.02em'}}>
+                        Communication Complete
                       </div>
-                      <div style={{color: '#fca5a5', fontSize: '0.88rem', marginTop: 6, lineHeight: 1.5}}>
-                        Maximum communication attempts reached.<br />No further automated communication will be scheduled.
+                      <div style={{color: '#94a3b8', fontSize: '0.84rem', marginTop: 4, lineHeight: 1.4}}>
+                        Maximum allowed communication attempts have been completed.
                       </div>
                     </div>
                   )
@@ -692,11 +692,11 @@ export function CaseDetail({
                       <div className="journey-v-item terminal-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-terminal" />
-                          <span className="journey-v-title-text" style={{color: '#f87171', fontSize: '0.85rem'}}>
+                          <span className="journey-v-title-text" style={{color: '#94a3b8', fontSize: '0.85rem'}}>
                             <span style={{marginRight: 6}}>■</span> Communication limit reached
                           </span>
                         </div>
-                        <div style={{marginLeft: 26, fontSize: '0.78rem', color: '#fca5a5', marginTop: 4}}>
+                        <div style={{marginLeft: 26, fontSize: '0.78rem', color: '#94a3b8', marginTop: 4}}>
                           Maximum allowed communication attempts completed.
                         </div>
                       </div>
@@ -731,19 +731,21 @@ export function CaseDetail({
                   <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
                     <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>Previous Outcome</div>
                     <div style={{fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0'}}>
-                      {formatPreviousOutcome(channelIntel.followup_decision.previous_outcome, isAbandoned)}
+                      {isAbandoned ? 'Delivered • No Customer Engagement' : formatPreviousOutcome(channelIntel.followup_decision.previous_outcome, isAbandoned)}
                     </div>
                   </div>
                   <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
-                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>Next Action</div>
-                    <div style={{fontSize: '0.9rem', fontWeight: 600, color: '#93c5fd'}}>
-                      {formatNextActionLabel(channelIntel.followup_decision.next_action, channelIntel.followup_decision.selected_channel)}
+                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>
+                      {isAbandoned ? 'Recovery Decision' : 'Next Action'}
+                    </div>
+                    <div style={{fontSize: '0.9rem', fontWeight: 600, color: isAbandoned ? '#cbd5e1' : '#93c5fd'}}>
+                      {isAbandoned ? 'No further action required' : formatNextActionLabel(channelIntel.followup_decision.next_action, channelIntel.followup_decision.selected_channel)}
                     </div>
                   </div>
                   <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
                     <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>When</div>
-                    <div style={{fontSize: '0.9rem', fontWeight: 600, color: '#fde047'}}>
-                      {formatTiming(channelIntel.followup_decision.recommended_wait_period, channelIntel.followup_decision.next_action)}
+                    <div style={{fontSize: '0.9rem', fontWeight: 600, color: isAbandoned ? '#cbd5e1' : '#fde047'}}>
+                      {isAbandoned ? 'Completed' : formatTiming(channelIntel.followup_decision.recommended_wait_period, channelIntel.followup_decision.next_action)}
                     </div>
                   </div>
                 </div>
@@ -815,31 +817,42 @@ export function CaseDetail({
             </div>
           </div>
         ) : isAbandoned ? (
-          <div className="payment-recovery-card terminal-banner terminal-abandoned" style={{
-            background: 'linear-gradient(135deg, #271212 0%, #3b1515 100%)',
-            border: '1.5px solid #7f1d1d',
+          <div className="payment-recovery-card" style={{
+            background: '#0f172a',
+            border: '1px solid #1e293b',
             borderRadius: 8,
-            padding: '22px 24px',
-            color: '#fee2e2',
-            boxShadow: '0 4px 20px rgba(127, 29, 29, 0.25)'
+            padding: '20px 24px',
+            color: '#e2e8f0',
           }}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 14}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12}}>
               <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-                <span style={{fontSize: '1.3rem', color: '#f87171', fontWeight: 800}}>
-                  {isLinkExpired ? '🔴' : currentLink ? '🔗' : '■'}
+                <span style={{fontSize: '1.2rem', color: '#60a5fa'}}>
+                  {isLinkExpired ? '🔴' : currentLink ? '🔗' : '•'}
                 </span>
-                <h3 style={{margin: 0, color: '#f87171', fontSize: '1.05rem', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase'}}>
+                <h3 style={{margin: 0, color: '#f8fafc', fontSize: '1rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase'}}>
                   {isLinkExpired ? 'EXPIRED PAYMENT LINK' : currentLink ? 'EXISTING PAYMENT LINK' : 'NO PAYMENT LINK'}
                 </h3>
               </div>
-              <span className="pr-status-badge" style={{background: '#450a0a', color: '#fca5a5', border: '1px solid #7f1d1d', fontSize: '0.78rem', padding: '4px 10px', borderRadius: 4, fontWeight: 700}}>
+              <span className="pr-status-badge" style={{
+                background: isLinkExpired ? 'rgba(239, 68, 68, 0.15)' : currentLink ? 'rgba(59, 130, 246, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+                color: isLinkExpired ? '#fca5a5' : currentLink ? '#93c5fd' : '#94a3b8',
+                border: `1px solid ${isLinkExpired ? 'rgba(239, 68, 68, 0.3)' : currentLink ? 'rgba(59, 130, 246, 0.3)' : 'rgba(148, 163, 184, 0.3)'}`,
+                fontSize: '0.78rem',
+                padding: '4px 10px',
+                borderRadius: 4,
+                fontWeight: 700
+              }}>
                 {isLinkExpired ? 'Expired' : currentLink ? 'Available' : 'Unavailable'}
               </span>
             </div>
 
             {currentLink && !isLinkExpired ? (
-              <div style={{fontSize: '0.92rem', color: '#fca5a5', lineHeight: 1.6}}>
-                The payment link remains available until <b style={{color: '#ffffff'}}>{formatExpiryDate(selected.payment_link_expires_at)}</b>.
+              <div style={{fontSize: '0.9rem', color: '#94a3b8', lineHeight: 1.5}}>
+                The payment link remains available until <b style={{color: '#f8fafc'}}>{formatExpiryDate(selected.payment_link_expires_at)}</b>.
+              </div>
+            ) : isLinkExpired ? (
+              <div style={{fontSize: '0.9rem', color: '#94a3b8', lineHeight: 1.5}}>
+                The payment link has expired.
               </div>
             ) : null}
           </div>
@@ -954,7 +967,7 @@ export function CaseDetail({
                   ■ <span style={{marginLeft: 4}}>RECOVERY CLOSED</span>
                 </span>
                 <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
-                  Recovery attempts ended without successful payment. Automated communication has been stopped.
+                  Recovery ended without successful payment.
                 </p>
               </div>
             ) : selected.last_payment_status === 'FAILED' ? (

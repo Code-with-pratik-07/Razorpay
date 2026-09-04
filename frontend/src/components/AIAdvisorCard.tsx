@@ -18,6 +18,7 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
   const isRecovered = explanation.status === 'recovered';
   const isAttemptLimitReached = explanation.retry_count >= explanation.max_retries;
   const isRecoveryClosed = explanation.status === 'abandoned' || explanation.status === 'closed' || isAttemptLimitReached || followupAction === 'STOP_RECOVERY';
+  const isAbandoned = isRecoveryClosed && !isRecovered;
   const isTerminalCase = isRecovered || isRecoveryClosed;
 
   const isApproved = explanation.human_review_status === 'APPROVED' || explanation.manual_execution;
@@ -53,8 +54,8 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
   } 
   // 2. ABANDONED / CLOSED / Attempt limit reached
   else if (isRecoveryClosed) {
-    actionBadge = 'Close Recovery';
-    businessInsight = 'The maximum permitted communication attempts were reached without successful payment. Further automated outreach should stop.';
+    actionBadge = 'Recovery Complete';
+    businessInsight = 'The maximum permitted communication attempts were completed without successful payment. The recovery workflow has ended and no further automated outreach will be scheduled.';
   } 
   // 3. HUMAN_REVIEW and not yet approved
   else if (isHumanReview) {
@@ -112,7 +113,7 @@ export function AIAdvisorCard({ explanation }: AIAdvisorCardProps) {
       <div style={{display: 'flex', flexDirection: 'column', gap: 14}}>
         <div>
           <div style={{color: '#94a3b8', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6}}>
-            Recommended Next Action
+            {isAbandoned ? 'Recovery Status' : 'Recommended Next Action'}
           </div>
           <div style={{display: 'inline-flex'}}>
             <Badge value={actionBadge} />

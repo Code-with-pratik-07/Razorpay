@@ -810,6 +810,17 @@ h1, h2, h3, h4, p { margin: 0; }
   letter-spacing: 0.03em;
   text-transform: none;
 }
+.badge.recovery-complete {
+  background: rgba(30, 41, 59, 0.85);
+  color: #cbd5e1;
+  border: 1.5px solid #475569;
+  font-size: 12px;
+  padding: 5px 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
 .badge.wait-for-customer-response {
   background: #1e1b4b;
   color: #a5b4fc;
@@ -1255,6 +1266,12 @@ h1, h2, h3, h4, p { margin: 0; }
   background: rgba(16, 185, 129, 0.15);
   color: #34d399;
   border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.channel-status-pill.status-exhausted {
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.35);
 }
 
 .channel-status-pill.status-attempt_limit_reached {
@@ -1896,6 +1913,12 @@ h1, h2, h3, h4, p { margin: 0; }
 .status-none, .status-pending {
   background: rgba(148, 163, 184, 0.2);
   color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.status-exhausted {
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
   border: 1px solid rgba(148, 163, 184, 0.35);
 }
 
@@ -2586,7 +2609,7 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 
 .journey-v-dot.dot-terminal {
-  background: #ef4444;
+  background: #64748b;
   border-radius: 3px;
 }
 
