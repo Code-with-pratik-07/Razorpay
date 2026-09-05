@@ -192,7 +192,8 @@ export function CaseDetail({
     : "Pending Execution";
 
   // Dynamic available communications strictly from backend records & prepared channel
-  const journey = explanation?.channel_intelligence?.communication_journey || [];
+  const channelIntel = explanation?.channel_intelligence;
+  const journey = channelIntel?.communication_journey || [];
   const latestComm = journey.length > 0 ? journey[journey.length - 1] : null;
   const isAwaitingResponse = !isTerminalCase && (
     followupAction === 'AWAIT_RESPONSE' ||
@@ -206,6 +207,7 @@ export function CaseDetail({
   // Strictly use backend payment attempts (no fabricated synthetic records)
   const paymentAttempts = selected.payment_attempts || explanation?.payment_attempts || [];
   const latestPaymentAttempt = paymentAttempts.length > 0 ? paymentAttempts[0] : null;
+  const effectiveCommChannel = latestComm?.channel || channelIntel?.recommended_channel || 'whatsapp';
 
   const actualComms = journey
     .filter(r => r.channel)
@@ -245,6 +247,44 @@ export function CaseDetail({
 
   const availableCommunications = actualComms;
   const selectedComm = availableCommunications.find(c => c.id === selectedCommId) || availableCommunications[0];
+
+  const getLastChannelDisplay = (): string => {
+    if (latestComm?.channel) {
+      return title(latestComm.channel);
+    }
+    if (channelIntel?.last_channel_used) {
+      return title(channelIntel.last_channel_used);
+    }
+    if (channelIntel?.attributed_channel) {
+      return title(channelIntel.attributed_channel);
+    }
+    if (dispatchedChannel) {
+      return title(dispatchedChannel);
+    }
+    if (selected.selected_channel) {
+      return title(selected.selected_channel);
+    }
+    if (audit && audit.length > 0) {
+      const commEvent = audit.slice().reverse().find(a => {
+        const et = a.event_type.toLowerCase();
+        return et.includes('email') || et.includes('sms') || et.includes('whatsapp') || et.includes('communication_dispatched');
+      });
+      if (commEvent) {
+        const et = commEvent.event_type.toLowerCase();
+        const chData = commEvent.event_data?.channel;
+        if (typeof chData === 'string' && chData) {
+          return title(chData);
+        }
+        if (et.includes('email')) return 'Email';
+        if (et.includes('whatsapp')) return 'WhatsApp';
+        if (et.includes('sms')) return 'SMS';
+      }
+    }
+    if (isHumanReview || selected.retry_count === 0) {
+      return 'No communication delivered';
+    }
+    return 'Not applicable';
+  };
 
   const openCommunicationModal = (channelOverride?: 'email' | 'sms' | 'whatsapp', commIdOverride?: string) => {
     if (commIdOverride) {
@@ -555,22 +595,35 @@ export function CaseDetail({
     }
   };
 
-  const channelIntel = explanation?.channel_intelligence;
-
   return (
     <>
       <header className="details-header">
-        <div className="details-title">
-          <h2>
-            {selected.case_number} 
-            <span style={{marginLeft: 12, fontSize: '1.25rem', color: '#10b981', fontWeight: 600}}>
-              {formatINR(selected.amount)}
-            </span>
-            <Badge value={isRecovered ? 'recovered' : isAbandoned ? 'abandoned' : (isHumanReview ? 'human_review' : (isRecovering ? 'recovering' : selected.status))} />
-          </h2>
-          <div className="details-meta" style={{wordBreak: 'break-word'}}>
-            {selected.customer_email ?? 'Customer'} • {title(selected.payment_method)}
-          </div>
+        <div className="details-header-row-top">
+          <span className="case-id-mono">{selected.case_number}</span>
+          <Badge value={isRecovered ? 'recovered' : isAbandoned ? 'abandoned' : (isHumanReview ? 'human_review' : (isRecovering ? 'recovering' : selected.status))} />
+        </div>
+        <div className="details-header-amount-row">
+          <span className="amount-num" style={isAbandoned ? {color: 'var(--text-primary)'} : undefined}>{formatINR(selected.amount)}</span>
+          <span className="amount-context" style={isAbandoned ? {color: 'var(--text-secondary)', fontWeight: 500} : undefined}>
+            {isRecovered ? 'recovered' : isAbandoned ? 'unrecovered' : 'at risk'}
+          </span>
+        </div>
+        <div className="details-header-meta">
+          <span>{selected.customer_email ?? 'Customer'}</span>
+          <span className="meta-sep">·</span>
+          <span>{title(selected.payment_method)}</span>
+          {explanation?.ml?.recovery_probability != null && (
+            <>
+              <span className="meta-sep">·</span>
+              <span className="meta-prob">{(explanation.ml.recovery_probability * 100).toFixed(0)}% recovery probability</span>
+            </>
+          )}
+          {selected.failure_reason && (
+            <>
+              <span className="meta-sep">·</span>
+              <span className="meta-reason">Decline: {title(selected.failure_reason)}</span>
+            </>
+          )}
         </div>
       </header>
 
@@ -581,71 +634,63 @@ export function CaseDetail({
         {explanation && (
           <div className="intelligence-panel" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))'}}>
             {/* 3. KEY RECOVERY METRICS */}
-            <div className="intelligence-card">
-              <h4>
-                <i/> 3. Key Recovery Metrics
-              </h4>
-              <div className="stat-row">
-                <span>
-                  {isAbandoned ? "Predicted Recovery Likelihood" : "ML Recovery Probability"}
-                  <span 
-                    className="info-tooltip-wrap" 
-                    title="Likelihood of recovery predicted at the time of failure detection." 
-                    style={{marginLeft: 6, cursor: 'help', color: 'var(--color-text-muted)', display: 'inline-flex', verticalAlign: 'middle'}}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <div className="intelligence-card metrics-compact-card">
+              <h4 className="intel-card-title">Key Recovery Metrics</h4>
+              <div className="metrics-compact-grid">
+                <div className="metric-compact-cell">
+                  <span className="metric-compact-label">
+                    {isAbandoned ? "Predicted Recovery Likelihood" : "ML Recovery Probability"}
                   </span>
-                </span>
-                <b>{explanation.ml.recovery_probability != null ? (explanation.ml.recovery_probability * 100).toFixed(0) + "%" : "—"}</b>
-              </div>
-              {isTerminalCase && (
-                <div className="stat-row">
-                  <span>Final Outcome</span>
-                  <b style={{color: isRecovered ? 'var(--color-success-text)' : 'var(--color-text-muted)', fontWeight: 600}}>
-                    {isRecovered ? "Payment Recovered" : "Not Recovered (Closed)"}
-                  </b>
+                  <div className="metric-compact-val-row">
+                    <strong className="metric-compact-val metric-val-accent">
+                      {explanation.ml.recovery_probability != null ? (explanation.ml.recovery_probability * 100).toFixed(0) + "%" : "—"}
+                    </strong>
+                    {explanation.ml.recovery_probability != null && (
+                      <span className="prob-pill-indicator" />
+                    )}
+                  </div>
                 </div>
-              )}
-              {mlBadge && (
-                <div className="stat-row">
-                  <span>Recovery Tier</span>
-                  <b className={mlBadge.cls} style={{
-                    fontSize: '0.7rem', padding: '2px 7px', borderRadius: 4,
-                    background: mlDecision === 'HIGH' ? '#064e3b' : mlDecision === 'UNCERTAIN' ? '#78350f' : mlDecision === 'COLD_START' ? '#1e3a8a' : '#3b1515',
-                    color: mlDecision === 'HIGH' ? '#34d399' : mlDecision === 'UNCERTAIN' ? '#fbbf24' : mlDecision === 'COLD_START' ? '#93c5fd' : '#f87171',
-                  }}>{mlBadge.label}</b>
+
+                <div className="metric-compact-cell">
+                  <span className="metric-compact-label">Recovery Tier</span>
+                  <strong className="metric-compact-val">
+                    {mlDecision === 'HIGH' ? 'High Confidence' :
+                     mlDecision === 'UNCERTAIN' ? 'Moderate Confidence' :
+                     mlDecision === 'COLD_START' ? 'Cold Start' : 'Low Confidence'}
+                  </strong>
                 </div>
-              )}
-              <div className="stat-row">
-                <span>
-                  Communication Attempts
-                  <span className="info-tooltip-wrap" title="Number of automated outreach messages sent for this recovery case." style={{marginLeft: 6, cursor: 'help', color: 'var(--color-text-muted)', display: 'inline-flex', verticalAlign: 'middle'}}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                  </span>
-                </span>
-                <b>{selected.retry_count} of {selected.max_retries}</b>
-              </div>
-              <div className="stat-row">
-                <span>
-                  Customer Historical Transactions
-                  <span className="info-tooltip-wrap" title="Total historical customer transactions (successful + failed) used for maturity intelligence." style={{marginLeft: 6, cursor: 'help', color: 'var(--color-text-muted)', display: 'inline-flex', verticalAlign: 'middle'}}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                  </span>
-                </span>
-                <b>{explanation.customer_history.interaction_count ?? (explanation.customer_history.successful_payments + explanation.customer_history.failed_payments)}</b>
-              </div>
-              <div className="stat-row">
-                <span>
-                  Recovery Payment Attempts
-                  <span className="info-tooltip-wrap" title="Actual customer payment attempts made against the recovery payment link." style={{marginLeft: 6, cursor: 'help', color: 'var(--color-text-muted)', display: 'inline-flex', verticalAlign: 'middle'}}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                  </span>
-                </span>
-                <b>{paymentAttempts.length}</b>
-              </div>
-              <div className="stat-row">
-                <span>Customer Lifetime Value</span>
-                <b>{formatINR(explanation.customer_history.lifetime_value)}</b>
+
+                <div className="metric-compact-cell">
+                  <span className="metric-compact-label">Communication Attempts</span>
+                  <strong className="metric-compact-val">
+                    {selected.retry_count} of {selected.max_retries}
+                  </strong>
+                  <span className="metric-compact-sub">Automated outreach</span>
+                </div>
+
+                <div className="metric-compact-cell">
+                  <span className="metric-compact-label">Customer History</span>
+                  <strong className="metric-compact-val">
+                    {explanation.customer_history.interaction_count ?? (explanation.customer_history.successful_payments + explanation.customer_history.failed_payments)} transactions
+                  </strong>
+                  <span className="metric-compact-sub">Maturity profile</span>
+                </div>
+
+                <div className="metric-compact-cell">
+                  <span className="metric-compact-label">{isAbandoned ? "Recovery Status" : "Payment Attempts"}</span>
+                  <strong className="metric-compact-val">
+                    {isAbandoned ? "Uncollected" : paymentAttempts.length}
+                  </strong>
+                  <span className="metric-compact-sub">{isAbandoned ? "Workflow closed" : "Against active link"}</span>
+                </div>
+
+                <div className="metric-compact-cell">
+                  <span className="metric-compact-label">Lifetime Value</span>
+                  <strong className="metric-compact-val">
+                    {formatINR(explanation.customer_history.lifetime_value)}
+                  </strong>
+                  <span className="metric-compact-sub">Customer LTV</span>
+                </div>
               </div>
             </div>
 
@@ -665,98 +710,60 @@ export function CaseDetail({
                   </div>
 
                   <span className={`channel-status-pill ${isTerminalCase ? (isRecovered ? 'status-completed' : 'status-exhausted') : (isAwaitingResponse ? 'status-awaiting' : `status-${commStatus.toLowerCase()}`)}`}>
-                    {isTerminalCase ? (isRecovered ? 'Workflow Finalized' : `Attempts Exhausted (${selected.retry_count} of ${selected.max_retries})`) : (isAwaitingResponse ? 'Awaiting Customer Response' : commInfo.badge)}
+                    {isTerminalCase ? (isRecovered ? 'Recovery Completed' : 'Outreach Concluded') : (isAwaitingResponse ? 'Awaiting Customer Response' : commInfo.badge)}
                   </span>
                 </div>
 
-                {isTerminalCase ? (
-                  isRecovered ? (
-                    <div className="comm-terminal-stopped" style={{
-                      background: 'var(--color-success-bg)',
-                      border: '1px solid var(--color-success-border)',
-                      borderRadius: 6,
-                      padding: '14px 18px',
-                      margin: '12px 0 16px 0'
-                    }}>
-                      <div style={{display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-success-text)', fontWeight: 700, fontSize: '13px'}}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                        <span>Recovery Completed</span>
-                      </div>
-                      <div style={{color: 'var(--color-success-text)', fontSize: '12px', marginTop: 4, lineHeight: 1.4}}>
-                        Payment was successfully recovered. No further automated outreach is required.
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="comm-terminal-stopped" style={{
-                      background: 'var(--color-bg-subtle)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: 6,
-                      padding: '12px 16px',
-                      margin: '12px 0 16px 0'
-                    }}>
-                      <div style={{color: 'var(--color-text-main)', fontWeight: 700, fontSize: '13px', display: 'flex', alignItems: 'center', gap: 6}}>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-                        <span>Outreach Limit Reached</span>
-                      </div>
-                      <div style={{color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 4, lineHeight: 1.4}}>
-                        All {selected.max_retries} allowed communication attempts have been completed without customer recovery.
-                      </div>
-                    </div>
-                  )
-                ) : (
-                  <>
-                    <div className="comm-primary-focus">
-                      <div className="comm-focus-channel">
-                        <span className="comm-focus-icon">
-                          {renderChannelIcon(channelIntel.recommended_channel, 20)}
-                        </span>
-                        <div>
-                          <div className="comm-focus-title">
-                            Recommended Channel: <b>{title(channelIntel.recommended_channel)}</b>
-                          </div>
-                          <div className="comm-focus-metrics">
-                            <span className="comm-suitability-badge">
-                              <b>{(channelIntel.suitability_score * 100).toFixed(0)}%</b> Suitability
-                              <span 
-                                className="info-tooltip-wrap" 
-                                title="Expected effectiveness of this communication channel." 
-                                style={{marginLeft: 4, cursor: 'help', display: 'inline-flex', alignItems: 'center', color: 'var(--color-text-light)'}}
-                              >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                              </span>
-                            </span>
-                            <span className={`comm-conf-badge conf-${channelIntel.confidence}`}>
-                              {title(channelIntel.confidence)} Confidence
-                            </span>
-                          </div>
+                {!isTerminalCase && (
+                  <div className="comm-recommendation-block" style={{padding: '16px', background: 'var(--color-card-bg)', border: '1px solid var(--color-border)', borderRadius: '8px'}}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16}}>
+                      <div>
+                        <span style={{fontSize: '11px', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em'}}>Recommended Channel</span>
+                        <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 4}}>
+                          {renderChannelIcon(channelIntel.recommended_channel, 18)}
+                          <span style={{fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)'}}>{title(channelIntel.recommended_channel)}</span>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="comm-why-box">
-                      <span className="comm-why-title">Why this channel?</span>
-                      <p className="comm-why-body">{channelIntel.reason}</p>
-                    </div>
-
-                    <div className="comm-alts-row">
-                      <span className="comm-alts-label">Alternatives:</span>
-                      <div className="comm-alts-list">
-                        {channelIntel.alternatives.map((alt) => {
-                          const score = channelIntel.channel_scores[alt] ?? 0;
-                          return (
-                            <span key={alt} className="comm-alt-item">
-                              {renderChannelIcon(alt, 13)}
-                              <span>{title(alt)} — <b>{(score * 100).toFixed(0)}%</b></span>
-                            </span>
-                          );
-                        })}
+                      <div style={{textAlign: 'right'}}>
+                        <div style={{fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums'}}>{(channelIntel.suitability_score * 100).toFixed(0)}%</div>
+                        <div style={{fontSize: '11px', color: 'var(--text-secondary)'}}>{title(channelIntel.confidence)} confidence</div>
                       </div>
                     </div>
-                  </>
+
+                    <div style={{fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, paddingBottom: 16, borderBottom: '1px solid var(--border-subtle)'}}>
+                      {channelIntel.reason}
+                    </div>
+
+                    {channelIntel.alternatives.length > 0 && (
+                      <div style={{marginTop: 16}}>
+                        <span style={{fontSize: '11px', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 12}}>Alternative Channels</span>
+                        <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+                          {channelIntel.alternatives.map((alt) => {
+                            const score = channelIntel.channel_scores[alt] ?? 0;
+                            const pct = Math.round(score * 100);
+                            return (
+                              <div key={alt} style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                                <div style={{width: 70, display: 'flex', alignItems: 'center', gap: 6, fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 500}}>
+                                  {renderChannelIcon(alt, 14)}
+                                  <span>{title(alt)}</span>
+                                </div>
+                                <div style={{flex: 1, height: 4, background: 'var(--border-subtle)', borderRadius: 2, overflow: 'hidden'}}>
+                                  <div style={{height: '100%', background: 'var(--text-tertiary)', width: `${pct}%`, borderRadius: 2}} />
+                                </div>
+                                <div style={{width: 32, textAlign: 'right', fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600, fontVariantNumeric: 'tabular-nums'}}>
+                                  {pct}%
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 <div className="comm-journey-block" style={{marginTop: 18}}>
-                  <span className="comm-journey-title">COMMUNICATION JOURNEY</span>
+                  <span className="comm-journey-title">Communication Journey</span>
                   <div className="journey-v-timeline">
                     {journey.map((item, idx) => {
                       const isLinkClicked = item.outcome === 'LINK_CLICKED';
@@ -808,40 +815,19 @@ export function CaseDetail({
                       <div className="journey-v-item next-action-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-pending" />
-                          <span className="journey-v-title-text" style={{color: 'var(--color-accent)'}}>Next Action</span>
+                          <span className="journey-v-title-text" style={{color: 'var(--color-text-main)'}}>Next Action</span>
                         </div>
                         <div 
-                          className="journey-compact-card clickable-journey-step"
-                          onClick={() => openCommunicationModal(recommendedChannel as any)}
-                          title="Click to view communication preview"
-                          style={{cursor: 'pointer', border: '1px dashed var(--color-accent)'}}
+                          className="journey-compact-card"
+                          style={{background: 'var(--color-bg-subtle)'}}
                         >
                           <span className="journey-v-channel">
-                            {renderChannelIcon(channelIntel.followup_decision?.selected_channel || recommendedChannel, 14)}
-                            <span>
-                              {channelIntel.followup_decision?.selected_channel 
-                                ? `${title(channelIntel.followup_decision.selected_channel)} ${channelIntel.followup_decision.next_action === 'RETRY_SAME_CHANNEL' ? 'Reminder' : ''}`
-                                : title(recommendedChannel)}
-                            </span>
+                            {renderChannelIcon(channelIntel.followup_decision?.selected_channel, 14)}
+                            <span>{channelIntel.followup_decision?.selected_channel ? title(channelIntel.followup_decision.selected_channel) : ''}</span>
                           </span>
-                          <span className="journey-v-status" style={{background: 'var(--color-accent-bg)', color: 'var(--color-accent)'}}>
+                          <span className="journey-v-status" style={{background: 'var(--color-card-bg)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)'}}>
                             Scheduled
                           </span>
-                        </div>
-                      </div>
-                    )}
-
-                    {isAbandoned && (
-                      <div className="journey-v-item terminal-item">
-                        <div className="journey-v-node-header">
-                          <span className="journey-v-dot dot-terminal" />
-                          <span className="journey-v-title-text" style={{color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6}}>
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-                            <span>Communication limit reached</span>
-                          </span>
-                        </div>
-                        <div style={{marginLeft: 22, fontSize: '12px', color: 'var(--color-text-light)', marginTop: 2}}>
-                          Maximum allowed communication attempts completed.
                         </div>
                       </div>
                     )}
@@ -861,7 +847,7 @@ export function CaseDetail({
                       <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
                       <path d="M16 21h5v-5"/>
                     </svg>
-                    <span>Follow-Up Decision</span>
+                    <span>{isTerminalCase ? 'Final Recovery Decision' : 'Next Recovery Decision'}</span>
                   </div>
                 </div>
 
@@ -871,26 +857,61 @@ export function CaseDetail({
                   </div>
                 )}
 
-                <div className="fd-grid">
-                  <div className="fd-item">
-                    <div className="fd-label">Previous Outcome</div>
-                    <div className="fd-value">
-                      {isRecovered ? 'Payment Captured' : isAbandoned ? 'Delivered • No Customer Engagement' : formatPreviousOutcome(channelIntel.followup_decision.previous_outcome, isAbandoned)}
+                {isTerminalCase ? (
+                  <div className="fd-decision-grid" style={{background: 'var(--surface-subtle)', border: '1px solid var(--border)', padding: '16px', borderRadius: '8px', gridTemplateColumns: '1fr 1fr'}}>
+                    <div className="fd-item">
+                      <span className="fd-label">Final Outcome</span>
+                      <strong className="fd-value" style={{color: isRecovered ? 'var(--color-success)' : 'var(--text-secondary)'}}>
+                        {isRecovered ? 'Payment Recovered' : 'Payment Not Recovered'}
+                      </strong>
+                    </div>
+                    <div className="fd-item">
+                      <span className="fd-label">Attempts Used</span>
+                      <strong className="fd-value">
+                        {isRecovered ? `${selected.retry_count} of ${selected.max_retries} (Completed)` : `${selected.retry_count} of ${selected.max_retries} (Exhausted)`}
+                      </strong>
+                    </div>
+                    <div className="fd-item">
+                      <span className="fd-label">Last Channel</span>
+                      <strong className="fd-value">
+                        {getLastChannelDisplay()}
+                      </strong>
+                    </div>
+                    <div className="fd-item">
+                      <span className="fd-label">Workflow Status</span>
+                      <strong className="fd-value" style={{color: isRecovered ? 'var(--color-success)' : 'var(--text-secondary)'}}>
+                        {isRecovered ? 'Success' : 'Closed'}
+                      </strong>
                     </div>
                   </div>
-                  <div className="fd-item">
-                    <div className="fd-label">{isRecovered || isAbandoned ? 'Recovery Decision' : 'Next Action'}</div>
-                    <div className="fd-value">
-                      {isRecovered ? 'None — Payment Captured' : isAbandoned ? 'No further action required' : formatNextActionLabel(channelIntel.followup_decision.next_action, channelIntel.followup_decision.selected_channel)}
+                ) : (
+                  <div className="fd-decision-grid">
+                    <div className="fd-item">
+                      <span className="fd-label">Previous outcome</span>
+                      <strong className="fd-value">
+                        {formatPreviousOutcome(channelIntel.followup_decision.previous_outcome, false)}
+                      </strong>
+                    </div>
+                    <div className="fd-item">
+                      <span className="fd-label">Recommended action</span>
+                      <strong className="fd-value fd-action-val">
+                        {formatNextActionLabel(channelIntel.followup_decision.next_action, channelIntel.followup_decision.selected_channel)}
+                      </strong>
+                    </div>
+                    <div className="fd-item">
+                      <span className="fd-label">Next channel</span>
+                      <strong className="fd-value">
+                        {channelIntel.followup_decision.selected_channel ? title(channelIntel.followup_decision.selected_channel) : 'None'}
+                      </strong>
+                    </div>
+                    <div className="fd-item">
+                      <span className="fd-label">Scheduled</span>
+                      <strong className="fd-value">
+                        {formatTiming(channelIntel.followup_decision.recommended_wait_period, channelIntel.followup_decision.next_action)}
+                      </strong>
                     </div>
                   </div>
-                  <div className="fd-item">
-                    <div className="fd-label">When</div>
-                    <div className="fd-value">
-                      {isRecovered || isAbandoned ? 'Completed' : formatTiming(channelIntel.followup_decision.recommended_wait_period, channelIntel.followup_decision.next_action)}
-                    </div>
-                  </div>
-                </div>
+                )}
 
                 {/* Follow-Up Action / Observation Section */}
                 {(() => {
@@ -1057,24 +1078,24 @@ export function CaseDetail({
         {isRecovered ? (
           <div className="payment-recovery-card terminal-banner terminal-recovered">
             <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14}}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-              <h3 style={{margin: 0, color: '#065F46', fontSize: '14px', fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase'}}>
+              <h3 style={{margin: 0, color: 'var(--color-success-text)', fontSize: '15px', fontWeight: 600, letterSpacing: '-0.01em'}}>
                 Payment Successfully Recovered
               </h3>
             </div>
             <div style={{marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 4}}>
-              <div style={{fontSize: '28px', fontWeight: 700, color: '#065F46', letterSpacing: '-0.02em', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums'}}>
+              <div style={{fontSize: '28px', fontWeight: 700, color: 'var(--color-success-text)', letterSpacing: '-0.02em', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums'}}>
                 {formatINR(selected.amount)}
               </div>
-              <div style={{fontSize: '13px', fontWeight: 500, color: '#047857'}}>
+              <div style={{fontSize: '13px', fontWeight: 500, color: 'var(--color-success-text)'}}>
                 Recovered successfully
               </div>
             </div>
 
             <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
-              <div style={{fontSize: '11px', color: '#065F46', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em'}}>
+              <div style={{fontSize: '11px', color: 'var(--color-success-text)', fontWeight: 600, letterSpacing: '0.02em'}}>
                 Recovery attributed to
               </div>
               <div>
@@ -1083,15 +1104,15 @@ export function CaseDetail({
                   alignItems: 'center',
                   gap: 6,
                   fontWeight: 600,
-                  color: '#065F46',
-                  background: '#FFFFFF',
-                  border: '1px solid #A7F3D0',
+                  color: 'var(--color-success-text)',
+                  background: 'var(--surface)',
+                  border: '1px solid var(--color-success-border)',
                   padding: '3px 10px',
                   borderRadius: 4,
                   fontSize: '12px'
                 }}>
                   {renderChannelIcon(channelIntel?.attributed_channel, 13)}
-                  {channelIntel?.attributed_channel ? channelIntel.attributed_channel.toUpperCase() : 'VERIFIED CHANNEL'}
+                  {channelIntel?.attributed_channel ? title(channelIntel.attributed_channel) : 'Verified Channel'}
                 </span>
               </div>
             </div>
@@ -1112,35 +1133,58 @@ export function CaseDetail({
             </div>
           </div>
         ) : isAbandoned ? (
-          <div className="payment-recovery-card terminal-abandoned">
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12}}>
-              <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" color="var(--color-text-muted)">
-                  <rect x="4" y="4" width="16" height="16" rx="2"/>
-                </svg>
-                <h3 style={{margin: 0, color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase'}}>
-                  {isLinkExpired ? 'Expired Payment Link' : 'Recovery Workflow Closed'}
-                </h3>
+          <div className="payment-recovery-card terminal-closure-card" style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span className="closure-icon-wrap">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                </span>
+                <div>
+                  <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '15px', fontWeight: 600, letterSpacing: '-0.01em' }}>
+                    Recovery Closed
+                  </h3>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: 2 }}>
+                    Workflow ended without recovery
+                  </div>
+                </div>
               </div>
-              <span className={`pr-status-badge ${isLinkExpired ? 'expired' : 'stopped'}`}>
-                {isLinkExpired ? 'Expired' : 'Closed'}
-              </span>
+              <Badge value="abandoned" label="Closed" />
             </div>
 
-            {isLinkExpired ? (
-              <div style={{fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: 1.5}}>
-                The payment link has expired.
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
+              All permitted recovery communications were completed without successful payment recovery. No further automated outreach is scheduled.
+            </p>
+
+            <div className="closure-meta-grid">
+              <div className="closure-meta-item">
+                <span className="closure-meta-label">Unrecovered Amount</span>
+                <span className="closure-meta-val" style={{ color: 'var(--text-primary)' }}>
+                  {formatINR(selected.amount)}
+                </span>
               </div>
-            ) : (
-              <div style={{fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: 1.5}}>
-                Recovery workflow closed. Existing payment link is no longer monitored for automated recovery.
-                {selected.payment_link_expires_at && (
-                  <span style={{display: 'block', marginTop: 4, fontSize: '12px', color: 'var(--color-text-muted)'}}>
-                    (Gateway link expiry: {formatExpiryDate(selected.payment_link_expires_at)})
-                  </span>
-                )}
+              <div className="closure-meta-item">
+                <span className="closure-meta-label">Outreach Attempts</span>
+                <span className="closure-meta-val">
+                  {selected.retry_count} of {selected.max_retries} delivered
+                </span>
               </div>
-            )}
+              <div className="closure-meta-item">
+                <span className="closure-meta-label">Last Channel Used</span>
+                <span className="closure-meta-val">
+                  {getLastChannelDisplay()}
+                </span>
+              </div>
+              <div className="closure-meta-item">
+                <span className="closure-meta-label">Closure Reason</span>
+                <span className="closure-meta-val">
+                  Max outreach limit reached
+                </span>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="payment-recovery-card">
@@ -1210,26 +1254,47 @@ export function CaseDetail({
               </div>
             </div>
 
-            <div className="pr-comm-row">
-              <div className="pr-comm-status-wrap">
-                <span className="pr-label">Customer Communication</span>
-                <div style={{marginTop: 4}}>
-                  <span className={`pr-comm-pill ${commInfo.cls}`}>
-                    {commInfo.icon} {commInfo.badge}
+            <div className="pr-comm-section">
+              <div className="comm-preview-panel">
+                <div className="comm-preview-panel-header">
+                  <div className="comm-preview-ch-wrap">
+                    {renderChannelIcon(effectiveCommChannel, 14)}
+                    <span className="comm-preview-ch-name">{title(effectiveCommChannel)}</span>
+                  </div>
+                  <span className="comm-preview-status-tag">
+                    <span className="dot dot-success" /> Delivered
                   </span>
                 </div>
+                <div className="comm-preview-bubble-card">
+                  <div className="comm-bubble-sender">RecoverAI</div>
+                  <p className="comm-bubble-body">
+                    Your payment of <b>{formatINR(selected.amount)}</b> could not be completed. Complete your payment securely using the link below.
+                  </p>
+                  {currentLink && !isLinkExpired && (
+                    <div className="comm-bubble-action">
+                      <button
+                        className="comm-bubble-pay-btn"
+                        onClick={handlePaymentClick}
+                      >
+                        Complete Payment →
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {availableCommunications.length > 0 && (
+                  <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      id="view-comm-panel-btn"
+                      className="button secondary button-sm comm-action-btn"
+                      onClick={() => openCommunicationModal()}
+                    >
+                      {availableCommunications.length === 1
+                        ? `View ${title(availableCommunications[0].channel)} Message`
+                        : 'View Communications'}
+                    </button>
+                  </div>
+                )}
               </div>
-              {availableCommunications.length > 0 && (
-                <button
-                  id="view-comm-panel-btn"
-                  className="button secondary comm-action-btn"
-                  onClick={() => openCommunicationModal()}
-                >
-                  {availableCommunications.length === 1
-                    ? `View ${title(availableCommunications[0].channel)} Message`
-                    : 'View Communications'}
-                </button>
-              )}
             </div>
           </div>
         )}
@@ -1240,49 +1305,39 @@ export function CaseDetail({
           <div className="co-body" style={{marginTop: 8}}>
             {isRecovered ? (
               <div>
-                <span className="badge" style={{background: 'var(--color-success-bg)', color: 'var(--color-success-text)', border: '1px solid var(--color-success-border)', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  Payment Recovered
-                </span>
-                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                <Badge value="recovered" label="Payment Recovered" />
+                <p style={{margin: '10px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.5}}>
                   The customer successfully completed payment via the recovery link.
                 </p>
               </div>
             ) : isAbandoned ? (
               <div>
-                <span className="badge" style={{background: 'var(--color-bg-subtle)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  Recovery Closed
-                </span>
-                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
-                  Recovery ended without successful payment.
+                <Badge value="abandoned" label="Uncollected" />
+                <p style={{margin: '10px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.5}}>
+                  Final transaction status remains uncollected. No customer payment was completed against the recovery link before the workflow was closed.
                 </p>
               </div>
             ) : selected.last_payment_status === 'FAILED' ? (
               <div>
-                <span className="badge" style={{background: 'var(--color-danger-bg)', color: 'var(--color-danger-text)', border: '1px solid var(--color-danger-border)', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  Recovery Payment Attempt Failed
-                </span>
-                <p style={{margin: '10px 0 4px 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                <Badge value="failed" label="Recovery Payment Attempt Failed" />
+                <p style={{margin: '10px 0 4px 0', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.5}}>
                   The customer attempted to complete the payment using <b>{(latestPaymentAttempt?.payment_method || selected.last_payment_method) ? title(latestPaymentAttempt?.payment_method || selected.last_payment_method!) : 'an online payment method'}</b>, but the transaction was unsuccessful. RecoverAI is continuing to evaluate the customer's recovery activity.
                 </p>
                 {selected.last_payment_attempt_at && (
-                  <span style={{fontSize: '0.82rem', color: 'var(--color-text-light)', fontWeight: 500}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
+                  <span style={{fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 500}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
                 )}
               </div>
             ) : !isTerminalCase && hasClickedLink ? (
               <div>
-                <span className="badge" style={{background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  Payment Page Opened — Payment Pending
-                </span>
-                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                <Badge value="recovering" label="Payment Page Opened — Payment Pending" />
+                <p style={{margin: '10px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.5}}>
                   The customer opened the recovery payment page through the initial outreach link. Checkout submission has not yet occurred, and no payment gateway attempts have been recorded yet.
                 </p>
               </div>
             ) : !isTerminalCase && (isAwaitingResponse || channelIntel?.followup_decision?.next_action === 'AWAIT_RESPONSE') ? (
               <div>
-                <span className="badge" style={{background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  Customer Response Pending
-                </span>
-                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                <Badge value="recovering" label="Customer Response Pending" />
+                <p style={{margin: '10px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.5}}>
                   {(() => {
                     const reminderCh = channelIntel?.followup_decision?.selected_channel || latestComm?.channel;
                     const reminderChText = reminderCh ? `${title(reminderCh)} ` : '';
@@ -1292,102 +1347,85 @@ export function CaseDetail({
               </div>
             ) : !isTerminalCase && isRecovering ? (
               <div>
-                <span className="badge" style={{background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  Customer Payment Pending
-                </span>
-                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
-                  Payment link is active. Waiting for customer checkout.
+                <Badge value="recovering" label="Payment Pending" />
+                <p style={{margin: '10px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.5}}>
+                  Payment link is active and the system is waiting for customer checkout activity.
                 </p>
               </div>
             ) : (
               <div>
-                <span className="badge" style={{background: 'var(--color-warning-bg)', color: 'var(--color-warning-text)', border: '1px solid var(--color-warning-border)', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  Awaiting Review
-                </span>
-                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                <Badge value="human-review" label="Awaiting Review" />
+                <p style={{margin: '10px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.5}}>
                   Recovery execution paused pending manual reviewer approval.
                 </p>
+              </div>
+            )}
+            
+            {(paymentAttempts.length > 0 || isRecovered) && (
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Recovery payment attempts</span>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                  {paymentAttempts.length}
+                </span>
               </div>
             )}
           </div>
         </div>
 
         {/* LATEST RECOVERY PAYMENT ACTIVITY */}
-        {latestPaymentAttempt ? (
+        {latestPaymentAttempt && (
           <div className="intelligence-card latest-payment-activity-card" style={{marginTop: 14}}>
             <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12}}>
-              <h4 style={{margin: 0, fontSize: '0.85rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6}}>
+              <h4 style={{margin: 0, fontSize: '13px', color: 'var(--text-primary)', fontWeight: 600, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 6}}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
                 Latest Recovery Payment Activity
               </h4>
-              <span
-                className="badge"
-                style={{
-                  background: latestPaymentAttempt.status === 'success' ? '#065f46' : '#7f1d1d',
-                  color: '#ffffff',
-                  fontWeight: 700,
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  fontSize: '0.78rem',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5
-                }}
-              >
-                {latestPaymentAttempt.status === 'success' ? (
-                  <>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    Recovery Payment Successful
-                  </>
-                ) : (
-                  <>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    Recovery Payment Failed
-                  </>
-                )}
-              </span>
+              <Badge
+                value={latestPaymentAttempt.status === 'success' ? 'recovered' : 'failed'}
+                label={latestPaymentAttempt.status === 'success' ? 'Payment Successful' : 'Payment Failed'}
+              />
             </div>
 
             <div style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))',
               gap: 12,
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
+              background: 'var(--surface-subtle)',
+              border: '1px solid var(--border)',
               padding: '12px 16px',
               borderRadius: 6
             }}>
               <div>
-                <span style={{display: 'block', fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600}}>Recovery Method</span>
-                <strong style={{fontSize: '0.92rem', color: '#0f172a'}}>{title(latestPaymentAttempt.payment_method)}</strong>
+                <span style={{display: 'block', fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 500}}>Recovery Method</span>
+                <strong style={{fontSize: '13px', color: 'var(--text-primary)', fontWeight: 600}}>{title(latestPaymentAttempt.payment_method)}</strong>
               </div>
               <div>
-                <span style={{display: 'block', fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600}}>Attempt Amount</span>
-                <strong style={{fontSize: '0.92rem', color: '#059669'}}>{formatINR(latestPaymentAttempt.amount)}</strong>
+                <span style={{display: 'block', fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 500}}>Attempt Amount</span>
+                <strong style={{fontSize: '13px', color: 'var(--color-success)', fontWeight: 600}}>{formatINR(latestPaymentAttempt.amount)}</strong>
               </div>
               <div>
-                <span style={{display: 'block', fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600}}>Attempt Status</span>
-                <strong style={{fontSize: '0.92rem', color: latestPaymentAttempt.status === 'success' ? '#059669' : '#dc2626'}}>
+                <span style={{display: 'block', fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 500}}>Attempt Status</span>
+                <strong style={{fontSize: '13px', color: latestPaymentAttempt.status === 'success' ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600}}>
                   {title(latestPaymentAttempt.status)}
                 </strong>
               </div>
               <div>
-                <span style={{display: 'block', fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600}}>Attempt Time</span>
-                <span style={{fontSize: '0.85rem', color: '#334155', fontWeight: 500}}>
+                <span style={{display: 'block', fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 500}}>Attempt Time</span>
+                <span style={{fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 500}}>
                   {formatDate(latestPaymentAttempt.created_at)}
                 </span>
               </div>
               {latestPaymentAttempt.status !== 'success' && (
                 <div>
-                  <span style={{display: 'block', fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600}}>Failure Reason</span>
-                  <strong style={{fontSize: '0.86rem', color: '#b91c1c'}}>
+                  <span style={{display: 'block', fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 500}}>Failure Reason</span>
+                  <strong style={{fontSize: '13px', color: 'var(--color-danger)', fontWeight: 600}}>
                     {latestPaymentAttempt.failure_reason || selected.last_payment_failure_reason || 'Payment declined'}
                   </strong>
                 </div>
               )}
             </div>
 
-            <p style={{margin: '12px 0 0 0', color: latestPaymentAttempt.status === 'success' ? '#065f46' : '#7f1d1d', fontSize: '0.9rem', fontWeight: 500, lineHeight: 1.5}}>
+            <p style={{margin: '12px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px', fontWeight: 400, lineHeight: 1.5}}>
               {latestPaymentAttempt.status === 'success'
                 ? `The customer completed payment of ${formatINR(latestPaymentAttempt.amount)} using ${title(latestPaymentAttempt.payment_method)} through the recovery payment link. The recovery workflow has been automatically completed.`
                 : `The customer attempted payment using ${title(latestPaymentAttempt.payment_method)} through the recovery payment link, but the recovery payment was not completed${latestPaymentAttempt.failure_reason ? `: ${latestPaymentAttempt.failure_reason}` : '.'}`}
@@ -1395,8 +1433,8 @@ export function CaseDetail({
 
             {/* Multiple Payment Attempts Chronological History */}
             {paymentAttempts.length > 1 && (
-              <div style={{marginTop: 14, borderTop: '1px solid #e2e8f0', paddingTop: 12}}>
-                <div style={{fontSize: '0.78rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 8, letterSpacing: '0.04em'}}>
+              <div style={{marginTop: 14, borderTop: '1px solid var(--border-subtle)', paddingTop: 12}}>
+                <div style={{fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8}}>
                   Previous Payment Attempts ({paymentAttempts.length - 1})
                 </div>
                 <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
@@ -1405,49 +1443,38 @@ export function CaseDetail({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0',
+                      background: 'var(--surface-subtle)',
+                      border: '1px solid var(--border)',
                       padding: '8px 12px',
                       borderRadius: 6,
-                      fontSize: '0.84rem'
+                      fontSize: '13px'
                     }}>
                       <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-                        <span style={{color: att.status === 'success' ? '#059669' : '#dc2626', display: 'inline-flex', alignItems: 'center'}}>
+                        <span style={{color: att.status === 'success' ? 'var(--color-success)' : 'var(--color-danger)', display: 'inline-flex', alignItems: 'center'}}>
                           {att.status === 'success' ? (
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                           ) : (
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                           )}
                         </span>
-                        <span style={{fontWeight: 600, color: '#1e293b'}}>Attempt #{paymentAttempts.length - 1 - idx}: {title(att.payment_method)}</span>
-                        <span style={{color: '#64748b'}}>({formatINR(att.amount)})</span>
+                        <span style={{fontWeight: 600, color: 'var(--text-primary)'}}>Attempt #{paymentAttempts.length - 1 - idx}: {title(att.payment_method)}</span>
+                        <span style={{color: 'var(--text-secondary)'}}>({formatINR(att.amount)})</span>
                         {att.failure_reason && (
-                          <span style={{color: '#b91c1c', fontSize: '0.78rem'}}>• {att.failure_reason}</span>
+                          <span style={{color: 'var(--color-danger)', fontSize: '12px'}}>• {att.failure_reason}</span>
                         )}
                       </div>
                       <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                        <span style={{
-                          color: att.status === 'success' ? '#059669' : '#dc2626',
-                          fontWeight: 700,
-                          fontSize: '0.75rem',
-                          textTransform: 'uppercase'
-                        }}>
-                          {title(att.status)}
-                        </span>
-                        <span style={{color: '#64748b', fontSize: '0.75rem'}}>{formatDate(att.created_at)}</span>
+                        <Badge
+                          value={att.status === 'success' ? 'recovered' : 'failed'}
+                          label={title(att.status)}
+                        />
+                        <span style={{color: 'var(--text-tertiary)', fontSize: '11px'}}>{formatDate(att.created_at)}</span>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-          </div>
-        ) : (
-          <div className="intelligence-card" style={{marginTop: 14, padding: '14px 18px', background: '#f8fafc', border: '1px dashed var(--color-border)'}}>
-            <div style={{display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-text-muted)', fontSize: '13px', fontWeight: 500}}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-              <span>No recovery payment attempts yet.</span>
-            </div>
           </div>
         )}
 
