@@ -86,7 +86,7 @@ export function MetricsGrid({ stats, cases, setSelectedId }: MetricsGridProps) {
       <div className="metric">
         <div className="metric-header">
           <span className="metric-label">Cases Processed</span>
-          <div className="metric-icon-wrap">
+          <div className="metric-icon-wrap metric-icon-slate">
             <IconStack />
           </div>
         </div>

@@ -168,9 +168,11 @@ export function AIAdvisorCard({ explanation, caseStatus }: AIAdvisorCardProps) {
     <div className="intelligence-card ai-advisor-card">
       <div className="ai-header">
         <div className="ai-title-row">
-          <svg className="ai-spark-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z"/>
-          </svg>
+          <span className="ai-icon-container">
+            <svg className="ai-spark-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z"/>
+            </svg>
+          </span>
           <span className="ai-title-text">AI Recovery Advisor</span>
         </div>
       </div>
