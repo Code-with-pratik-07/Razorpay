@@ -120,6 +120,7 @@ export type Explanation = RecoveryCase & {
     lifetime_value: number;
     successful_payments: number;
     failed_payments: number;
+    interaction_count?: number;
   };
   ml_decision: "HIGH" | "UNCERTAIN" | "LOW" | "COLD_START" | null;
   execution_error?: string | null;
@@ -192,9 +193,9 @@ export const formatDate = (timestamp: string | null | undefined): string => {
 };
 
 export const formatExpiryDate = (timestamp: string | null | undefined): string => {
-  if (!timestamp) return "10 Sep 2026, 10:00 AM";
+  if (!timestamp) return "Not Generated";
   const d = new Date(timestamp);
-  if (isNaN(d.getTime())) return "10 Sep 2026, 10:00 AM";
+  if (isNaN(d.getTime())) return "Not Generated";
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const day = d.getDate();
   const month = months[d.getMonth()];

@@ -6,8 +6,7 @@ import { MetricsGrid } from "./components/MetricsGrid";
 import { Charts } from "./components/Charts";
 import { RecoveryQueue } from "./components/RecoveryQueue";
 import { CaseDetail } from "./components/CaseDetail";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+import { API_BASE_URL } from "./config";
 
 export function extractErrorMessage(err: unknown, defaultMessage = "An error occurred."): string {
   if (typeof err === "string") return err;
@@ -85,14 +84,21 @@ export default function App() {
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [demoMode, setDemoMode] = useState(false);
   const [resettingDemo, setResettingDemo] = useState(false);
+  const lastSyncRef = useRef<number>(0);
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestSeqRef = useRef<number>(0);
+  const activeRequestIdRef = useRef<string | null>(null);
+  const isResettingDemoRef = useRef<boolean>(false);
 
   const refreshCases = useCallback(async (preserveSelection = true) => {
+    if (isResettingDemoRef.current) return [];
     setLoading(true);
     try {
       const [next, stats] = await Promise.all([
         api<RecoveryCase[]>("/api/cases?limit=1000"),
         api<DashboardStats>("/api/dashboard/stats").catch(() => null),
       ]);
+      if (isResettingDemoRef.current) return next;
       setCases(next);
       if (stats) setDashboardStats(stats);
       setSelectedId((currentSelectedId) => {
@@ -102,16 +108,19 @@ export default function App() {
       setError(null);
       return next;
     } catch (requestError) {
+      if (isResettingDemoRef.current) return [];
       setError(extractErrorMessage(requestError, "Could not load recovery cases."));
       return [];
     } finally {
-      setLoading(false);
+      if (!isResettingDemoRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
-  const activeRequestIdRef = useRef<string | null>(null);
-
   const loadDetails = useCallback(async (id: string) => {
+    if (isResettingDemoRef.current) return;
+    const currentSeq = ++requestSeqRef.current;
     activeRequestIdRef.current = id;
     setDetailLoading(true);
     try {
@@ -120,75 +129,219 @@ export default function App() {
         api<Explanation>(`/api/cases/${id}/explanation`),
         api<AuditEvent[]>(`/api/cases/${id}/audit`),
       ]);
-      // Discard response if user already switched to another case
-      if (activeRequestIdRef.current !== id) return;
+      // Discard response if user already switched or a newer request superseded this one
+      if (currentSeq !== requestSeqRef.current || activeRequestIdRef.current !== id || isResettingDemoRef.current) return;
       setSelected(caseData);
       setExplanation(explanationData);
       setAudit(auditData);
       setError(null);
     } catch (requestError) {
-      if (activeRequestIdRef.current !== id) return;
+      if (currentSeq !== requestSeqRef.current || activeRequestIdRef.current !== id || isResettingDemoRef.current) return;
       setError(extractErrorMessage(requestError, "Could not load case details."));
     } finally {
-      if (activeRequestIdRef.current === id) {
+      if (currentSeq === requestSeqRef.current && activeRequestIdRef.current === id && !isResettingDemoRef.current) {
         setDetailLoading(false);
       }
     }
   }, []);
 
   useEffect(() => {
-    void refreshCases(false);
+    // Check if a specific case is requested via URL query params (e.g. after payment simulation)
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetCaseId = urlParams.get("case");
+
+    void refreshCases(false).then((loadedCases) => {
+      if (targetCaseId && loadedCases.some((c) => c.id === targetCaseId)) {
+        setSelectedId(targetCaseId);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    });
+
     void api<{ demo_mode_enabled: boolean }>("/api/demo/status")
       .then((data) => setDemoMode(data.demo_mode_enabled))
       .catch(() => setDemoMode(false));
   }, [refreshCases]);
 
-  const resetDemoData = async () => {
-    if (!window.confirm("This will permanently delete all current data and regenerate a fresh demo dataset. Continue?")) return [];
+  // Real-time synchronization when returning to dashboard tab or receiving cross-tab payment event (throttled & debounced)
+  useEffect(() => {
+    const handleSync = (targetCaseId?: string) => {
+      if (isResettingDemoRef.current) return;
+      const now = Date.now();
+      const caseToLoad = targetCaseId || selectedId;
+      if (now - lastSyncRef.current < 1500) {
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = setTimeout(() => {
+          if (isResettingDemoRef.current) return;
+          lastSyncRef.current = Date.now();
+          void refreshCases(true);
+          if (caseToLoad) {
+            void loadDetails(caseToLoad);
+          }
+        }, 300);
+        return;
+      }
+      lastSyncRef.current = now;
+      void refreshCases(true);
+      if (caseToLoad) {
+        void loadDetails(caseToLoad);
+      }
+    };
+
+    const onFocus = () => handleSync();
+    window.addEventListener("focus", onFocus);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        handleSync();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel("recoverai_payment_sync");
+      bc.onmessage = (event) => {
+        if (event.data?.caseId) {
+          setSelectedId(event.data.caseId);
+          handleSync(event.data.caseId);
+        } else {
+          handleSync();
+        }
+      };
+    } catch {
+      // BroadcastChannel unsupported fallback
+    }
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "recoverai_last_paid_case" && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed.caseId) {
+            setSelectedId(parsed.caseId);
+            handleSync(parsed.caseId);
+            return;
+          }
+        } catch {}
+        handleSync();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data?.type === "PAYMENT_COMPLETED" && e.data?.caseId) {
+        setSelectedId(e.data.caseId);
+        handleSync(e.data.caseId);
+      }
+    };
+    window.addEventListener("message", handleMessage);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("message", handleMessage);
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+      if (bc) bc.close();
+    };
+  }, [selectedId, loadDetails, refreshCases]);
+
+  const resetDemoData = async (skipConfirm = false) => {
+    if (!skipConfirm && !window.confirm("This will reset all demo scenarios to their original deterministic state. Continue?")) return [];
+    
+    // Invalidate any in-flight requests and cancel pending sync timeouts
+    const currentSeq = ++requestSeqRef.current;
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = null;
+    }
+    
+    isResettingDemoRef.current = true;
     setResettingDemo(true);
+    setDetailLoading(true);
     setError(null);
     setNotice(null);
+
+    // Step 3: Immediately clear stale selected detail state so UI never displays old simulation objects
+    setSelected(null);
+    setExplanation(null);
+    setAudit([]);
+    setExecution(null);
+    setSelectedId(null);
+    activeRequestIdRef.current = null;
+
     try {
+      // Step 1 & 2: Trigger POST /api/demo/reset and wait for successful response
       const res = await api<{ message: string }>("/api/demo/reset", { method: "POST" });
       setNotice(res.message);
-      const newCases = await refreshCases(false);
-      setSelectedId(null);
+
+      // Step 4 & 5: Fetch fresh cases from backend and fetch fresh dashboard statistics
+      const [newCases, newStats] = await Promise.all([
+        api<RecoveryCase[]>("/api/cases?limit=1000"),
+        api<DashboardStats>("/api/dashboard/stats").catch(() => null),
+      ]);
+
+      if (currentSeq !== requestSeqRef.current) return [];
+
+      setCases(newCases);
+      if (newStats) setDashboardStats(newStats);
+
+      // Step 6: Locate DEMO-A-AUTO from the newly fetched cases
+      const demoA = (newCases || []).find((c) => c.case_number === 'DEMO-A-AUTO') || newCases?.[0] || null;
+
+      if (demoA) {
+        // Step 7: Set DEMO-A-AUTO as the selected case
+        setSelectedId(demoA.id);
+        activeRequestIdRef.current = demoA.id;
+        setSelected(demoA);
+
+        // Step 8, 9, 10: Fetch fresh case details, fresh explanation, and fresh audit timeline
+        const [freshCase, freshExp, freshAudit] = await Promise.all([
+          api<RecoveryCase>(`/api/cases/${demoA.id}`),
+          api<Explanation>(`/api/cases/${demoA.id}/explanation`),
+          api<AuditEvent[]>(`/api/cases/${demoA.id}/audit`),
+        ]);
+
+        if (currentSeq === requestSeqRef.current) {
+          // Step 11: Render only the newly fetched authoritative data
+          setSelected(freshCase);
+          setExplanation(freshExp);
+          setAudit(freshAudit);
+        }
+      }
+
       return newCases || [];
     } catch (requestError) {
-      setError(extractErrorMessage(requestError, "Failed to reset demo data."));
+      if (currentSeq === requestSeqRef.current) {
+        setError(extractErrorMessage(requestError, "Failed to reset demo data."));
+      }
       return [];
     } finally {
-      setResettingDemo(false);
+      if (currentSeq === requestSeqRef.current) {
+        isResettingDemoRef.current = false;
+        setResettingDemo(false);
+        setDetailLoading(false);
+        setLoading(false);
+      }
     }
   };
 
   const selectScenario = (caseNumber: string, list: RecoveryCase[]) => {
     const c = list.find(x => x.case_number === caseNumber);
     if (c) {
-      setSelectedId(c.id);
+      if (c.id !== selectedId) {
+        setSelected(null);
+        setExplanation(null);
+        setAudit([]);
+        setExecution(null);
+        setSelectedId(c.id);
+      }
       document.getElementById('recovery-queue')?.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
-  const startDemo = async () => {
-    const newCases = await resetDemoData();
-    selectScenario('DEMO-A-AUTO', newCases);
-  };
-
-  const simulateFailure = async () => {
-    setResettingDemo(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const res = await api<{ message: string; case_id: string }>("/api/demo/simulate-failure", { method: "POST", body: JSON.stringify({}) });
-      setNotice(res.message);
-      const newCases = await refreshCases(false);
-      selectScenario(newCases[0].case_number, newCases);
-    } catch (requestError) {
-      setError(extractErrorMessage(requestError, "Unable to simulate payment failure. Please try again."));
-    } finally {
-      setResettingDemo(false);
-    }
+  const resetDemo = async () => {
+    await resetDemoData(true);
+    document.getElementById('recovery-queue')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
@@ -198,7 +351,10 @@ export default function App() {
       setSelected((prev) => (prev?.id === selectedId ? prev : null));
       setExplanation((prev) => (prev?.id === selectedId ? prev : null));
       setAudit([]);
-      void loadDetails(selectedId);
+      // Only invoke loadDetails if not already freshly loaded by resetDemoData
+      if (activeRequestIdRef.current !== selectedId || !selected) {
+        void loadDetails(selectedId);
+      }
     } else {
       setSelected(null);
       setExplanation(null);
@@ -269,8 +425,7 @@ export default function App() {
           cases={cases}
           resettingDemo={resettingDemo}
           loading={loading}
-          startDemo={startDemo}
-          simulateFailure={simulateFailure}
+          resetDemo={resetDemo}
           selectScenario={selectScenario}
           selectedId={selectedId}
         />
