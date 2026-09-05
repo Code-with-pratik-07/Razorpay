@@ -6,8 +6,7 @@ interface DemoControlCenterProps {
   cases: RecoveryCase[];
   resettingDemo: boolean;
   loading: boolean;
-  startDemo: () => Promise<void>;
-  simulateFailure: () => Promise<void>;
+  resetDemo: () => Promise<void>;
   selectScenario: (caseNumber: string, list: RecoveryCase[]) => void;
   selectedId: string | null;
 }
@@ -17,8 +16,7 @@ export function DemoControlCenter({
   cases,
   resettingDemo,
   loading,
-  startDemo,
-  simulateFailure,
+  resetDemo,
   selectScenario,
   selectedId
 }: DemoControlCenterProps) {
@@ -36,12 +34,20 @@ export function DemoControlCenter({
           <h3>LIVE DEMO</h3>
           <p>4 deterministic scenarios demonstrating RecoverAI</p>
         </div>
-        <button className="button secondary" style={{marginRight: '8px'}} onClick={() => void simulateFailure()} disabled={resettingDemo || loading}>
-          Simulate Payment Failure
-        </button>
-        <button className="button primary" onClick={() => void startDemo()} disabled={resettingDemo || loading}>
-          {resettingDemo ? "Starting..." : "Start Demo"}
-        </button>
+        <div className="demo-header-actions">
+          <button
+            id="reset-demo-btn"
+            className="button secondary reset-demo-button"
+            onClick={() => void resetDemo()}
+            disabled={resettingDemo || loading}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="1 4 1 10 7 10"/>
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            </svg>
+            <span>{resettingDemo ? "Resetting Demo..." : "Reset Demo"}</span>
+          </button>
+        </div>
       </div>
       <div className="demo-scenarios-grid">
         <div className={`demo-card ${isSelected('DEMO-A-AUTO') ? 'active' : ''}`} onClick={() => selectScenario('DEMO-A-AUTO', cases)}>
