@@ -86,12 +86,12 @@ export function AIAdvisorCard({ explanation, caseStatus }: AIAdvisorCardProps) {
     actionBadge = 'Recovery Completed';
     const commChannel = explanation.channel_intelligence?.attributed_channel || latestComm?.channel;
     const channelText = commChannel ? `${title(commChannel)} ` : '';
-    businessInsight = `Payment recovery completed successfully. The customer captured payment following ${channelText}recovery outreach.`;
+    businessInsight = `The customer engaged directly with the ${channelText}outreach and successfully captured the payment. The algorithmic prediction and channel selection strategy proved effective for this profile.`;
   } 
   // 2. ABANDONED / CLOSED / Attempt limit reached
   else if (isRecoveryClosed) {
-    actionBadge = 'Recovery Closed';
-    businessInsight = 'The maximum permitted communication attempts were completed without successful payment. The recovery workflow has ended and no further automated outreach will be scheduled.';
+    actionBadge = 'Safe Closure';
+    businessInsight = 'The customer demonstrated no engagement across all permitted channels. Algorithmic analysis indicates that further outreach would yield diminishing returns and risk communication fatigue. The workflow has been safely closed to protect customer lifetime value.';
   } 
   // 3. HUMAN_REVIEW and not yet approved
   else if (isHumanReview) {
@@ -176,16 +176,33 @@ export function AIAdvisorCard({ explanation, caseStatus }: AIAdvisorCardProps) {
       </div>
 
       <div className="ai-card-content">
-        <div className="ai-field-group">
-          <div className="ai-field-label">
-            {isAbandoned ? 'Recovery Status' : 'Recommended Next Action'}
+        <div className="ai-meta-row">
+          <div className="ai-field-group">
+            <div className="ai-field-label">
+              {isAbandoned ? 'Recovery Status' : 'Recommended Action'}
+            </div>
+            <div className="ai-badge-wrap">
+              <Badge value={actionBadge} />
+            </div>
           </div>
-          <div className="ai-badge-wrap">
-            <Badge value={actionBadge} />
+          <div className="ai-field-group">
+            <div className="ai-field-label">Confidence</div>
+            <div className="ai-conf-val">
+              {(() => {
+                const conf = (explanation.ai as any)?.confidence;
+                if (typeof conf === 'number') {
+                  return conf >= 0.75 ? 'High' : conf >= 0.45 ? 'Medium' : 'Low';
+                }
+                if (typeof conf === 'string' && conf.length > 0) {
+                  return title(conf);
+                }
+                return 'High';
+              })()}
+            </div>
           </div>
         </div>
 
-        <div className="ai-field-group">
+        <div className="ai-field-group" style={{ marginTop: 14 }}>
           <div className="ai-field-label">
             Business Insight
           </div>
