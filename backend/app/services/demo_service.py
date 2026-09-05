@@ -7,6 +7,7 @@ from app.db.database import SessionLocal, init_db, engine
 from app.models.customer import Customer
 from app.models.payment_case import CaseStatus, PaymentCase, RecoveryAction
 from app.models.communication_record import CommunicationRecord
+from app.models.payment_attempt import PaymentAttempt
 from app.services.audit_service import log_audit_event
 from app.ml.train import generate_training_data
 
@@ -34,7 +35,61 @@ def seed_demo_data(reset: bool = False):
     with SessionLocal() as db:
         print("Seeding demo customers...")
         customers = []
-        for i in range(20):
+        # Deterministic showcase customers
+        c0 = Customer(
+            email="arun.patel@gmail.com",
+            phone="+91 98765 43210",
+            razorpay_customer_id="cust_demo_auto_a",
+            successful_payments=4,
+            failed_payments=1,
+            lifetime_value=1250000,
+        )
+        c1 = Customer(
+            email="vikram.sharma@outlook.com",
+            phone="+91 98123 45678",
+            razorpay_customer_id="cust_demo_uncertain_b",
+            successful_payments=1,
+            failed_payments=1,
+            lifetime_value=150000,
+        )
+        c2 = Customer(
+            email="priya.nair@enterprise.in",
+            phone="+91 99456 78901",
+            razorpay_customer_id="cust_demo_recovered_c",
+            successful_payments=5,
+            failed_payments=1,
+            lifetime_value=850000,
+        )
+        c3 = Customer(
+            email="suresh.kumar@retail.in",
+            phone="+91 97234 56789",
+            razorpay_customer_id="cust_demo_stopped_d",
+            successful_payments=1,
+            failed_payments=0,
+            lifetime_value=30000,
+        )
+        c4 = Customer(
+            email="meera.reddy@corporate.com",
+            phone="+91 98345 67890",
+            razorpay_customer_id="cust_demo_human_b",
+            successful_payments=2,
+            failed_payments=1,
+            lifetime_value=3500000,
+            preferred_channel="email",
+        )
+        c5 = Customer(
+            email="rohit.verma@techcorp.in",
+            phone="+91 96123 45678",
+            razorpay_customer_id="cust_demo_optout_e",
+            successful_payments=3,
+            failed_payments=1,
+            lifetime_value=450000,
+            opted_out_channels="sms",
+        )
+        db.add_all([c0, c1, c2, c3, c4, c5])
+        customers.extend([c0, c1, c2, c3, c4, c5])
+
+        for i in range(14):
             suffix = uuid.uuid4().hex[:6]
             c = Customer(
                 email=f"demo_user_{suffix}@example.com",
@@ -88,7 +143,6 @@ def seed_demo_data(reset: bool = False):
         # Execute recovery for DEMO-A-AUTO to get a REAL Razorpay link!
         log_audit_event(db, case_a.id, "failure_detected", {"demo": True, "note": "Synthetic Demo A"})
         log_audit_event(db, case_a.id, "ml_prediction", {"recovery_probability": 0.95})
-        log_audit_event(db, case_a.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
         log_audit_event(db, case_a.id, "ai_analysis", {
             "recommended_action": "payment_link",
             "reasoning": "The payment has a high predicted recovery probability (95%) and has passed all policy checks. RecoverAI automatically generated a secure payment link and selected WhatsApp as the primary communication channel.",
@@ -101,13 +155,12 @@ def seed_demo_data(reset: bool = False):
         execute_recovery(db, case_a, automatic=True)
         rec_a = db.scalar(select(CommunicationRecord).where(CommunicationRecord.case_id == case_a.id))
         if rec_a:
-            rec_a.outcome = "LINK_CLICKED"
-            rec_a.message_snippet = "WhatsApp payment link delivered - Clicked by customer"
+            rec_a.outcome = "DELIVERED"
+            rec_a.message_snippet = "WhatsApp payment link delivered — Awaiting customer response"
             db.commit()
 
         log_audit_event(db, case_b.id, "failure_detected", {"demo": True, "note": "Synthetic Demo B (Uncertain)"})
         log_audit_event(db, case_b.id, "ml_prediction", {"recovery_probability": 0.55})
-        log_audit_event(db, case_b.id, "policy_check", {"allowed": True, "reason": "Automatic recovery approved."})
         log_audit_event(db, case_b.id, "ai_analysis", {
             "recommended_action": "payment_link",
             "reasoning": "Automatic Recovery: Recovery probability is uncertain, but a controlled automatic recovery attempt is recommended.",
@@ -218,6 +271,19 @@ def seed_demo_data(reset: bool = False):
             "attempt_number": 1,
             "signal": "Attributed recovery signal: Customer completed payment following SMS reminder.",
         })
+
+        # Seed real successful PaymentAttempt row for DEMO-C-RECOVERED
+        attempt_c = PaymentAttempt(
+            case_id=case_c.id,
+            payment_method="netbanking",
+            amount=case_c.amount,
+            currency="INR",
+            status="success",
+            source="recovery_payment_link",
+            created_at=now - timedelta(minutes=30),
+        )
+        db.add(attempt_c)
+        db.commit()
 
         # Seed DEMO-D-STOPPED link and records
         log_audit_event(db, case_d.id, "payment_link_created", {

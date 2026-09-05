@@ -44,7 +44,17 @@ def run():
 
     assert len(journey_a) == 1, f"Expected 1 record, got {len(journey_a)}"
     assert journey_a[0]["channel"] == "whatsapp", f"Expected whatsapp, got {journey_a[0]['channel']}"
-    assert journey_a[0]["outcome"] == "LINK_CLICKED", f"Expected LINK_CLICKED, got {journey_a[0]['outcome']}"
+    assert journey_a[0]["outcome"] == "DELIVERED", f"Expected DELIVERED initially, got {journey_a[0]['outcome']}"
+
+    # Step 1: Customer opens payment link
+    print("\nSimulating Step 1: Customer clicks/opens payment link...")
+    click_res = post(f"/api/cases/{demo_a['id']}/track-click")
+    assert click_res["success"] is True
+    exp_a = get(f"/api/cases/{demo_a['id']}/explanation")
+    journey_a = exp_a["channel_intelligence"]["communication_journey"]
+    followup_a = exp_a["channel_intelligence"]["followup_decision"]
+
+    assert journey_a[0]["outcome"] == "LINK_CLICKED", f"Expected LINK_CLICKED after click, got {journey_a[0]['outcome']}"
     assert followup_a["previous_outcome"] == "LINK_CLICKED"
     assert followup_a["recommended_wait_period"] == "24 hours"
     assert followup_a["next_action"] == "RETRY_SAME_CHANNEL"

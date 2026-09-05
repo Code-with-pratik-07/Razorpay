@@ -25,12 +25,15 @@ def _case(db: Session, case_id: str) -> PaymentCase:
     if case is None:
         raise HTTPException(status_code=404, detail="Recovery case not found.")
 
-    # Precedence: If retry limit reached and not recovered/closed, transition to ABANDONED
     if case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED} and (case.retry_count or 0) >= (case.max_retries or 3):
         if case.status != CaseStatus.ABANDONED:
             case.status = CaseStatus.ABANDONED
             case.recovery_action = RecoveryAction.NONE
             db.commit()
+
+    if case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED, CaseStatus.ABANDONED}:
+        from app.services.recovery_service import sync_payment_link_status
+        sync_payment_link_status(db, case)
     return case
 
 
@@ -38,11 +41,6 @@ def _summary(case: PaymentCase) -> dict:
     status_val = case.status.value
     if case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED} and (case.retry_count or 0) >= (case.max_retries or 3):
         status_val = CaseStatus.ABANDONED.value
-    elif case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED, CaseStatus.ABANDONED}:
-        now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
-        has_active_link = bool(case.payment_link_expires_at and case.payment_link_expires_at > now_dt)
-        if case.status == CaseStatus.FAILED and (has_active_link or (case.retry_count or 0) > 0 or case.notification_status in {"SENT", "SIMULATED", "WHATSAPP_SIMULATED", "SMS_SIMULATED"}):
-            status_val = CaseStatus.RECOVERING.value
 
     attempts_list = []
     if hasattr(case, "payment_attempts") and case.payment_attempts:
@@ -118,13 +116,6 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
             case.status = CaseStatus.ABANDONED
             case.recovery_action = RecoveryAction.NONE
             db.commit()
-    elif case.status == CaseStatus.FAILED and case.status not in {CaseStatus.RECOVERED, CaseStatus.CLOSED, CaseStatus.ABANDONED}:
-        now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
-        has_active_link = bool(case.payment_link_expires_at and case.payment_link_expires_at > now_dt)
-        has_human_approval = any(e.event_type in {"human_approval", "manual_review_approved"} for e in events)
-        if has_active_link or (case.retry_count or 0) > 0 or has_human_approval:
-            case.status = CaseStatus.RECOVERING
-            db.commit()
 
     first_policy_check = next((e for e in events if e.event_type == "policy_check"), None)
     if first_policy_check:
@@ -138,7 +129,12 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
     else:
         policy = check_recovery_policy(case, _policy(db)).to_dict()
         
-    history = {"lifetime_value": case.customer.lifetime_value, "successful_payments": case.customer.successful_payments, "failed_payments": case.customer.failed_payments}
+    history = {
+        "lifetime_value": case.customer.lifetime_value,
+        "successful_payments": case.customer.successful_payments,
+        "failed_payments": case.customer.failed_payments,
+        "interaction_count": (case.customer.successful_payments + case.customer.failed_payments),
+    }
     
     is_cold_start = (case.customer.successful_payments + case.customer.failed_payments) < 3
     
@@ -211,7 +207,7 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
     else:
         communication_status = "PAUSED"
 
-    # 6. AI Advisor Decision (Retain historical analysis event from audit trail with fallback)
+    # 6. AI Advisor Decision (Retain historical analysis event with truthful lifecycle updates)
     ai_decision = _last_ai_decision(db, case.id)
     if not ai_decision and (case.status == CaseStatus.ABANDONED or is_attempt_exhausted):
         ai_decision = AIDecision(
@@ -221,6 +217,97 @@ def _explanation(db: Session, case: PaymentCase) -> CaseExplanation:
             confidence=0.95,
             source="groq",
         )
+    elif ai_decision and case.status not in {CaseStatus.HUMAN_REVIEW}:
+        case_records = list(
+            db.scalars(
+                select(CommunicationRecord)
+                .where(CommunicationRecord.case_id == case.id)
+                .order_by(CommunicationRecord.attempt_number.desc(), CommunicationRecord.created_at.desc())
+            )
+        )
+        if case.status in {CaseStatus.RECOVERED, CaseStatus.CLOSED}:
+            ai_decision = AIDecision(
+                recommended_action=ai_decision.recommended_action,
+                reasoning="Payment recovery completed successfully. The customer captured payment following recovery outreach.",
+                customer_message=ai_decision.customer_message,
+                confidence=ai_decision.confidence,
+                source=ai_decision.source,
+            )
+        elif case.status == CaseStatus.ABANDONED or is_attempt_exhausted:
+            ai_decision = AIDecision(
+                recommended_action=ai_decision.recommended_action,
+                reasoning="The maximum permitted recovery attempts have been reached without successful payment. Further automated communication should stop to prevent unnecessary customer outreach.",
+                customer_message=ai_decision.customer_message,
+                confidence=ai_decision.confidence,
+                source=ai_decision.source,
+            )
+        elif case_records and channel_intelligence.followup_decision:
+            fup = channel_intelligence.followup_decision
+            has_engaged = any(r.outcome in {"LINK_CLICKED", "CLICKED"} for r in case_records)
+            latest_rec = case_records[0]
+            prev_rec = case_records[1] if len(case_records) > 1 else None
+            rem = max(0, (case.max_retries or 3) - (case.retry_count or 0))
+            rem_str = "One recovery attempt remains" if rem == 1 else f"{rem} recovery attempts remain"
+            
+            if fup.next_action == "AWAIT_RESPONSE" or latest_rec.outcome in {"AWAITING_RESPONSE", "PENDING_RESPONSE"}:
+                if not has_engaged and prev_rec and prev_rec.channel.lower() != latest_rec.channel.lower():
+                    prev_name = "WhatsApp" if prev_rec.channel.lower() == "whatsapp" else "SMS" if prev_rec.channel.lower() == "sms" else "Email"
+                    curr_name = "WhatsApp" if latest_rec.channel.lower() == "whatsapp" else "SMS" if latest_rec.channel.lower() == "sms" else "Email"
+                    ai_decision = AIDecision(
+                        recommended_action=ai_decision.recommended_action,
+                        reasoning=(
+                            f"The initial {prev_name} recovery communication was delivered but received no customer engagement. "
+                            f"RecoverAI therefore selected {curr_name} as the next-best communication channel. "
+                            f"{rem_str}, and the system is currently observing customer activity during the 24-hour response window to avoid unnecessary messaging."
+                        ),
+                        customer_message=ai_decision.customer_message,
+                        confidence=ai_decision.confidence,
+                        source=ai_decision.source,
+                    )
+                elif has_engaged:
+                    ch_name = "WhatsApp" if latest_rec.channel.lower() == "whatsapp" else "SMS" if latest_rec.channel.lower() == "sms" else "Email"
+                    ai_decision = AIDecision(
+                        recommended_action=ai_decision.recommended_action,
+                        reasoning=(
+                            f"The customer previously engaged by opening the recovery payment link, and a {ch_name} reminder was delivered. "
+                            f"{rem_str} within policy limits, and the system is currently observing customer activity during the 24-hour response window to avoid unnecessary messaging."
+                        ),
+                        customer_message=ai_decision.customer_message,
+                        confidence=ai_decision.confidence,
+                        source=ai_decision.source,
+                    )
+                else:
+                    curr_name = "WhatsApp" if latest_rec.channel.lower() == "whatsapp" else "SMS" if latest_rec.channel.lower() == "sms" else "Email"
+                    ai_decision = AIDecision(
+                        recommended_action=ai_decision.recommended_action,
+                        reasoning=(
+                            f"The initial {curr_name} recovery communication was delivered but received no customer engagement. "
+                            f"{rem_str}, and the system is currently observing customer activity during the 24-hour response window to avoid unnecessary messaging."
+                        ),
+                        customer_message=ai_decision.customer_message,
+                        confidence=ai_decision.confidence,
+                        source=ai_decision.source,
+                    )
+            elif fup.next_action == "SWITCH_CHANNEL":
+                prev_name = "WhatsApp" if latest_rec.channel.lower() == "whatsapp" else "SMS" if latest_rec.channel.lower() == "sms" else "Email"
+                next_ch = fup.selected_channel or "sms"
+                next_name = "WhatsApp" if next_ch.lower() == "whatsapp" else "SMS" if next_ch.lower() == "sms" else "Email"
+                ai_decision = AIDecision(
+                    recommended_action=ai_decision.recommended_action,
+                    reasoning=f"The customer did not engage with the previous {prev_name} communication. After the follow-up period, {next_name} is recommended as the next best verified channel.",
+                    customer_message=ai_decision.customer_message,
+                    confidence=ai_decision.confidence,
+                    source=ai_decision.source,
+                )
+            elif fup.next_action == "RETRY_SAME_CHANNEL":
+                ch_name = "WhatsApp" if latest_rec.channel.lower() == "whatsapp" else "SMS" if latest_rec.channel.lower() == "sms" else "Email"
+                ai_decision = AIDecision(
+                    recommended_action=ai_decision.recommended_action,
+                    reasoning=f"The customer opened the payment link but did not complete checkout. A reminder through {ch_name} is recommended because the customer has already demonstrated engagement.",
+                    customer_message=ai_decision.customer_message,
+                    confidence=ai_decision.confidence,
+                    source=ai_decision.source,
+                )
 
     return CaseExplanation(
         **_summary(case),
@@ -300,7 +387,7 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
         db.scalars(
             select(CommunicationRecord)
             .where(CommunicationRecord.case_id == case.id)
-            .order_by(CommunicationRecord.created_at.desc())
+            .order_by(CommunicationRecord.attempt_number.desc(), CommunicationRecord.created_at.desc())
         )
     )
 
@@ -323,8 +410,8 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
     last_link_event = next((e for e in reversed(events) if e.event_type == "payment_link_created"), None)
     url = last_link_event.event_data.get("url") if last_link_event else "https://rzp.io/i/demo_link"
 
-    if (case.retry_count or 0) >= (case.max_retries or 3):
-        raise HTTPException(status_code=400, detail="Maximum recovery attempts reached.")
+    if case.status in {CaseStatus.RECOVERED, CaseStatus.CLOSED, CaseStatus.ABANDONED} or (case.retry_count or 0) >= (case.max_retries or 3):
+        raise HTTPException(status_code=400, detail="Cannot execute next step on a terminal case.")
 
     # Duplicate / Idempotency prevention: If the latest attempt is already awaiting customer response
     if (case_records and case_records[0].outcome in {"AWAITING_RESPONSE", "PENDING_RESPONSE"}) or followup.next_action == "AWAIT_RESPONSE":
@@ -346,6 +433,38 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
     elif followup.next_action == "RETRY_SAME_CHANNEL":
         channel = followup.selected_channel or "whatsapp"
         attempt_num = len(case_records) + 1
+
+        # Concurrency & Idempotency check: ensure attempt_num has not already been recorded
+        existing_attempt = db.scalar(
+            select(CommunicationRecord).where(
+                CommunicationRecord.case_id == case.id,
+                CommunicationRecord.attempt_number == attempt_num,
+            )
+        )
+        if existing_attempt:
+            return {
+                "status": "no_action",
+                "reason": "The current follow-up action has already been executed.",
+                "explanation": _explanation(db, case)
+            }
+
+        # Optimistic concurrency lock on retry_count
+        current_retry = case.retry_count or 0
+        updated = db.query(PaymentCase).filter(
+            PaymentCase.id == case.id,
+            PaymentCase.retry_count == current_retry,
+        ).update({"retry_count": attempt_num}, synchronize_session=False)
+
+        if updated == 0:
+            db.rollback()
+            db.expire_all()
+            reloaded = _case(db, case.id)
+            return {
+                "status": "no_action",
+                "reason": "The current follow-up action has already been executed.",
+                "explanation": _explanation(db, reloaded)
+            }
+
         case.retry_count = attempt_num
         db.commit()
 
@@ -376,18 +495,51 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
             "wait_period": followup.recommended_wait_period,
             "reason": followup.reason,
         })
-
-        if attempt_num >= (case.max_retries or 3):
-            case.status = CaseStatus.ABANDONED
-            case.recovery_action = RecoveryAction.NONE
-            db.commit()
-            log_audit_event(db, case.id, "recovery_closed", {"reason": "Maximum recovery attempts reached."})
+        log_audit_event(db, case.id, "observation_period_started", {
+            "channel": channel,
+            "attempt_number": attempt_num,
+            "wait_period": followup.recommended_wait_period or "24 hours",
+            "remaining_attempts": max(0, (case.max_retries or 3) - attempt_num),
+            "reason": f"Waiting {followup.recommended_wait_period or '24 hours'} for customer response before evaluating further outreach.",
+        })
 
         return {"action": "reminder_dispatched", "channel": channel, "attempt": attempt_num, "explanation": _explanation(db, case)}
 
     elif followup.next_action == "SWITCH_CHANNEL":
         channel = followup.selected_channel or "sms"
         attempt_num = len(case_records) + 1
+
+        # Concurrency & Idempotency check: ensure attempt_num has not already been recorded
+        existing_attempt = db.scalar(
+            select(CommunicationRecord).where(
+                CommunicationRecord.case_id == case.id,
+                CommunicationRecord.attempt_number == attempt_num,
+            )
+        )
+        if existing_attempt:
+            return {
+                "status": "no_action",
+                "reason": "The current follow-up action has already been executed.",
+                "explanation": _explanation(db, case)
+            }
+
+        # Optimistic concurrency lock on retry_count
+        current_retry = case.retry_count or 0
+        updated = db.query(PaymentCase).filter(
+            PaymentCase.id == case.id,
+            PaymentCase.retry_count == current_retry,
+        ).update({"retry_count": attempt_num}, synchronize_session=False)
+
+        if updated == 0:
+            db.rollback()
+            db.expire_all()
+            reloaded = _case(db, case.id)
+            return {
+                "status": "no_action",
+                "reason": "The current follow-up action has already been executed.",
+                "explanation": _explanation(db, reloaded)
+            }
+
         case.retry_count = attempt_num
         db.commit()
 
@@ -417,12 +569,13 @@ def run_next_recovery_step(case_id: str, db: Session = Depends(get_db)):
             "attempt_number": attempt_num,
             "reason": followup.reason,
         })
-
-        if attempt_num >= (case.max_retries or 3):
-            case.status = CaseStatus.ABANDONED
-            case.recovery_action = RecoveryAction.NONE
-            db.commit()
-            log_audit_event(db, case.id, "recovery_closed", {"reason": "Maximum recovery attempts reached."})
+        log_audit_event(db, case.id, "observation_period_started", {
+            "channel": channel,
+            "attempt_number": attempt_num,
+            "wait_period": followup.recommended_wait_period or "24 hours",
+            "remaining_attempts": max(0, (case.max_retries or 3) - attempt_num),
+            "reason": f"Switched to {channel.upper()} Attempt {attempt_num}. Waiting {followup.recommended_wait_period or '24 hours'} for customer response.",
+        })
 
         return {"action": "channel_switched", "channel": channel, "attempt": attempt_num, "explanation": _explanation(db, case)}
 
@@ -466,3 +619,21 @@ def track_case_payment_link_click(
 ):
     case = _case(db, case_id)
     return track_payment_link_click(db=db, case=case)
+
+
+@router.post("/{case_id}/sync")
+def sync_case_payment_status(
+    case_id: str,
+    db: Session = Depends(get_db),
+):
+    case = _case(db, case_id)
+    from app.services.recovery_service import sync_payment_link_status
+    synced = sync_payment_link_status(db, case)
+    return {
+        "success": True,
+        "case_id": case.id,
+        "status": case.status.value,
+        "synced": synced,
+        "explanation": _explanation(db, case)
+    }
+

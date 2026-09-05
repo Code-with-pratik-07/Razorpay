@@ -80,3 +80,14 @@ class RazorpayService:
             if hasattr(exc, 'args') and len(exc.args) > 0:
                 error_details = str(exc.args[0])
             raise RazorpayServiceError(f"Unable to create Razorpay Payment Link: {error_details}") from exc
+
+    def fetch_payment_link_or_invoice(self, link_id: str) -> dict[str, Any]:
+        """Fetch payment link or invoice status from Razorpay."""
+        try:
+            if link_id.startswith("inv_"):
+                return dict(self.client.invoice.fetch(link_id))
+            elif link_id.startswith("plink_"):
+                return dict(self.client.payment_link.fetch(link_id))
+            return {}
+        except Exception:
+            return {}

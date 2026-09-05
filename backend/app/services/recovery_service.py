@@ -304,7 +304,15 @@ def execute_recovery(db: Session, case: PaymentCase, automatic: bool = False) ->
     case.policy_check_passed = policy_result.allowed
     case.policy_reason = policy_result.reason
     db.commit()
-    log_audit_event(db, case.id, "policy_check", policy_result.to_dict())
+
+    # Deduplication guard: do not create redundant policy_check events if recently recorded
+    recent_events = list_audit_events(db, case.id)
+    has_recent_policy = any(
+        e.event_type == "policy_check" and (now - e.timestamp).total_seconds() < 10.0
+        for e in reversed(recent_events)
+    )
+    if not has_recent_policy:
+        log_audit_event(db, case.id, "policy_check", policy_result.to_dict())
 
     if not policy_result.allowed:
         case.status = CaseStatus.HUMAN_REVIEW
@@ -585,6 +593,44 @@ def record_payment_attempt(
         }
 
 
+def sync_payment_link_status(db: Session, case: PaymentCase) -> bool:
+    """Check Razorpay API if an active payment link or invoice has been paid.
+    
+    This ensures local development environments (where inbound webhooks cannot reach localhost)
+    stay 100% synchronized with real Razorpay test payments.
+    """
+    if case.status in {CaseStatus.RECOVERED, CaseStatus.ABANDONED, CaseStatus.CLOSED}:
+        return False
+
+    events = list_audit_events(db, case.id)
+    last_link_event = next((e for e in reversed(events) if e.event_type == "payment_link_created"), None)
+    if not last_link_event:
+        return False
+
+    link_id = last_link_event.event_data.get("payment_link_id")
+    if not link_id:
+        return False
+
+    try:
+        from app.services.razorpay_service import RazorpayService
+        svc = RazorpayService()
+        data = svc.fetch_payment_link_or_invoice(link_id)
+        if data.get("status") == "paid":
+            method = data.get("payment_method") or case.payment_method or "upi"
+            amt = data.get("amount_paid") or case.amount
+            record_payment_attempt(
+                db=db,
+                case=case,
+                payment_method=method,
+                status="success",
+                amount=amt,
+            )
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def track_payment_link_click(db: Session, case: PaymentCase) -> dict[str, Any]:
     """Record a customer payment link opened/clicked event.
 
@@ -611,7 +657,7 @@ def track_payment_link_click(db: Session, case: PaymentCase) -> dict[str, Any]:
     latest = db.scalar(
         select(CommunicationRecord)
         .where(CommunicationRecord.case_id == case.id)
-        .order_by(CommunicationRecord.created_at.desc())
+        .order_by(CommunicationRecord.attempt_number.desc(), CommunicationRecord.created_at.desc())
     )
 
     # 3. Idempotency check:

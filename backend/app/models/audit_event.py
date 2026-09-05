@@ -19,5 +19,5 @@ class AuditEvent(Base):
     case_id: Mapped[str] = mapped_column(ForeignKey("payment_cases.id"), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
     event_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     payment_case = relationship("PaymentCase", back_populates="audit_events")

@@ -67,10 +67,16 @@ COLD_START_BASELINE = {
 # ---------------------------------------------------------------------------
 def evaluate_customer_maturity(
     customer: Customer | None,
-    all_customer_records: list[CommunicationRecord],
+    all_customer_records: list[CommunicationRecord] | None = None,
 ) -> tuple[Literal["COLD_START", "LEARNING", "ESTABLISHED"], str]:
-    """Determine customer communication profile maturity based on historical interactions."""
-    count = len(all_customer_records)
+    """Determine customer communication profile maturity based strictly on customer history."""
+    # Strict separation: customer historical transactions / prior interactions are decoupled from current case attempts
+    tx_count = ((customer.successful_payments or 0) + (customer.failed_payments or 0)) if customer else 0
+    if tx_count > 0:
+        count = tx_count
+    else:
+        count = len(all_customer_records or [])
+
     if count == 0:
         return "COLD_START", "No previous communication history. RecoverAI is using a verified-contact fallback strategy."
     elif count < THRESHOLD_ESTABLISHED:
@@ -245,7 +251,12 @@ def evaluate_channel_suitability(
         opted_outs = {ch.strip().lower() for ch in customer.opted_out_channels.split(",") if ch.strip()}
 
     # Customer communication maturity derived dynamically from interaction history
-    records_for_maturity = all_records if all_records else c_records
+    # Strict separation: current case attempts are NEVER used to fabricate customer maturity
+    if case_records is None:
+        records_for_maturity = all_records
+    else:
+        prior_records = [r for r in all_records if not case or r.case_id != case.id]
+        records_for_maturity = prior_records
     maturity, maturity_desc = evaluate_customer_maturity(customer, records_for_maturity)
 
     scores: dict[str, float] = {}
@@ -277,6 +288,10 @@ def evaluate_channel_suitability(
         suitability = scores[recommended]
         alternatives = [c for c in sorted_channels if c != recommended]
 
+        # Check if there was an unheeded previous attempt
+        prior_unheeded = any(r.channel != recommended and r.outcome in {"NO_ENGAGEMENT", "IGNORED", "DELIVERED", "SENT"} for r in c_records)
+        prior_channel = c_records[-1].channel if c_records else None
+
         # Structured Decision Basis for Cold Start
         decision_basis = [
             DecisionBasisItem(
@@ -304,11 +319,24 @@ def evaluate_channel_suitability(
             DecisionFactorSummary(name="Recovery Context", status="Standard", score=0.60),
         ]
 
-        ch_title = "WhatsApp" if recommended == "whatsapp" else "SMS" if recommended == "sms" else "Email"
-        reason = (
-            "This is a new customer with no previous communication history. "
-            f"{ch_title} is recommended because a verified {'mobile number' if recommended in {'whatsapp', 'sms'} else 'email address'} is available."
-        )
+        if prior_unheeded and prior_channel and prior_channel != recommended:
+            reason = (
+                f"The previous {prior_channel.upper()} notification was delivered but received no engagement. "
+                f"The system has deprioritized {prior_channel.upper()} and selected the next best available channel ({recommended.upper()})."
+            )
+            decision_basis.append(
+                DecisionBasisItem(
+                    factor="previous_channel_attempt",
+                    impact="negative",
+                    description=f"{prior_channel.upper()} received no engagement during the previous attempt.",
+                )
+            )
+        else:
+            ch_title = "WhatsApp" if recommended == "whatsapp" else "SMS" if recommended == "sms" else "Email"
+            reason = (
+                "This is a new customer with no previous communication history. "
+                f"{ch_title} is recommended because a verified {'mobile number' if recommended in {'whatsapp', 'sms'} else 'email address'} is available."
+            )
 
     # 2. LEARNING OR ESTABLISHED STRATEGY
     else:
@@ -519,14 +547,14 @@ def evaluate_followup_decision(
             reason="Payment completed successfully. All automated recovery actions stopped.",
         )
 
-    if case.status == CaseStatus.ABANDONED or ((case.retry_count or 0) >= (case.max_retries or 3)):
+    if case.status in {CaseStatus.ABANDONED, CaseStatus.CLOSED}:
         latest_out = case_records[0].outcome if case_records else "NO_ENGAGEMENT"
         return FollowupDecision(
             previous_outcome=latest_out,
             recommended_wait_period="None",
             next_action="STOP_RECOVERY",
             selected_channel=None,
-            reason="The maximum number of recovery attempts has been reached without successful payment. Further automated contact has stopped to avoid unnecessary customer communication.",
+            reason="The maximum number of recovery attempts has been reached. Automated recovery actions have stopped.",
         )
 
     # 2. No communication attempts yet
@@ -572,17 +600,27 @@ def evaluate_followup_decision(
     # Rule: Currently Awaiting Response after follow-up execution
     if latest.outcome in {"AWAITING_RESPONSE", "PENDING_RESPONSE"}:
         ch_name = "WhatsApp" if latest.channel == "whatsapp" else "SMS" if latest.channel == "sms" else "Email"
+        has_engaged = any(r.outcome in {"LINK_CLICKED", "CLICKED"} for r in case_records)
+        comm_type = "reminder" if has_engaged else "recovery communication"
         return FollowupDecision(
             previous_outcome="AWAITING_RESPONSE",
             recommended_wait_period="24 hours",
             next_action="AWAIT_RESPONSE",
             selected_channel=latest.channel,
-            reason=f"A {ch_name} reminder has been sent. RecoverAI is waiting for customer activity before taking another recovery action.",
+            reason=f"A {ch_name} {comm_type} has been sent. RecoverAI is waiting for customer activity before taking another recovery action.",
         )
 
     # Rule 2: Link Clicked
     if latest.outcome in {"LINK_CLICKED", "CLICKED"}:
         ch_name = "WhatsApp" if latest.channel == "whatsapp" else "SMS" if latest.channel == "sms" else "Email"
+        if (case.retry_count or 0) >= (case.max_retries or 3):
+            return FollowupDecision(
+                previous_outcome="LINK_CLICKED",
+                recommended_wait_period="24 hours",
+                next_action="AWAIT_RESPONSE",
+                selected_channel=latest.channel,
+                reason=f"The customer opened the recovery payment page. All {case.max_retries} scheduled communications have been delivered. Waiting for customer payment.",
+            )
         return FollowupDecision(
             previous_outcome="LINK_CLICKED",
             recommended_wait_period="24 hours",
@@ -603,6 +641,15 @@ def evaluate_followup_decision(
         )
 
     # Rule 3: No Engagement (or Delivered without click)
+    if (case.retry_count or 0) >= (case.max_retries or 3):
+        return FollowupDecision(
+            previous_outcome="NO_ENGAGEMENT",
+            recommended_wait_period="None",
+            next_action="AWAIT_RESPONSE",
+            selected_channel=latest.channel,
+            reason=f"All {case.max_retries} scheduled communication attempts have been completed. Observing customer response before concluding recovery.",
+        )
+
     next_ch = recommended_channel if recommended_channel != latest.channel else next((a for a in alternatives if a != latest.channel), "sms")
     return FollowupDecision(
         previous_outcome="NO_ENGAGEMENT",
@@ -622,7 +669,7 @@ def get_case_channel_intelligence(db: Session, case: PaymentCase) -> ChannelInte
         db.scalars(
             select(CommunicationRecord)
             .where(CommunicationRecord.case_id == case.id)
-            .order_by(CommunicationRecord.created_at.desc())
+            .order_by(CommunicationRecord.attempt_number.desc(), CommunicationRecord.created_at.desc())
         )
     )
 
