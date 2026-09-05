@@ -19,7 +19,7 @@ const CustomTooltip = ({ active, payload }: any) => {
   return null;
 };
 
-const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#EF4444', '#64748B'];
+const REVENUE_COLORS = ['#10B981', '#F59E0B'];
 
 export function Charts({ stats, cases }: ChartsProps) {
   const revenueData = useMemo(() => {
@@ -30,9 +30,18 @@ export function Charts({ stats, cases }: ChartsProps) {
     ];
   }, [stats]);
 
+  const activeRevenueSlices = useMemo(() => {
+    return revenueData.filter(d => d.value > 0);
+  }, [revenueData]);
+
+  const hasRevenueData = Boolean(
+    stats && ((stats.revenue_recovered || 0) + (stats.revenue_at_risk || 0)) > 0
+  );
+
   const unifiedStatusData = useMemo(() => {
     let recovering = 0;
     let recovered = 0;
+    let humanReview = 0;
     let abandoned = 0;
 
     cases.forEach((curr) => {
@@ -40,6 +49,8 @@ export function Charts({ stats, cases }: ChartsProps) {
         recovered++;
       } else if (curr.status === "abandoned" || curr.status === "closed") {
         abandoned++;
+      } else if (curr.status === "human_review") {
+        humanReview++;
       } else if (curr.status === "recovering") {
         recovering++;
       }
@@ -48,9 +59,12 @@ export function Charts({ stats, cases }: ChartsProps) {
     return [
       { name: "Recovering", value: recovering },
       { name: "Recovered", value: recovered },
+      { name: "Human Review", value: humanReview },
       { name: "Abandoned", value: abandoned },
     ];
   }, [cases]);
+
+  const hasStatusData = cases.length > 0;
 
   const failureData = useMemo(() => {
     const counts = cases.reduce((acc, curr) => {
@@ -61,40 +75,81 @@ export function Charts({ stats, cases }: ChartsProps) {
     return Object.entries(counts).map(([name, value]) => ({ name: title(name), value })).sort((a, b) => b.value - a.value).slice(0, 5);
   }, [cases]);
 
+  const hasFailureData = failureData.length > 0 && failureData.some(d => d.value > 0);
+
   return (
     <div className="charts-grid">
       <div className="chart-card">
         <div className="chart-header">
           <p className="eyebrow">Financial Impact</p>
           <h3>Revenue Recovered vs At Risk</h3>
+          <p className="chart-desc">Recovered value against pending recovery volume</p>
         </div>
         <div className="chart-container">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={revenueData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                {revenueData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-              </Pie>
-              <RechartsTooltip content={<CustomTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
+          {!stats ? (
+            <div className="chart-empty-state chart-loading-state">
+              <span className="spinner" style={{ marginRight: 8 }} />
+              <span>Loading financial metrics...</span>
+            </div>
+          ) : !hasRevenueData || activeRevenueSlices.length === 0 ? (
+            <div className="chart-empty-state">
+              <span>No recovery revenue data recorded yet.</span>
+            </div>
+          ) : (
+            <div>
+              <ResponsiveContainer width="100%" height={190} minWidth={0}>
+                <PieChart>
+                  <Pie data={activeRevenueSlices} cx="50%" cy="50%" innerRadius={52} outerRadius={76} paddingAngle={3} dataKey="value">
+                    {activeRevenueSlices.map((item, index) => (
+                      <Cell key={`cell-${index}`} fill={item.name === 'Recovered' ? '#10B981' : '#F59E0B'} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip content={<CustomTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 4, fontSize: '11px' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#475569', fontWeight: 600 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10B981' }} />
+                  Recovered ({formatINR(stats.revenue_recovered)})
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#475569', fontWeight: 600 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B' }} />
+                  At Risk ({formatINR(stats.revenue_at_risk)})
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="chart-card">
         <div className="chart-header">
           <p className="eyebrow">Case Volume</p>
           <h3>Recovery Status</h3>
-          <p className="chart-desc" style={{ fontSize: '13px', color: '#71717A', marginTop: '4px' }}>Overview of the current recovery and payment outcomes.</p>
+          <p className="chart-desc">Overview of active recovery lifecycle distribution</p>
         </div>
         <div className="chart-container">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={unifiedStatusData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E4E4E7" />
-              <XAxis dataKey="name" interval={0} tick={{ fontSize: 11, fill: '#71717A' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F4F4F5' }} />
-              <Bar dataKey="value" fill="var(--color-accent)" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {!hasStatusData ? (
+            <div className="chart-empty-state">
+              <span>No cases available.</span>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220} minWidth={0}>
+              <BarChart data={unifiedStatusData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                <XAxis dataKey="name" interval={0} tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F1F5F9' }} />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                  {unifiedStatusData.map((entry, index) => {
+                    const color = entry.name === 'Recovered' ? '#10B981' :
+                                  entry.name === 'Human Review' ? '#F59E0B' :
+                                  entry.name === 'Abandoned' ? '#64748B' : '#2563EB';
+                    return <Cell key={`status-cell-${index}`} fill={color} />;
+                  })}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 
@@ -102,17 +157,24 @@ export function Charts({ stats, cases }: ChartsProps) {
         <div className="chart-header">
           <p className="eyebrow">Failure Analysis</p>
           <h3>Top Failure Reasons</h3>
+          <p className="chart-desc">Primary reasons for initial transaction decline</p>
         </div>
         <div className="chart-container">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={failureData} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E4E4E7" />
-              <XAxis type="number" tick={{ fontSize: 12, fill: '#71717A' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: '#71717A' }} axisLine={false} tickLine={false} />
-              <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F4F4F5' }} />
-              <Bar dataKey="value" fill="#8B5CF6" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {!hasFailureData ? (
+            <div className="chart-empty-state">
+              <span>No transaction failure reasons recorded.</span>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220} minWidth={0}>
+              <BarChart data={failureData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
+                <XAxis type="number" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
+                <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F1F5F9' }} />
+                <Bar dataKey="value" fill="#6366F1" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
     </div>

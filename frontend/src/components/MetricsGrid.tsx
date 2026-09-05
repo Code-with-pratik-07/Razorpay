@@ -17,7 +17,7 @@ export function MetricsGrid({ stats, cases, setSelectedId }: MetricsGridProps) {
       </div>
       <div className="metric">
         <span className="metric-label">Recovered Revenue</span>
-        <div className="metric-value" style={{ color: 'var(--color-success)' }}>{formatINR(stats?.revenue_recovered ?? 0)}</div>
+        <div className="metric-value metric-value-success">{formatINR(stats?.revenue_recovered ?? 0)}</div>
         <div className="metric-sub">Revenue recovered through successful payment recovery.</div>
       </div>
       <div className="metric">
@@ -35,13 +35,22 @@ export function MetricsGrid({ stats, cases, setSelectedId }: MetricsGridProps) {
         <div className="metric-value">{stats?.automatic_recoveries ?? 0}</div>
         <div className="metric-sub">Automatic recoveries initiated</div>
       </div>
-      <div className="metric warning-metric" onClick={() => {
-        const hrCases = cases.filter(c => c.status === 'human_review');
-        if (hrCases.length > 0) setSelectedId(hrCases[0].id);
-      }} style={{ cursor: 'pointer' }}>
-        <span className="metric-label">HUMAN REVIEW REQUIRED</span>
-        <div className="metric-value">{stats?.human_review_cases ?? 0} CASES</div>
-        <div className="metric-sub">{formatINR(stats?.human_review_amount ?? 0)} AT RISK</div>
+      <div
+        className="metric warning-metric"
+        onClick={() => {
+          const hrCases = cases.filter(c => c.status === 'human_review');
+          if (hrCases.length > 0) setSelectedId(hrCases[0].id);
+        }}
+        style={{ cursor: 'pointer' }}
+        role="button"
+        tabIndex={0}
+      >
+        <div className="metric-header-row">
+          <span className="metric-label">Human Review Required</span>
+          <span className="metric-badge-warning">Action Needed</span>
+        </div>
+        <div className="metric-value">{stats?.human_review_cases ?? 0}</div>
+        <div className="metric-sub">{formatINR(stats?.human_review_amount ?? 0)} at risk</div>
       </div>
     </div>
   );

@@ -10,11 +10,18 @@ interface RecoveryQueueProps {
 }
 
 export function RecoveryQueue({ cases, loading, selectedId, setSelectedId }: RecoveryQueueProps) {
+  const getScoreClass = (score: number) => {
+    const pct = Math.round(score * 100);
+    if (pct >= 70) return 'score-high';
+    if (pct >= 40) return 'score-mid';
+    return 'score-low';
+  };
+
   return (
     <section className="queue-panel">
       <div className="list-header">
         <h2>Recovery Queue</h2>
-        <span>{cases.length} cases</span>
+        <span className="queue-count-badge">{cases.length} cases</span>
       </div>
       <div className="case-list">
         {loading && cases.length === 0 ? (
@@ -28,17 +35,17 @@ export function RecoveryQueue({ cases, loading, selectedId, setSelectedId }: Rec
             >
               <div className="case-item-main">
                 <div className="case-item-title">
-                  {item.case_number}
+                  <span className="case-number">{item.case_number}</span>
                   <Badge value={item.status} />
                 </div>
                 <div className="case-item-meta">
-                  {item.customer_email ?? "Unknown"} • {title(item.failure_reason)}
+                  {item.customer_email ?? "Not specified"} • {title(item.failure_reason)}
                 </div>
               </div>
               <div className="case-item-amount">
-                 {formatINR(item.amount)}
+                 <div className="amount-val">{formatINR(item.amount)}</div>
                  {item.recovery_probability != null && (
-                   <span className="probability-score">
+                   <span className={`probability-score ${getScoreClass(item.recovery_probability)}`}>
                      {(item.recovery_probability * 100).toFixed(0)}% score
                    </span>
                  )}
