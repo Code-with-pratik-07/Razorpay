@@ -1,5 +1,6 @@
 import React from 'react';
 import { RecoveryCase, Explanation, AuditEvent, Execution, formatINR, title, formatDate, formatExpiryDate } from '../types';
+import { API_BASE_URL } from '../config';
 import { Badge } from './Badge';
 import { DecisionPipeline } from './DecisionPipeline';
 import { AIAdvisorCard } from './AIAdvisorCard';
@@ -20,25 +21,50 @@ interface CaseDetailProps {
   refreshCases?: (preserveSelection?: boolean) => Promise<RecoveryCase[]>;
 }
 
+function renderChannelIcon(channel?: string | null, size = 14) {
+  const ch = channel?.toLowerCase();
+  if (ch === 'whatsapp') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+        <path d="M17.472 14.382c-.301-.15-1.78-.878-2.056-.978-.276-.1-.477-.15-.678.15-.2.301-.778.978-.954 1.179-.176.2-.352.226-.653.075-1.506-.754-2.49-1.34-3.48-3.037-.26-.447.26-.415.744-1.383.08-.16.04-.301-.02-.451-.06-.15-.678-1.633-.93-2.235-.245-.588-.494-.508-.678-.517l-.578-.01c-.2 0-.527.075-.803.376s-1.054 1.03-1.054 2.511c0 1.482 1.079 2.913 1.23 3.114.15.201 2.124 3.243 5.145 4.549 1.954.845 2.72.923 3.71.775.602-.09 1.78-.727 2.03-1.431.251-.703.251-1.305.176-1.431-.075-.125-.276-.201-.577-.351zM12.04 2C6.544 2 2.07 6.474 2.07 11.97c0 1.96.568 3.79 1.554 5.337L2 22l4.836-1.572c1.474.887 3.204 1.402 5.05 1.402 5.496 0 9.97-4.474 9.97-9.97C21.856 6.474 17.382 2 12.04 2z"/>
+      </svg>
+    );
+  }
+  if (ch === 'sms') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+        <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+        <line x1="12" y1="18" x2="12.01" y2="18"/>
+      </svg>
+    );
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+      <polyline points="22,6 12,13 2,6"/>
+    </svg>
+  );
+}
+
 function formatNextActionLabel(nextAction: string, channel: string | null): string {
   const ch = channel ? title(channel) : '';
   switch (nextAction) {
     case 'RETRY_SAME_CHANNEL':
-      return channel === 'whatsapp' ? '💬 Send WhatsApp Reminder' :
-             channel === 'sms' ? '📱 Send SMS Reminder' :
-             `✉️ Send ${ch} Reminder`;
+      return channel === 'whatsapp' ? 'Send WhatsApp Reminder' :
+             channel === 'sms' ? 'Send SMS Reminder' :
+             `Send ${ch} Reminder`;
     case 'SWITCH_CHANNEL':
-      return channel === 'sms' ? '📱 Switch to SMS' :
-             channel === 'whatsapp' ? '💬 Switch to WhatsApp' :
-             `✉️ Switch to ${ch}`;
+      return channel === 'sms' ? 'Switch to SMS' :
+             channel === 'whatsapp' ? 'Switch to WhatsApp' :
+             `Switch to ${ch}`;
     case 'DISPATCH_INITIAL':
       return `Dispatch ${ch} Communication`;
     case 'AWAIT_APPROVAL':
-      return '⏳ Await Human Approval';
+      return 'Await Human Approval';
     case 'AWAIT_RESPONSE':
       return 'Wait for Customer Response';
     case 'GENERATE_NEW_LINK':
-      return '🔄 Generate New Payment Link';
+      return 'Generate New Payment Link';
     case 'STOP_RECOVERY':
       return 'Close Recovery';
     default:
@@ -51,19 +77,19 @@ function formatPreviousOutcome(outcome: string | null, isTerminal = false): stri
   switch (outcome) {
     case 'LINK_CLICKED':
     case 'CLICKED':
-      return '🔗 Payment Link Clicked';
+      return 'Payment Link Clicked';
     case 'NO_ENGAGEMENT':
     case 'IGNORED':
       return 'Delivered • No Customer Engagement';
     case 'PAYMENT_COMPLETED':
-      return '✓ Payment Completed';
+      return 'Payment Captured Successfully';
     case 'FAILED_DELIVERY':
     case 'FAILED':
-      return '✕ Delivery Failed';
+      return 'Delivery Failed';
     case 'PAYMENT_LINK_EXPIRED':
-      return '⏱ Payment Link Expired';
+      return 'Payment Link Expired';
     case 'AWAITING_RESPONSE':
-      return isTerminal ? 'Delivered • No Customer Engagement' : '⏳ Awaiting Customer Response';
+      return isTerminal ? 'Delivered • No Customer Engagement' : 'Awaiting Customer Response';
     default:
       return outcome.replace(/_/g, ' ');
   }
@@ -71,10 +97,10 @@ function formatPreviousOutcome(outcome: string | null, isTerminal = false): stri
 
 function formatTiming(waitPeriod: string, nextAction?: string): string {
   if (!waitPeriod || waitPeriod === 'None' || waitPeriod === 'none' || nextAction === 'STOP_RECOVERY') return 'None';
-  if (nextAction === 'AWAIT_RESPONSE') return '⏱ Review after 24 hours';
-  if (waitPeriod.toLowerCase().includes('24')) return '⏱ After 24 Hours';
-  if (waitPeriod.toLowerCase().includes('immediate')) return '⏱ Immediate';
-  return `⏱ ${waitPeriod}`;
+  if (nextAction === 'AWAIT_RESPONSE') return 'Review after 24 hours';
+  if (waitPeriod.toLowerCase().includes('24')) return 'After 24 Hours';
+  if (waitPeriod.toLowerCase().includes('immediate')) return 'Immediate';
+  return waitPeriod;
 }
 
 export function CaseDetail({
@@ -91,6 +117,38 @@ export function CaseDetail({
   loadDetails,
   refreshCases
 }: CaseDetailProps) {
+  // Modal and preview states (unconditional hooks declared at top level)
+  const [showCommModal, setShowCommModal] = React.useState(false);
+  const [activeCommTab, setActiveCommTab] = React.useState<'email' | 'sms' | 'whatsapp'>('email');
+  const [copied, setCopied] = React.useState(false);
+  const [isSending, setIsSending] = React.useState(false);
+  const [isRunningNextStep, setIsRunningNextStep] = React.useState(false);
+  const isRunningNextStepRef = React.useRef(false);
+  const [statusCheckNotice, setStatusCheckNotice] = React.useState<{
+    type: 'info' | 'success' | 'error';
+    title: string;
+    message: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    isRunningNextStepRef.current = false;
+    setIsRunningNextStep(false);
+    setStatusCheckNotice(null);
+  }, [selected?.id]);
+
+  const [selectedCommId, setSelectedCommId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!showCommModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowCommModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showCommModal]);
+
   if (detailLoading && !selected) {
     return <div className="empty-state">Loading case details...</div>;
   }
@@ -104,31 +162,34 @@ export function CaseDetail({
   const currentLink = execution?.payment_link_url || existingPaymentLink;
 
   const recoveryStartedEvent = audit.find((e) => e.event_type === "recovery_started");
+  const hasHumanApproval = audit.some((e) => e.event_type === "human_approval" || e.event_type === "manual_review_approved");
   const isAutomatic = recoveryStartedEvent?.event_data.automatic === true;
-  const executionMode = isAutomatic ? "Automatic Recovery" : recoveryStartedEvent ? "Manual Recovery" : "Automatic Recovery";
 
-  // Modal and preview states
-  const [showCommModal, setShowCommModal] = React.useState(false);
-  const [activeCommTab, setActiveCommTab] = React.useState<'email' | 'sms' | 'whatsapp'>('email');
-  const [copied, setCopied] = React.useState(false);
-  const [isSending, setIsSending] = React.useState(false);
-  const [isRunningNextStep, setIsRunningNextStep] = React.useState(false);
-
-  // Status flags & unified derived state
+  // Status flags & unified authoritative state
   const isRecovered = selected.status === 'recovered';
+  const isAbandoned = selected.status === 'abandoned' || selected.status === 'closed';
+  const isRecoveryClosed = isAbandoned;
+  const isTerminalCase = isRecovered || isAbandoned;
+  const isRecovering = selected.status === 'recovering';
   const isAttemptLimitReached = selected.retry_count >= selected.max_retries;
   const followupAction = explanation?.channel_intelligence?.followup_decision?.next_action;
   const followupOutcome = explanation?.channel_intelligence?.followup_decision?.previous_outcome;
-  const isRecoveryClosed = selected.status === 'abandoned' || selected.status === 'closed' || isAttemptLimitReached || followupAction === 'STOP_RECOVERY';
-  const isAbandoned = isRecoveryClosed && !isRecovered;
-  const isTerminalCase = isRecovered || isRecoveryClosed;
-  const isHumanReview = !isTerminalCase && (selected.status === 'human_review' || explanation?.human_review_status === 'REQUIRED') && explanation?.human_review_status !== 'APPROVED';
-  const isRecovering = !isTerminalCase && !isHumanReview && (
-    selected.status === 'recovering' ||
-    explanation?.payment_link_status === 'ACTIVE' ||
-    (selected.retry_count > 0) ||
-    explanation?.human_review_status === 'APPROVED'
-  );
+
+  const humanReviewStatus = explanation?.human_review_status || 'NOT_REQUIRED';
+  const isHumanReview = (selected.status === 'human_review' || humanReviewStatus === 'REQUIRED') && humanReviewStatus !== 'APPROVED';
+  const canApproveRecovery = isHumanReview && !isRecovered && !isAbandoned;
+
+  const executionMode = isRecovered
+    ? "Recovery Completed"
+    : isAbandoned
+    ? "Recovery Workflow Closed"
+    : isHumanReview
+    ? "Pending Human Review"
+    : (hasHumanApproval || explanation?.manual_execution)
+    ? "Human Approved Recovery"
+    : (isAutomatic || isRecovering)
+    ? "Automatic Recovery"
+    : "Pending Execution";
 
   // Dynamic available communications strictly from backend records & prepared channel
   const journey = explanation?.channel_intelligence?.communication_journey || [];
@@ -138,23 +199,13 @@ export function CaseDetail({
     followupOutcome === 'AWAITING_RESPONSE' ||
     latestComm?.outcome === 'AWAITING_RESPONSE'
   );
+  const hasClickedLink = journey.some(r => r.outcome === 'LINK_CLICKED' || r.outcome === 'CLICKED') ||
+    explanation?.channel_intelligence?.followup_decision?.previous_outcome === 'LINK_CLICKED' ||
+    latestComm?.outcome === 'LINK_CLICKED';
 
+  // Strictly use backend payment attempts (no fabricated synthetic records)
   const paymentAttempts = selected.payment_attempts || explanation?.payment_attempts || [];
-  const latestPaymentAttempt = paymentAttempts.length > 0
-    ? paymentAttempts[0]
-    : (selected.last_payment_status
-        ? {
-            id: 'latest-attempt',
-            case_id: selected.id,
-            payment_method: selected.last_payment_method || 'card',
-            amount: selected.amount,
-            currency: selected.currency || 'INR',
-            status: selected.last_payment_status.toLowerCase(),
-            failure_reason: selected.last_payment_failure_reason,
-            source: 'recovery_payment_link',
-            created_at: selected.last_payment_attempt_at || selected.created_at,
-          }
-        : null);
+  const latestPaymentAttempt = paymentAttempts.length > 0 ? paymentAttempts[0] : null;
 
   const actualComms = journey
     .filter(r => r.channel)
@@ -170,14 +221,12 @@ export function CaseDetail({
       isPrepared: false,
     }));
 
-  const recommendedChannel = explanation?.recommended_channel || selected.selected_channel || 'whatsapp';
-  const recChannelName = title(recommendedChannel);
+  const recommendedChannel = explanation?.recommended_channel || selected.selected_channel || null;
+  const recChannelName = recommendedChannel ? title(recommendedChannel) : 'Communication';
   const commStatus = explanation?.communication_status || selected.notification_status || 'PENDING';
-  const humanReviewStatus = explanation?.human_review_status || 'NOT_REQUIRED';
   const dispatchedChannel = explanation?.dispatched_channel || selected.selected_channel;
-  const canApproveRecovery = (isHumanReview || humanReviewStatus === 'REQUIRED') && !isTerminalCase && !isAttemptLimitReached && selected.retry_count < selected.max_retries;
 
-  if (commStatus === 'READY' && humanReviewStatus !== 'REQUIRED' && !isTerminalCase && !isAttemptLimitReached) {
+  if (recommendedChannel && commStatus === 'READY' && humanReviewStatus !== 'REQUIRED' && !isTerminalCase && !isAttemptLimitReached) {
     const hasExisting = actualComms.some(c => c.channel === recommendedChannel.toLowerCase());
     if (!hasExisting) {
       actualComms.push({
@@ -193,8 +242,6 @@ export function CaseDetail({
       });
     }
   }
-
-  const [selectedCommId, setSelectedCommId] = React.useState<string | null>(null);
 
   const availableCommunications = actualComms;
   const selectedComm = availableCommunications.find(c => c.id === selectedCommId) || availableCommunications[0];
@@ -221,44 +268,54 @@ export function CaseDetail({
     setShowCommModal(true);
   };
 
-  React.useEffect(() => {
-    if (!showCommModal) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setShowCommModal(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showCommModal]);
-
   const handleRunNextStep = async () => {
-    if (!selected || isRunningNextStep) return;
+    if (!selected || isRunningNextStep || isRunningNextStepRef.current) return;
+    isRunningNextStepRef.current = true;
     setIsRunningNextStep(true);
+    setStatusCheckNotice(null);
     if (setError) setError(null);
     try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
-      const res = await fetch(`${apiBase}/api/cases/${selected.id}/next-step`, {
+      const res = await fetch(`${API_BASE_URL}/api/cases/${selected.id}/next-step`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
       
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errMsg = data.detail || 'Failed to execute next recovery step';
+        const errMsg = data.detail || 'Unable to execute recovery step. Please try again.';
         if (setError) setError(errMsg);
         setNotice(`Execution error: ${errMsg}`);
+        setStatusCheckNotice({
+          type: 'error',
+          title: 'Unable to execute recovery step',
+          message: `${errMsg}. Please try again.`,
+        });
         return;
       }
 
       if (data.status === 'no_action') {
-        setNotice(data.reason || 'No further action required. The current follow-up step has already been executed.');
-      } else {
-        const channelName = data.channel ? title(data.channel) : 'Communication';
-        setNotice(`Next recovery step (${channelName} Attempt ${data.attempt || 2}) executed successfully.`);
-        if (data.channel) {
-          setActiveCommTab(data.channel.toLowerCase() as 'email' | 'sms' | 'whatsapp');
+        // Backend safely protected against execution during observation period;
+        // Refresh case data immediately
+        if (loadDetails) {
+          await loadDetails(selected.id);
         }
+        if (refreshCases) {
+          await refreshCases(true);
+        }
+        return;
+      }
+
+      const channelName = data.channel ? title(data.channel) : 'Communication';
+      const noticeTitle = 'Recovery Step Dispatched';
+      const noticeMsg = `Next recovery step (${channelName} Attempt ${data.attempt || 2}) executed successfully.`;
+      setNotice(noticeMsg);
+      setStatusCheckNotice({
+        type: 'success',
+        title: noticeTitle,
+        message: noticeMsg,
+      });
+      if (data.channel) {
+        setActiveCommTab(data.channel.toLowerCase() as 'email' | 'sms' | 'whatsapp');
       }
 
       // Refresh case data immediately
@@ -269,11 +326,17 @@ export function CaseDetail({
         await refreshCases(true);
       }
     } catch (e) {
-      const errMsg = e instanceof Error ? e.message : 'Network error executing next step';
+      const errMsg = e instanceof Error ? e.message : 'Unable to execute recovery step. Please try again.';
       console.error('Failed to run next recovery step:', e);
       if (setError) setError(errMsg);
       setNotice(`Network error: ${errMsg}`);
+      setStatusCheckNotice({
+        type: 'error',
+        title: 'Unable to execute recovery step',
+        message: `${errMsg}. Please try again.`,
+      });
     } finally {
+      isRunningNextStepRef.current = false;
       setIsRunningNextStep(false);
     }
   };
@@ -290,19 +353,24 @@ export function CaseDetail({
     : null;
 
   // Formatted date helper
-  const formattedExpiry = selected.payment_link_expires_at
-    ? formatExpiryDate(selected.payment_link_expires_at)
-    : "10 Sep 2026, 10:00 AM";
+  const expiresAt = selected.payment_link_expires_at || explanation?.payment_link_expires_at;
+  const formattedExpiry = expiresAt
+    ? formatExpiryDate(expiresAt)
+    : null;
 
-  const isLinkExpired = selected.payment_link_expires_at
-    ? new Date(selected.payment_link_expires_at).getTime() < Date.now()
+  const isLinkExpired = expiresAt
+    ? new Date(expiresAt).getTime() < Date.now()
     : false;
 
   // Normalized Communication Status Display
   const getCommunicationStatusInfo = () => {
     if (isRecovered || commStatus === 'COMPLETED' || selected.status === 'recovered') {
       return {
-        icon: "✓",
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        ),
         badge: "Communication Completed",
         text: "Payment recovered successfully",
         cls: "status-completed",
@@ -310,11 +378,15 @@ export function CaseDetail({
         isReady: false,
       };
     }
-    if (isRecoveryClosed || isTerminalCase || isAttemptLimitReached || isAbandoned || commStatus === 'EXHAUSTED' || selected.status === 'abandoned') {
+    if (isAbandoned || commStatus === 'EXHAUSTED' || selected.status === 'abandoned') {
       return {
-        icon: "■",
-        badge: "Communication Complete",
-        text: "Maximum allowed communication attempts have been completed.",
+        icon: (
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="4" y="4" width="16" height="16" rx="2"/>
+          </svg>
+        ),
+        badge: `Attempts Exhausted (${selected.retry_count} of ${selected.max_retries})`,
+        text: "Maximum allowed communication attempts have been completed without customer recovery.",
         cls: "status-exhausted",
         canView: true,
         isReady: false,
@@ -322,7 +394,12 @@ export function CaseDetail({
     }
     if (humanReviewStatus === 'REQUIRED') {
       return {
-        icon: "⏳",
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        ),
         badge: "Communication Paused",
         text: "Waiting for human approval",
         cls: "status-waiting",
@@ -332,7 +409,12 @@ export function CaseDetail({
     }
     if (isAwaitingResponse) {
       return {
-        icon: "⏳",
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        ),
         badge: "Awaiting Customer Response",
         text: "Recovery communication dispatched; observing customer activity",
         cls: "status-awaiting",
@@ -342,7 +424,7 @@ export function CaseDetail({
     }
     if (commStatus === 'READY') {
       return {
-        icon: recommendedChannel === 'whatsapp' ? "💬" : recommendedChannel === 'sms' ? "📱" : "✉️",
+        icon: renderChannelIcon(recommendedChannel, 13),
         badge: `${recChannelName} Ready`,
         text: `${recChannelName} selected for recovery communication`,
         cls: "status-ready",
@@ -352,7 +434,11 @@ export function CaseDetail({
     }
     if (commStatus === 'GENERATED' || selected.notification_status === 'MOCKED' || selected.notification_status === 'GENERATED') {
       return {
-        icon: "✓",
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        ),
         badge: `${recChannelName} Generated`,
         text: "Ready for customer delivery",
         cls: "status-generated",
@@ -363,7 +449,11 @@ export function CaseDetail({
     if (commStatus === 'SIMULATED' || selected.notification_status === 'WHATSAPP_SIMULATED' || selected.notification_status === 'SMS_SIMULATED') {
       const ch = selected.notification_status === 'WHATSAPP_SIMULATED' ? 'WhatsApp' : 'SMS';
       return {
-        icon: "✓",
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        ),
         badge: `${ch} Simulated`,
         text: `${ch} communication simulated for demo`,
         cls: "status-simulated",
@@ -373,7 +463,11 @@ export function CaseDetail({
     }
     if (commStatus === 'SENT' || selected.notification_status === 'SENT') {
       return {
-        icon: "✓",
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        ),
         badge: "Email Sent",
         text: "Email delivered to customer",
         cls: "status-sent",
@@ -382,7 +476,7 @@ export function CaseDetail({
       };
     }
     return {
-      icon: "•",
+      icon: <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />,
       badge: "Pending",
       text: "Awaiting recovery action",
       cls: "status-pending",
@@ -396,8 +490,7 @@ export function CaseDetail({
   // Track payment link click and refresh state
   const trackLinkClick = async () => {
     try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
-      await fetch(`${apiBase}/api/cases/${selected.id}/track-click`, {
+      await fetch(`${API_BASE_URL}/api/cases/${selected.id}/track-click`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -405,6 +498,9 @@ export function CaseDetail({
         await loadDetails(selected.id);
       } else if (analyze) {
         await analyze();
+      }
+      if (refreshCases) {
+        await refreshCases(true);
       }
     } catch (err) {
       console.warn("Failed to register payment link click:", err);
@@ -439,8 +535,7 @@ export function CaseDetail({
     if (isSending) return;
     setIsSending(true);
     try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
-      const res = await fetch(`${apiBase}/api/cases/${selected.id}/dispatch-communication`, {
+      const res = await fetch(`${API_BASE_URL}/api/cases/${selected.id}/dispatch-communication`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel: channelToDispatch })
@@ -461,21 +556,6 @@ export function CaseDetail({
   };
 
   const channelIntel = explanation?.channel_intelligence;
-
-  const canRunNextStep = Boolean(
-    !isTerminalCase &&
-    !isRecoveryClosed &&
-    !isAttemptLimitReached &&
-    !isRecovered &&
-    !isAbandoned &&
-    !isHumanReview &&
-    !isAwaitingResponse &&
-    channelIntel?.followup_decision &&
-    channelIntel.followup_decision.next_action !== 'STOP_RECOVERY' &&
-    channelIntel.followup_decision.next_action !== 'AWAIT_RESPONSE' &&
-    channelIntel.followup_decision.next_action !== 'AWAIT_APPROVAL' &&
-    selected.retry_count < selected.max_retries
-  );
 
   return (
     <>
@@ -507,15 +587,25 @@ export function CaseDetail({
               </h4>
               <div className="stat-row">
                 <span>
-                  ML Recovery Probability
+                  {isAbandoned ? "Predicted Recovery Likelihood" : "ML Recovery Probability"}
                   <span 
                     className="info-tooltip-wrap" 
-                    title="Likelihood that the payment can eventually be recovered." 
-                    style={{marginLeft: 6, cursor: 'help', color: '#64748b'}}
-                  >ℹ️</span>
+                    title="Likelihood of recovery predicted at the time of failure detection." 
+                    style={{marginLeft: 6, cursor: 'help', color: 'var(--color-text-muted)', display: 'inline-flex', verticalAlign: 'middle'}}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                  </span>
                 </span>
-                <b>{mlDecision === 'COLD_START' ? "N/A (Cold Start)" : explanation.ml.recovery_probability != null ? (explanation.ml.recovery_probability * 100).toFixed(0) + "%" : "—"}</b>
+                <b>{explanation.ml.recovery_probability != null ? (explanation.ml.recovery_probability * 100).toFixed(0) + "%" : "—"}</b>
               </div>
+              {isTerminalCase && (
+                <div className="stat-row">
+                  <span>Final Outcome</span>
+                  <b style={{color: isRecovered ? 'var(--color-success-text)' : 'var(--color-text-muted)', fontWeight: 600}}>
+                    {isRecovered ? "Payment Recovered" : "Not Recovered (Closed)"}
+                  </b>
+                </div>
+              )}
               {mlBadge && (
                 <div className="stat-row">
                   <span>Recovery Tier</span>
@@ -527,15 +617,32 @@ export function CaseDetail({
                 </div>
               )}
               <div className="stat-row">
-                <span>Communication Attempts</span>
+                <span>
+                  Communication Attempts
+                  <span className="info-tooltip-wrap" title="Number of automated outreach messages sent for this recovery case." style={{marginLeft: 6, cursor: 'help', color: 'var(--color-text-muted)', display: 'inline-flex', verticalAlign: 'middle'}}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                  </span>
+                </span>
                 <b>{selected.retry_count} of {selected.max_retries}</b>
               </div>
-              {paymentAttempts.length > 0 && (
-                <div className="stat-row">
-                  <span>Recovery Payment Attempts</span>
-                  <b>{paymentAttempts.length}</b>
-                </div>
-              )}
+              <div className="stat-row">
+                <span>
+                  Customer Historical Transactions
+                  <span className="info-tooltip-wrap" title="Total historical customer transactions (successful + failed) used for maturity intelligence." style={{marginLeft: 6, cursor: 'help', color: 'var(--color-text-muted)', display: 'inline-flex', verticalAlign: 'middle'}}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                  </span>
+                </span>
+                <b>{explanation.customer_history.interaction_count ?? (explanation.customer_history.successful_payments + explanation.customer_history.failed_payments)}</b>
+              </div>
+              <div className="stat-row">
+                <span>
+                  Recovery Payment Attempts
+                  <span className="info-tooltip-wrap" title="Actual customer payment attempts made against the recovery payment link." style={{marginLeft: 6, cursor: 'help', color: 'var(--color-text-muted)', display: 'inline-flex', verticalAlign: 'middle'}}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                  </span>
+                </span>
+                <b>{paymentAttempts.length}</b>
+              </div>
               <div className="stat-row">
                 <span>Customer Lifetime Value</span>
                 <b>{formatINR(explanation.customer_history.lifetime_value)}</b>
@@ -548,50 +655,51 @@ export function CaseDetail({
                 <div className="comm-card-header">
                   <div className="comm-profile-compact">
                     <span className={`comm-profile-pill maturity-${channelIntel.communication_maturity.toLowerCase()}`}>
-                      {channelIntel.communication_maturity === 'COLD_START' ? '🔵 COLD START' :
-                       channelIntel.communication_maturity === 'LEARNING' ? '🟡 LEARNING' : '🟢 ESTABLISHED'}
+                      <span style={{width: 6, height: 6, borderRadius: '50%', background: 'currentColor', display: 'inline-block'}} />
+                      {channelIntel.communication_maturity === 'COLD_START' ? 'Cold Start' :
+                       channelIntel.communication_maturity === 'LEARNING' ? 'Learning' : 'Established'}
                     </span>
                     <span className="comm-profile-desc">
-                      {isTerminalCase 
-                        ? `RecoverAI learned from ${channelIntel.attempts_count || selected.retry_count} communication interactions.` 
-                        : channelIntel.maturity_description}
+                      {channelIntel.maturity_description || (isTerminalCase ? (isRecovered ? "Payment recovery completed" : "Recovery communication completed") : "Customer communication profile")}
                     </span>
                   </div>
 
                   <span className={`channel-status-pill ${isTerminalCase ? (isRecovered ? 'status-completed' : 'status-exhausted') : (isAwaitingResponse ? 'status-awaiting' : `status-${commStatus.toLowerCase()}`)}`}>
-                    {isTerminalCase ? (isRecovered ? 'Recovery Completed' : 'Communication Complete') : (isAwaitingResponse ? 'Awaiting Customer Response' : commInfo.badge)}
+                    {isTerminalCase ? (isRecovered ? 'Workflow Finalized' : `Attempts Exhausted (${selected.retry_count} of ${selected.max_retries})`) : (isAwaitingResponse ? 'Awaiting Customer Response' : commInfo.badge)}
                   </span>
                 </div>
 
                 {isTerminalCase ? (
                   isRecovered ? (
                     <div className="comm-terminal-stopped" style={{
-                      background: 'rgba(6, 78, 59, 0.2)',
-                      border: '1px solid #059669',
-                      borderRadius: 8,
-                      padding: '16px 20px',
+                      background: 'var(--color-success-bg)',
+                      border: '1px solid var(--color-success-border)',
+                      borderRadius: 6,
+                      padding: '14px 18px',
                       margin: '12px 0 16px 0'
                     }}>
-                      <div style={{display: 'flex', alignItems: 'center', gap: 8, color: '#34d399', fontWeight: 800, fontSize: '0.95rem', letterSpacing: '0.04em'}}>
-                        <span>✓</span> RECOVERY COMPLETED
+                      <div style={{display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-success-text)', fontWeight: 700, fontSize: '13px'}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span>Recovery Completed</span>
                       </div>
-                      <div style={{color: '#6ee7b7', fontSize: '0.88rem', marginTop: 6, lineHeight: 1.5}}>
-                        Payment was successfully recovered.<br />No further automated communication is required.
+                      <div style={{color: 'var(--color-success-text)', fontSize: '12px', marginTop: 4, lineHeight: 1.4}}>
+                        Payment was successfully recovered. No further automated outreach is required.
                       </div>
                     </div>
                   ) : (
                     <div className="comm-terminal-stopped" style={{
-                      background: 'rgba(30, 41, 59, 0.5)',
-                      border: '1px solid #334155',
+                      background: 'var(--color-bg-subtle)',
+                      border: '1px solid var(--color-border)',
                       borderRadius: 6,
                       padding: '12px 16px',
                       margin: '12px 0 16px 0'
                     }}>
-                      <div style={{color: '#f1f5f9', fontWeight: 700, fontSize: '0.9rem', letterSpacing: '0.02em'}}>
-                        Communication Complete
+                      <div style={{color: 'var(--color-text-main)', fontWeight: 700, fontSize: '13px', display: 'flex', alignItems: 'center', gap: 6}}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                        <span>Outreach Limit Reached</span>
                       </div>
-                      <div style={{color: '#94a3b8', fontSize: '0.84rem', marginTop: 4, lineHeight: 1.4}}>
-                        Maximum allowed communication attempts have been completed.
+                      <div style={{color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 4, lineHeight: 1.4}}>
+                        All {selected.max_retries} allowed communication attempts have been completed without customer recovery.
                       </div>
                     </div>
                   )
@@ -600,12 +708,11 @@ export function CaseDetail({
                     <div className="comm-primary-focus">
                       <div className="comm-focus-channel">
                         <span className="comm-focus-icon">
-                          {channelIntel.recommended_channel === 'whatsapp' ? '💬' :
-                           channelIntel.recommended_channel === 'sms' ? '📱' : '✉️'}
+                          {renderChannelIcon(channelIntel.recommended_channel, 20)}
                         </span>
                         <div>
                           <div className="comm-focus-title">
-                            RECOMMENDED CHANNEL: <b style={{marginLeft: 4}}>{title(channelIntel.recommended_channel)}</b>
+                            Recommended Channel: <b>{title(channelIntel.recommended_channel)}</b>
                           </div>
                           <div className="comm-focus-metrics">
                             <span className="comm-suitability-badge">
@@ -613,8 +720,10 @@ export function CaseDetail({
                               <span 
                                 className="info-tooltip-wrap" 
                                 title="Expected effectiveness of this communication channel." 
-                                style={{marginLeft: 6, cursor: 'help', color: '#93c5fd'}}
-                              >ℹ️</span>
+                                style={{marginLeft: 4, cursor: 'help', display: 'inline-flex', alignItems: 'center', color: 'var(--color-text-light)'}}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                              </span>
                             </span>
                             <span className={`comm-conf-badge conf-${channelIntel.confidence}`}>
                               {title(channelIntel.confidence)} Confidence
@@ -634,10 +743,10 @@ export function CaseDetail({
                       <div className="comm-alts-list">
                         {channelIntel.alternatives.map((alt) => {
                           const score = channelIntel.channel_scores[alt] ?? 0;
-                          const icon = alt === 'whatsapp' ? '💬' : alt === 'sms' ? '📱' : '✉️';
                           return (
                             <span key={alt} className="comm-alt-item">
-                              {icon} {title(alt)} — <b>{(score * 100).toFixed(0)}%</b>
+                              {renderChannelIcon(alt, 13)}
+                              <span>{title(alt)} — <b>{(score * 100).toFixed(0)}%</b></span>
                             </span>
                           );
                         })}
@@ -654,7 +763,6 @@ export function CaseDetail({
                       const isIgnored = item.outcome === 'NO_ENGAGEMENT' || item.outcome === 'IGNORED';
                       const isPaid = item.outcome === 'PAYMENT_COMPLETED';
                       const isAwaiting = item.outcome === 'AWAITING_RESPONSE';
-                      const chIcon = item.channel === 'whatsapp' ? '💬' : item.channel === 'sms' ? '📱' : '✉️';
                       const itemId = item.id || `${item.channel}-${item.attempt_number}`;
                       const isReminder = item.attempt_number > 1 && item.channel === journey[0]?.channel;
 
@@ -670,15 +778,16 @@ export function CaseDetail({
                             title={`Click to view ${title(item.channel)} Attempt ${item.attempt_number} preview`}
                             style={{cursor: 'pointer'}}
                           >
-                            <span className="journey-v-channel" style={{fontSize: '0.85rem', fontWeight: 600}}>
-                              {chIcon} {title(item.channel)}{isReminder ? ' Reminder' : ''}
+                            <span className="journey-v-channel">
+                              {renderChannelIcon(item.channel, 14)}
+                              <span>{title(item.channel)}{isReminder ? ' Reminder' : ''}</span>
                             </span>
-                            <span className={`journey-v-status outcome-${item.outcome.toLowerCase()}`} style={{fontSize: '0.72rem', padding: '3px 8px', borderRadius: 4}}>
-                              {isPaid ? '✓ Payment Completed' : 
-                               isLinkClicked ? '✓ Delivered • 🔗 Payment Link Clicked' : 
-                               isAwaiting ? (isTerminalCase ? '✓ Sent' : '✓ Simulated Sent • ⏳ Awaiting Customer Response') :
-                               isIgnored ? '✓ Delivered • No Customer Engagement' : 
-                               '✓ Delivered'}
+                            <span className={`journey-v-status outcome-${item.outcome.toLowerCase()}`}>
+                              {isPaid ? 'Payment Captured' : 
+                               isLinkClicked ? 'Payment Link Clicked' : 
+                               isAwaiting ? (isTerminalCase ? 'Sent' : 'Awaiting Customer Response') :
+                               isIgnored ? 'No Customer Engagement' : 
+                               'Delivered'}
                             </span>
                           </div>
                           {isLinkClicked && (
@@ -699,21 +808,24 @@ export function CaseDetail({
                       <div className="journey-v-item next-action-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-pending" />
-                          <span className="journey-v-title-text" style={{color: '#60a5fa'}}>Next Action</span>
+                          <span className="journey-v-title-text" style={{color: 'var(--color-accent)'}}>Next Action</span>
                         </div>
                         <div 
                           className="journey-compact-card clickable-journey-step"
                           onClick={() => openCommunicationModal(recommendedChannel as any)}
                           title="Click to view communication preview"
-                          style={{cursor: 'pointer', border: '1px dashed #60a5fa'}}
+                          style={{cursor: 'pointer', border: '1px dashed var(--color-accent)'}}
                         >
-                          <span className="journey-v-channel" style={{fontSize: '0.85rem', fontWeight: 600}}>
-                            {channelIntel.followup_decision?.selected_channel 
-                              ? `${channelIntel.followup_decision.selected_channel === 'whatsapp' ? '💬' : channelIntel.followup_decision.selected_channel === 'sms' ? '📱' : '✉️'} ${title(channelIntel.followup_decision.selected_channel)} ${channelIntel.followup_decision.next_action === 'RETRY_SAME_CHANNEL' ? 'Reminder' : ''}`
-                              : (recommendedChannel === 'whatsapp' ? '💬 WhatsApp' : recommendedChannel === 'sms' ? '📱 SMS' : '✉️ Email')}
+                          <span className="journey-v-channel">
+                            {renderChannelIcon(channelIntel.followup_decision?.selected_channel || recommendedChannel, 14)}
+                            <span>
+                              {channelIntel.followup_decision?.selected_channel 
+                                ? `${title(channelIntel.followup_decision.selected_channel)} ${channelIntel.followup_decision.next_action === 'RETRY_SAME_CHANNEL' ? 'Reminder' : ''}`
+                                : title(recommendedChannel)}
+                            </span>
                           </span>
-                          <span className="journey-v-status" style={{background: '#1e3a8a', color: '#93c5fd', fontSize: '0.72rem', padding: '3px 8px', borderRadius: 4}}>
-                            ⏳ Scheduled
+                          <span className="journey-v-status" style={{background: 'var(--color-accent-bg)', color: 'var(--color-accent)'}}>
+                            Scheduled
                           </span>
                         </div>
                       </div>
@@ -723,11 +835,12 @@ export function CaseDetail({
                       <div className="journey-v-item terminal-item">
                         <div className="journey-v-node-header">
                           <span className="journey-v-dot dot-terminal" />
-                          <span className="journey-v-title-text" style={{color: '#94a3b8', fontSize: '0.85rem'}}>
-                            <span style={{marginRight: 6}}>■</span> Communication limit reached
+                          <span className="journey-v-title-text" style={{color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6}}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                            <span>Communication limit reached</span>
                           </span>
                         </div>
-                        <div style={{marginLeft: 26, fontSize: '0.78rem', color: '#94a3b8', marginTop: 4}}>
+                        <div style={{marginLeft: 22, fontSize: '12px', color: 'var(--color-text-light)', marginTop: 2}}>
                           Maximum allowed communication attempts completed.
                         </div>
                       </div>
@@ -740,173 +853,307 @@ export function CaseDetail({
             {/* 5. FOLLOW-UP DECISION */}
             {channelIntel?.followup_decision && (
               <div className="intelligence-card followup-intelligence-card" style={{gridColumn: '1 / -1'}}>
-                <div className="fd-header" style={{marginBottom: 12}}>
-                  <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#60a5fa', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6}}>
-                    <span>🔄</span> FOLLOW-UP DECISION
+                <div className="fd-header">
+                  <div className="fd-badge" style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                      <path d="M3 3v5h5"/>
+                      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                      <path d="M16 21h5v-5"/>
+                    </svg>
+                    <span>Follow-Up Decision</span>
                   </div>
                 </div>
 
-                {isAwaitingResponse && selected.retry_count < selected.max_retries && (
-                  <div style={{background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: 6, padding: '12px 14px', marginBottom: 14, fontSize: '0.85rem', color: '#93c5fd', lineHeight: 1.5}}>
-                    <b>{selected.max_retries - selected.retry_count} communication attempt{selected.max_retries - selected.retry_count > 1 ? 's' : ''} remain{selected.max_retries - selected.retry_count > 1 ? '' : 's'}.</b> RecoverAI is currently observing customer activity before deciding whether the final recovery communication is necessary.
-                  </div>
-                )}
-                
                 {isAwaitingResponse && latestPaymentAttempt?.status === 'failed' && (
-                  <div style={{background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 6, padding: '12px 14px', marginBottom: 14, fontSize: '0.85rem', color: '#fcd34d', lineHeight: 1.5}}>
-                    <b>Payment activity detected:</b> The customer attempted payment using {title(latestPaymentAttempt.payment_method || 'Netbanking')}, but the transaction failed. This does not consume a communication attempt. RecoverAI will consider this payment intent during the next recovery evaluation.
+                  <div style={{background: 'var(--color-warning-bg)', border: '1px solid var(--color-warning-border)', borderRadius: 6, padding: '12px 14px', marginBottom: 14, fontSize: '13px', color: 'var(--color-warning-text)', lineHeight: 1.5}}>
+                    <b>Payment activity detected:</b> The customer attempted payment using {latestPaymentAttempt.payment_method ? title(latestPaymentAttempt.payment_method) : 'an online payment method'}, but the transaction failed. This does not consume a communication attempt. RecoverAI will consider this payment intent during the next recovery evaluation.
                   </div>
                 )}
 
-                <div className="fd-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: canRunNextStep ? 14 : 0}}>
-                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
-                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>Previous Outcome</div>
-                    <div style={{fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0'}}>
-                      {isAbandoned ? 'Delivered • No Customer Engagement' : formatPreviousOutcome(channelIntel.followup_decision.previous_outcome, isAbandoned)}
+                <div className="fd-grid">
+                  <div className="fd-item">
+                    <div className="fd-label">Previous Outcome</div>
+                    <div className="fd-value">
+                      {isRecovered ? 'Payment Captured' : isAbandoned ? 'Delivered • No Customer Engagement' : formatPreviousOutcome(channelIntel.followup_decision.previous_outcome, isAbandoned)}
                     </div>
                   </div>
-                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
-                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>
-                      {isAbandoned ? 'Recovery Decision' : 'Next Action'}
-                    </div>
-                    <div style={{fontSize: '0.9rem', fontWeight: 600, color: isAbandoned ? '#cbd5e1' : '#93c5fd'}}>
-                      {isAbandoned ? 'No further action required' : formatNextActionLabel(channelIntel.followup_decision.next_action, channelIntel.followup_decision.selected_channel)}
+                  <div className="fd-item">
+                    <div className="fd-label">{isRecovered || isAbandoned ? 'Recovery Decision' : 'Next Action'}</div>
+                    <div className="fd-value">
+                      {isRecovered ? 'None — Payment Captured' : isAbandoned ? 'No further action required' : formatNextActionLabel(channelIntel.followup_decision.next_action, channelIntel.followup_decision.selected_channel)}
                     </div>
                   </div>
-                  <div className="fd-item" style={{background: '#0f172a', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b'}}>
-                    <div style={{fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.04em'}}>When</div>
-                    <div style={{fontSize: '0.9rem', fontWeight: 600, color: isAbandoned ? '#cbd5e1' : '#fde047'}}>
-                      {isAbandoned ? 'Completed' : formatTiming(channelIntel.followup_decision.recommended_wait_period, channelIntel.followup_decision.next_action)}
+                  <div className="fd-item">
+                    <div className="fd-label">When</div>
+                    <div className="fd-value">
+                      {isRecovered || isAbandoned ? 'Completed' : formatTiming(channelIntel.followup_decision.recommended_wait_period, channelIntel.followup_decision.next_action)}
                     </div>
                   </div>
                 </div>
 
-                {canRunNextStep && (
-                  <div style={{marginTop: 12}}>
-                    <button
-                      className="button primary simulate-step-btn"
-                      onClick={handleRunNextStep}
-                      disabled={isRunningNextStep}
-                      style={{background: '#2563eb', padding: '8px 18px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6}}
-                    >
-                      {isRunningNextStep ? 'Simulating...' : '⚡ Simulate Next Recovery Step'}
-                    </button>
-                  </div>
-                )}
+                {/* Follow-Up Action / Observation Section */}
+                {(() => {
+                  if (isTerminalCase || isAttemptLimitReached || followupAction === 'STOP_RECOVERY' || isHumanReview) {
+                    return null;
+                  }
+
+                  if (followupAction === 'AWAIT_RESPONSE' || isAwaitingResponse) {
+                    const dynamicChannel = title(
+                      latestComm?.channel ||
+                      channelIntel?.followup_decision?.selected_channel ||
+                      recommendedChannel ||
+                      'WhatsApp'
+                    );
+                    const waitPeriod = channelIntel?.followup_decision?.recommended_wait_period || '24 hours';
+                    const remainingCount = Math.max(0, (selected.max_retries || 3) - (selected.retry_count || 0));
+                    const remainingText = `${remainingCount} communication attempt${remainingCount === 1 ? '' : 's'} remain${remainingCount === 1 ? 's' : ''}`;
+
+                    return (
+                      <div className="fd-observation-panel">
+                        <div className="fd-observation-header">
+                          <div className="fd-observation-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="12" r="10"/>
+                              <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <span>Observation Period Active</span>
+                          </div>
+                          <span className="fd-observation-status-badge">
+                            <span className="fd-observation-status-dot" />
+                            Awaiting Customer Response
+                          </span>
+                        </div>
+
+                        <p className="fd-observation-message">
+                          {hasClickedLink
+                            ? `${dynamicChannel} reminder was sent successfully. RecoverAI is waiting for customer activity during the recommended observation period before deciding whether another recovery attempt is necessary.`
+                            : `${dynamicChannel} recovery communication was delivered. RecoverAI is observing customer activity during the recommended observation period before deciding whether another recovery attempt is necessary.`}
+                        </p>
+
+                        <div className="fd-observation-meta-grid">
+                          <div className="fd-observation-meta-item">
+                            <span className="fd-observation-meta-label">Recommended Wait</span>
+                            <span className="fd-observation-meta-value">{waitPeriod}</span>
+                          </div>
+                          <div className="fd-observation-meta-item">
+                            <span className="fd-observation-meta-label">Remaining Attempts</span>
+                            <span className="fd-observation-meta-value">{remainingText}</span>
+                          </div>
+                          <div className="fd-observation-meta-item">
+                            <span className="fd-observation-meta-label">Current Status</span>
+                            <span className="fd-observation-meta-value">Awaiting Customer Response</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const isSwitchChannel = followupAction === 'SWITCH_CHANNEL';
+                  const isRetrySame = followupAction === 'RETRY_SAME_CHANNEL';
+                  const isDispatchInitial = followupAction === 'DISPATCH_INITIAL';
+
+                  if (!isSwitchChannel && !isRetrySame && !isDispatchInitial) {
+                    return null;
+                  }
+
+                  const buttonLabel = isSwitchChannel
+                    ? (isRunningNextStep ? 'Simulating Channel Switch...' : 'Simulate Channel Switch')
+                    : isDispatchInitial
+                    ? (isRunningNextStep ? 'Simulating Dispatch...' : 'Simulate Recovery Dispatch')
+                    : (isRunningNextStep ? 'Simulating Next Step...' : 'Simulate Next Recovery Step');
+
+                  return (
+                    <div style={{ marginTop: 12 }}>
+                      <button
+                        className="button primary simulate-step-btn"
+                        onClick={handleRunNextStep}
+                        disabled={isRunningNextStep}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                        </svg>
+                        {isRunningNextStep && <span className="spinner" style={{ marginRight: 6 }} />}
+                        <span>{buttonLabel}</span>
+                      </button>
+
+                      {statusCheckNotice && (
+                        <div
+                          className={`fd-status-feedback ${statusCheckNotice.type}`}
+                          style={{
+                            marginTop: 12,
+                            padding: '12px 14px',
+                            borderRadius: 6,
+                            fontSize: '13px',
+                            lineHeight: 1.5,
+                            border: statusCheckNotice.type === 'error'
+                              ? '1px solid #FCA5A5'
+                              : statusCheckNotice.type === 'success'
+                              ? '1px solid #A7F3D0'
+                              : '1px solid #BFDBFE',
+                            background: statusCheckNotice.type === 'error'
+                              ? '#FEF2F2'
+                              : statusCheckNotice.type === 'success'
+                              ? '#ECFDF5'
+                              : '#EFF6FF',
+                            color: statusCheckNotice.type === 'error'
+                              ? '#991B1B'
+                              : statusCheckNotice.type === 'success'
+                              ? '#065F46'
+                              : '#1E40AF',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 10,
+                          }}
+                        >
+                          <div style={{ marginTop: 2, flexShrink: 0 }}>
+                            {statusCheckNotice.type === 'error' ? (
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10" />
+                                <line x1="12" y1="8" x2="12" y2="12" />
+                                <line x1="12" y1="16" x2="12.01" y2="16" />
+                              </svg>
+                            ) : (
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            )}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700, marginBottom: 2 }}>{statusCheckNotice.title}</div>
+                            <div>{statusCheckNotice.message}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setStatusCheckNotice(null)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              color: 'currentColor',
+                              opacity: 0.6,
+                              padding: 2,
+                              fontSize: '16px',
+                              lineHeight: 1,
+                            }}
+                            aria-label="Dismiss notice"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
         )}
 
         {/* 6. AI ADVISOR */}
-        {explanation?.ai && <AIAdvisorCard explanation={explanation} />}
+        {explanation?.ai && <AIAdvisorCard explanation={explanation} caseStatus={selected.status} />}
 
         {/* 7. PAYMENT RECOVERY ACTION */}
         {isRecovered ? (
-          <div className="payment-recovery-card terminal-banner terminal-recovered" style={{
-            background: 'linear-gradient(135deg, #064e3b 0%, #065f46 100%)',
-            border: '1.5px solid #10b981',
-            borderRadius: 8,
-            padding: '22px 24px',
-            color: '#ffffff',
-            boxShadow: '0 4px 20px rgba(6, 78, 59, 0.3)'
-          }}>
-            <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16}}>
-              <span style={{fontSize: '1.2rem', color: '#6ee7b7', fontWeight: 'bold'}}>✓</span>
-              <h3 style={{margin: 0, color: '#6ee7b7', fontSize: '1.1rem', fontWeight: 'bold', letterSpacing: '0.06em', textTransform: 'uppercase'}}>
-                PAYMENT SUCCESSFULLY RECOVERED
+          <div className="payment-recovery-card terminal-banner terminal-recovered">
+            <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <h3 style={{margin: 0, color: '#065F46', fontSize: '14px', fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase'}}>
+                Payment Successfully Recovered
               </h3>
             </div>
-            <div style={{marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 2}}>
-              <div style={{fontSize: '2.2rem', fontWeight: 'bold', color: '#ffffff', letterSpacing: '-0.02em', lineHeight: 1.1}}>
+            <div style={{marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 4}}>
+              <div style={{fontSize: '28px', fontWeight: 700, color: '#065F46', letterSpacing: '-0.02em', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums'}}>
                 {formatINR(selected.amount)}
               </div>
-              <div style={{fontSize: '1rem', fontWeight: 500, color: '#a7f3d0'}}>
+              <div style={{fontSize: '13px', fontWeight: 500, color: '#047857'}}>
                 Recovered successfully
               </div>
             </div>
 
             <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
-              <div style={{fontSize: '0.72rem', color: '#6ee7b7', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.9}}>
+              <div style={{fontSize: '11px', color: '#065F46', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em'}}>
                 Recovery attributed to
               </div>
               <div>
                 <span style={{
-                  display: 'inline-block',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
                   fontWeight: 600,
-                  color: '#ffffff',
-                  background: 'rgba(255, 255, 255, 0.15)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  padding: '3px 8px',
+                  color: '#065F46',
+                  background: '#FFFFFF',
+                  border: '1px solid #A7F3D0',
+                  padding: '3px 10px',
                   borderRadius: 4,
-                  letterSpacing: '0.05em',
-                  fontSize: '0.8rem'
+                  fontSize: '12px'
                 }}>
-                  {channelIntel?.attributed_channel?.toUpperCase() || 'SMS'}
+                  {renderChannelIcon(channelIntel?.attributed_channel, 13)}
+                  {channelIntel?.attributed_channel ? channelIntel.attributed_channel.toUpperCase() : 'VERIFIED CHANNEL'}
                 </span>
               </div>
             </div>
-          </div>
-        ) : isAbandoned ? (
-          <div className="payment-recovery-card" style={{
-            background: '#0f172a',
-            border: '1px solid #1e293b',
-            borderRadius: 8,
-            padding: '20px 24px',
-            color: '#e2e8f0',
-          }}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12}}>
-              <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-                <span style={{fontSize: '1.2rem', color: '#60a5fa'}}>
-                  {isLinkExpired ? '🔴' : currentLink ? '🔗' : '•'}
-                </span>
-                <h3 style={{margin: 0, color: '#f8fafc', fontSize: '1rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase'}}>
-                  {isLinkExpired ? 'EXPIRED PAYMENT LINK' : currentLink ? 'EXISTING PAYMENT LINK' : 'NO PAYMENT LINK'}
-                </h3>
-              </div>
-              <span className="pr-status-badge" style={{
-                background: isLinkExpired ? 'rgba(239, 68, 68, 0.15)' : currentLink ? 'rgba(59, 130, 246, 0.15)' : 'rgba(148, 163, 184, 0.15)',
-                color: isLinkExpired ? '#fca5a5' : currentLink ? '#93c5fd' : '#94a3b8',
-                border: `1px solid ${isLinkExpired ? 'rgba(239, 68, 68, 0.3)' : currentLink ? 'rgba(59, 130, 246, 0.3)' : 'rgba(148, 163, 184, 0.3)'}`,
-                fontSize: '0.78rem',
-                padding: '4px 10px',
-                borderRadius: 4,
-                fontWeight: 700
-              }}>
-                {isLinkExpired ? 'Expired' : currentLink ? 'Available' : 'Unavailable'}
-              </span>
-            </div>
-
-            {currentLink && !isLinkExpired ? (
-              <div style={{fontSize: '0.9rem', color: '#94a3b8', lineHeight: 1.5}}>
-                The payment link remains available until <b style={{color: '#f8fafc'}}>{formatExpiryDate(selected.payment_link_expires_at)}</b>.
-              </div>
-            ) : isLinkExpired ? (
-              <div style={{fontSize: '0.9rem', color: '#94a3b8', lineHeight: 1.5}}>
-                The payment link has expired.
-              </div>
-            ) : null}
           </div>
         ) : canApproveRecovery ? (
-          <div className="action-panel" style={{background: '#1e293b', border: '1px solid #f59e0b', borderRadius: 8, padding: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12}}>
+          <div className="action-panel" style={{background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12}}>
             <div className="action-info">
-              <span style={{color: '#fbbf24', fontWeight: 600, fontSize: '0.95rem'}}>
-                ⏳ Human Review Required — Automatic recovery was paused by safety policy.
+              <span style={{color: '#92400E', fontWeight: 600, fontSize: '13px', display: 'flex', alignItems: 'center', gap: 6}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Human Review Required — Automatic recovery was paused by safety policy.
               </span>
             </div>
             <div className="action-buttons">
-              <button id="approve-recovery-btn" className="button primary" onClick={() => void execute()} disabled={actionLoading !== null} style={{background: '#f59e0b', color: '#0f172a', fontWeight: 700}}>
+              <button id="approve-recovery-btn" className="button primary" onClick={() => void execute()} disabled={actionLoading !== null} style={{background: '#D97706', color: '#FFFFFF', fontWeight: 700}}>
                 {actionLoading === 'execute' ? <span className="spinner"/> : null}
                 Approve Recovery
               </button>
             </div>
           </div>
+        ) : isAbandoned ? (
+          <div className="payment-recovery-card terminal-abandoned">
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" color="var(--color-text-muted)">
+                  <rect x="4" y="4" width="16" height="16" rx="2"/>
+                </svg>
+                <h3 style={{margin: 0, color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase'}}>
+                  {isLinkExpired ? 'Expired Payment Link' : 'Recovery Workflow Closed'}
+                </h3>
+              </div>
+              <span className={`pr-status-badge ${isLinkExpired ? 'expired' : 'stopped'}`}>
+                {isLinkExpired ? 'Expired' : 'Closed'}
+              </span>
+            </div>
+
+            {isLinkExpired ? (
+              <div style={{fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: 1.5}}>
+                The payment link has expired.
+              </div>
+            ) : (
+              <div style={{fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: 1.5}}>
+                Recovery workflow closed. Existing payment link is no longer monitored for automated recovery.
+                {selected.payment_link_expires_at && (
+                  <span style={{display: 'block', marginTop: 4, fontSize: '12px', color: 'var(--color-text-muted)'}}>
+                    (Gateway link expiry: {formatExpiryDate(selected.payment_link_expires_at)})
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         ) : (
           <div className="payment-recovery-card">
             <div className="pr-header">
-              <h3>⚡ PAYMENT RECOVERY</h3>
+              <h3>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
+                  <line x1="1" y1="10" x2="23" y2="10"/>
+                </svg>
+                Payment Recovery
+              </h3>
               <span className={`pr-status-badge ${isLinkExpired ? 'expired' : currentLink ? 'active' : 'pending'}`}>
-                {isLinkExpired ? '🔴 Expired Payment Link' : currentLink ? '🟢 Active Payment Link' : 'PENDING'}
+                {isLinkExpired ? 'Expired Payment Link' : currentLink ? 'Active Payment Link' : 'Not Generated'}
               </span>
             </div>
 
@@ -914,18 +1161,24 @@ export function CaseDetail({
               <div className="pr-info-col">
                 <div className="pr-meta-item">
                   <span className="pr-label">Recovery Method</span>
-                  <b>{executionMode}</b>
+                  <b className="pr-meta-value">{executionMode}</b>
                 </div>
-                <div className="pr-meta-item">
-                  <span className="pr-label">Expires</span>
-                  <b>{formattedExpiry}{isLinkExpired ? ' (Expired)' : ''}</b>
-                </div>
+                {expiresAt && formattedExpiry ? (
+                  <div className="pr-meta-item">
+                    <span className="pr-label">Expires</span>
+                    <b className="pr-meta-value">
+                      {formattedExpiry}
+                      {isLinkExpired ? ' (Expired)' : ''}
+                    </b>
+                  </div>
+                ) : null}
               </div>
 
               <div className="pr-actions-col">
                 {currentLink && !isLinkExpired && (
                   <div className="pr-link-buttons">
                     <a
+                      id="open-payment-page-btn"
                       className="button primary"
                       href={currentLink.startsWith("http") ? currentLink : `/simulate-payment/${selected.id}`}
                       target="_blank"
@@ -935,6 +1188,7 @@ export function CaseDetail({
                       Open Payment Page ↗
                     </a>
                     <button
+                      id="copy-payment-link-btn"
                       className="button secondary"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -944,13 +1198,13 @@ export function CaseDetail({
                         setTimeout(() => setCopied(false), 2000);
                       }}
                     >
-                      {copied ? "✓ Link Copied" : "Copy Link"}
+                      {copied ? "Link Copied" : "Copy Link"}
                     </button>
                   </div>
                 )}
                 {isLinkExpired && (
-                  <div style={{color: '#fca5a5', fontSize: '0.85rem', fontWeight: 500, padding: '6px 12px', background: 'rgba(127, 29, 29, 0.3)', borderRadius: 6, border: '1px solid #7f1d1d'}}>
-                    ⚠️ Payment link has expired. Regenerating a new link is recommended.
+                  <div style={{color: 'var(--color-danger-text)', fontSize: '13px', fontWeight: 500, padding: '8px 12px', background: 'var(--color-danger-bg)', borderRadius: 6, border: '1px solid var(--color-danger-border)'}}>
+                    Payment link has expired. Regenerating a new link is recommended.
                   </div>
                 )}
               </div>
@@ -958,7 +1212,7 @@ export function CaseDetail({
 
             <div className="pr-comm-row">
               <div className="pr-comm-status-wrap">
-                <span className="pr-label">CUSTOMER COMMUNICATION</span>
+                <span className="pr-label">Customer Communication</span>
                 <div style={{marginTop: 4}}>
                   <span className={`pr-comm-pill ${commInfo.cls}`}>
                     {commInfo.icon} {commInfo.badge}
@@ -986,67 +1240,71 @@ export function CaseDetail({
           <div className="co-body" style={{marginTop: 8}}>
             {isRecovered ? (
               <div>
-                <span className="badge" style={{background: '#065f46', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  ✓ PAYMENT COMPLETED
+                <span className="badge" style={{background: 'var(--color-success-bg)', color: 'var(--color-success-text)', border: '1px solid var(--color-success-border)', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
+                  Payment Recovered
                 </span>
-                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
-                  The payment was successfully completed.
+                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                  The customer successfully completed payment via the recovery link.
                 </p>
               </div>
             ) : isAbandoned ? (
               <div>
-                <span className="badge" style={{background: '#7f1d1d', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  ■ <span style={{marginLeft: 4}}>RECOVERY CLOSED</span>
+                <span className="badge" style={{background: 'var(--color-bg-subtle)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
+                  Recovery Closed
                 </span>
-                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
                   Recovery ended without successful payment.
                 </p>
               </div>
             ) : selected.last_payment_status === 'FAILED' ? (
               <div>
-                <span className="badge" style={{background: '#991b1b', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  ✗ RECOVERY PAYMENT ATTEMPT FAILED
+                <span className="badge" style={{background: 'var(--color-danger-bg)', color: 'var(--color-danger-text)', border: '1px solid var(--color-danger-border)', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
+                  Recovery Payment Attempt Failed
                 </span>
-                <p style={{margin: '10px 0 4px 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
-                  The customer attempted to complete the payment using <b>{title(latestPaymentAttempt?.payment_method || selected.last_payment_method || 'Netbanking')}</b>, but the transaction was unsuccessful. RecoverAI is continuing to evaluate the customer's recovery activity.
+                <p style={{margin: '10px 0 4px 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                  The customer attempted to complete the payment using <b>{(latestPaymentAttempt?.payment_method || selected.last_payment_method) ? title(latestPaymentAttempt?.payment_method || selected.last_payment_method!) : 'an online payment method'}</b>, but the transaction was unsuccessful. RecoverAI is continuing to evaluate the customer's recovery activity.
                 </p>
                 {selected.last_payment_attempt_at && (
-                  <span style={{fontSize: '0.82rem', color: '#475569', fontWeight: 500}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
+                  <span style={{fontSize: '0.82rem', color: 'var(--color-text-light)', fontWeight: 500}}>Last Attempt: {formatDate(selected.last_payment_attempt_at)}</span>
                 )}
               </div>
-            ) : !isTerminalCase && (channelIntel?.followup_decision?.previous_outcome === 'LINK_CLICKED' || latestComm?.outcome === 'LINK_CLICKED') ? (
+            ) : !isTerminalCase && hasClickedLink ? (
               <div>
-                <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  🔗 PAYMENT ACTIVITY DETECTED
+                <span className="badge" style={{background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
+                  Payment Page Opened — Payment Pending
                 </span>
-                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
-                  The customer opened the recovery payment page but has not completed payment.
+                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                  The customer opened the recovery payment page through the initial outreach link. Checkout submission has not yet occurred, and no payment gateway attempts have been recorded yet.
                 </p>
               </div>
             ) : !isTerminalCase && (isAwaitingResponse || channelIntel?.followup_decision?.next_action === 'AWAIT_RESPONSE') ? (
               <div>
-                <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  ⏳ CUSTOMER RESPONSE PENDING
+                <span className="badge" style={{background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
+                  Customer Response Pending
                 </span>
-                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
-                  A {title(channelIntel?.followup_decision?.selected_channel || latestComm?.channel || 'WhatsApp')} reminder has been sent. RecoverAI is waiting for customer activity before taking another recovery action.
+                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                  {(() => {
+                    const reminderCh = channelIntel?.followup_decision?.selected_channel || latestComm?.channel;
+                    const reminderChText = reminderCh ? `${title(reminderCh)} ` : '';
+                    return `A ${reminderChText}recovery reminder has been delivered. RecoverAI is waiting for customer activity before determining the next recovery action.`;
+                  })()}
                 </p>
               </div>
             ) : !isTerminalCase && isRecovering ? (
               <div>
-                <span className="badge" style={{background: '#1e40af', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  ⏳ CUSTOMER PAYMENT PENDING
+                <span className="badge" style={{background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
+                  Customer Payment Pending
                 </span>
-                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
                   Payment link is active. Waiting for customer checkout.
                 </p>
               </div>
             ) : (
               <div>
-                <span className="badge" style={{background: '#92400e', color: '#ffffff', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
-                  ⏳ AWAITING REVIEW
+                <span className="badge" style={{background: 'var(--color-warning-bg)', color: 'var(--color-warning-text)', border: '1px solid var(--color-warning-border)', fontWeight: 700, padding: '5px 12px', borderRadius: 6, fontSize: '0.82rem', letterSpacing: '0.04em'}}>
+                  Awaiting Review
                 </span>
-                <p style={{margin: '10px 0 0 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
+                <p style={{margin: '10px 0 0 0', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: 500, lineHeight: 1.5}}>
                   Recovery execution paused pending manual reviewer approval.
                 </p>
               </div>
@@ -1055,11 +1313,12 @@ export function CaseDetail({
         </div>
 
         {/* LATEST RECOVERY PAYMENT ACTIVITY */}
-        {latestPaymentAttempt && (
+        {latestPaymentAttempt ? (
           <div className="intelligence-card latest-payment-activity-card" style={{marginTop: 14}}>
             <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12}}>
-              <h4 style={{margin: 0, fontSize: '0.85rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6}}>
-                💳 Latest Recovery Payment Activity
+              <h4 style={{margin: 0, fontSize: '0.85rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6}}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                Latest Recovery Payment Activity
               </h4>
               <span
                 className="badge"
@@ -1069,10 +1328,23 @@ export function CaseDetail({
                   fontWeight: 700,
                   padding: '4px 10px',
                   borderRadius: 6,
-                  fontSize: '0.78rem'
+                  fontSize: '0.78rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5
                 }}
               >
-                {latestPaymentAttempt.status === 'success' ? '✓ Recovery Payment Successful' : '✗ Recovery Payment Failed'}
+                {latestPaymentAttempt.status === 'success' ? (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    Recovery Payment Successful
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    Recovery Payment Failed
+                  </>
+                )}
               </span>
             </div>
 
@@ -1109,7 +1381,7 @@ export function CaseDetail({
                 <div>
                   <span style={{display: 'block', fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600}}>Failure Reason</span>
                   <strong style={{fontSize: '0.86rem', color: '#b91c1c'}}>
-                    {latestPaymentAttempt.failure_reason || selected.last_payment_failure_reason || 'Simulation Failed'}
+                    {latestPaymentAttempt.failure_reason || selected.last_payment_failure_reason || 'Payment declined'}
                   </strong>
                 </div>
               )}
@@ -1140,8 +1412,12 @@ export function CaseDetail({
                       fontSize: '0.84rem'
                     }}>
                       <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-                        <span style={{color: att.status === 'success' ? '#059669' : '#dc2626', fontWeight: 700}}>
-                          {att.status === 'success' ? '✓' : '✗'}
+                        <span style={{color: att.status === 'success' ? '#059669' : '#dc2626', display: 'inline-flex', alignItems: 'center'}}>
+                          {att.status === 'success' ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          )}
                         </span>
                         <span style={{fontWeight: 600, color: '#1e293b'}}>Attempt #{paymentAttempts.length - 1 - idx}: {title(att.payment_method)}</span>
                         <span style={{color: '#64748b'}}>({formatINR(att.amount)})</span>
@@ -1166,6 +1442,13 @@ export function CaseDetail({
               </div>
             )}
           </div>
+        ) : (
+          <div className="intelligence-card" style={{marginTop: 14, padding: '14px 18px', background: '#f8fafc', border: '1px dashed var(--color-border)'}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-text-muted)', fontSize: '13px', fontWeight: 500}}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              <span>No recovery payment attempts yet.</span>
+            </div>
+          </div>
         )}
 
         {/* Audit Timeline */}
@@ -1181,18 +1464,16 @@ export function CaseDetail({
               <div className="comm-modal-title">
                 <h3>Customer Communication Preview</h3>
               </div>
-              <button className="comm-modal-close" onClick={() => setShowCommModal(false)}>✕</button>
+              <button className="comm-modal-close" onClick={() => setShowCommModal(false)} aria-label="Close modal">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
             </div>
 
             {/* Dynamic Channel Tabs / Selector */}
             <div className="comm-modal-tabs">
               {availableCommunications.map((comm) => {
                 const isActive = selectedCommId ? comm.id === selectedCommId : comm.id === availableCommunications[0]?.id;
-                const chIcon = comm.channel === 'whatsapp' ? '💬' : comm.channel === 'sms' ? '📱' : '✉️';
                 const isReminder = comm.attempt > 1 && comm.channel === availableCommunications[0]?.channel;
-                const label = comm.isPrepared 
-                  ? `${chIcon} ${title(comm.channel)} • Prepared`
-                  : `${chIcon} ${title(comm.channel)}${isReminder ? ' Reminder' : ''} • Attempt ${comm.attempt}`;
                 return (
                   <button
                     key={comm.id}
@@ -1201,8 +1482,10 @@ export function CaseDetail({
                       setSelectedCommId(comm.id);
                       setActiveCommTab(comm.channel);
                     }}
+                    style={{display: 'inline-flex', alignItems: 'center', gap: 6}}
                   >
-                    {label}
+                    {renderChannelIcon(comm.channel)}
+                    <span>{title(comm.channel)}{isReminder ? ' Reminder' : ''} • {comm.isPrepared ? 'Prepared' : `Attempt ${comm.attempt}`}</span>
                   </button>
                 );
               })}
@@ -1213,11 +1496,12 @@ export function CaseDetail({
               {/* Payment Completed Attribution banner */}
               {isRecovered && (
                 <div style={{
-                  background: 'rgba(6, 78, 59, 0.4)', border: '1px solid #059669', color: '#34d399',
+                  background: '#ECFDF5', border: '1px solid #A7F3D0', color: '#065F46',
                   padding: '10px 16px', borderRadius: 6, marginBottom: 16, fontSize: '0.88rem', fontWeight: 600,
                   display: 'flex', alignItems: 'center', gap: 8
                 }}>
-                  <span>✓</span> Payment completed after this communication.
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  Payment completed after this communication.
                 </div>
               )}
 
@@ -1227,8 +1511,8 @@ export function CaseDetail({
                   {/* Prepared vs Sent Status Banner */}
                   {(selectedComm?.isPrepared || (commStatus === 'READY' && !actualComms.some(c => c.channel === 'email' && !c.isPrepared))) ? (
                     <div className="email-status-banner prepared" style={{
-                      background: '#1e293b',
-                      border: '1px solid #f59e0b',
+                      background: '#FFFBEB',
+                      border: '1px solid #FDE68A',
                       borderRadius: 8,
                       padding: '12px 16px',
                       marginBottom: 16,
@@ -1239,37 +1523,39 @@ export function CaseDetail({
                       gap: 12
                     }}>
                       <div>
-                        <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 6}}>
-                          <span>🟡</span> Communication Prepared
+                        <div style={{fontWeight: 700, fontSize: '0.85rem', color: '#B45309', display: 'flex', alignItems: 'center', gap: 6}}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
+                          Communication Prepared
                         </div>
-                        <div style={{fontSize: '0.82rem', color: '#cbd5e1', marginTop: 2}}>
+                        <div style={{fontSize: '0.82rem', color: '#475569', marginTop: 2}}>
                           This email is ready for review and has not been sent to the customer.
                         </div>
                       </div>
                       <button
                         className="button primary"
-                        style={{background: '#2563eb', padding: '6px 14px', fontSize: '0.85rem', whiteSpace: 'nowrap'}}
+                        style={{background: 'var(--color-primary)', padding: '6px 14px', fontSize: '0.85rem', whiteSpace: 'nowrap'}}
                         onClick={() => void handleSimulateDispatch('email')}
                         disabled={isSending}
                       >
-                        {isSending ? "Dispatching..." : `⚡ Simulate Sending`}
+                        {isSending ? "Dispatching..." : "Simulate Sending"}
                       </button>
                     </div>
                   ) : (
                     <div className="email-status-banner simulated" style={{
-                      background: 'rgba(6, 78, 59, 0.3)',
-                      border: '1px solid #059669',
+                      background: '#ECFDF5',
+                      border: '1px solid #A7F3D0',
                       borderRadius: 8,
                       padding: '8px 14px',
                       marginBottom: 16,
-                      color: '#34d399',
+                      color: '#065F46',
                       fontSize: '0.85rem',
                       fontWeight: 600,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6
                     }}>
-                      <span>✓</span> Email Simulated
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      Email Simulated
                     </div>
                   )}
 
@@ -1352,7 +1638,10 @@ export function CaseDetail({
                     <div className="phone-top-bar">
                       <span className="phone-time">9:41</span>
                       <div className="phone-notch" />
-                      <span className="phone-icons">5G 📶 🔋</span>
+                      <span className="phone-icons" style={{display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.72rem'}}>
+                        <span>5G</span>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="16" height="10" rx="2"/><line x1="20" y1="11" x2="20" y2="13" stroke="currentColor" strokeWidth="2"/></svg>
+                      </span>
                     </div>
                     <div className="sms-chat-header">
                       <span className="sms-back">‹ Back</span>
@@ -1360,7 +1649,9 @@ export function CaseDetail({
                         <strong>RecoverAI</strong>
                         <span className="sms-sub">Transactional Alert</span>
                       </div>
-                      <span className="sms-info">ℹ️</span>
+                      <span className="sms-info" style={{display: 'inline-flex', alignItems: 'center'}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                      </span>
                     </div>
                     <div className="sms-chat-body">
                       <div className="sms-timestamp">Today 9:41 AM</div>
@@ -1404,7 +1695,10 @@ export function CaseDetail({
                       </div>
                       <div className="wa-header-info" style={{flex: 1}}>
                         <div className="wa-header-name" style={{fontWeight: 700, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: 4}}>
-                          RecoverAI <span className="wa-verified-badge" style={{fontSize: '0.75rem', color: '#4ade80'}} title="Verified Business">✓</span>
+                          RecoverAI 
+                          <span className="wa-verified-badge" style={{display: 'inline-flex', alignItems: 'center', color: '#4ade80'}} title="Verified Business">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 2.4 3.4-.4 1.1 3.2 2.9 1.8-1 3.2 1.8 2.9-2.3 2.5.3 3.4-3.3 1.2-1.9 2.8-3.1-.9-3.1.9-1.9-2.8-3.3-1.2.3-3.4-2.3-2.5 1.8-2.9-1-3.2 2.9-1.8 1.1-3.2 3.4.4L12 2z"/><polyline points="8 12 11 15 16 9" stroke="#075e54" strokeWidth="2" fill="none"/></svg>
+                          </span>
                         </div>
                         <div className="wa-header-sub" style={{fontSize: '0.7rem', color: '#e0f2fe', opacity: 0.9}}>
                           Official Business Account
@@ -1454,14 +1748,17 @@ export function CaseDetail({
                           }}
                           onClick={handlePaymentClick}
                         >
-                          ⚡ Complete Payment
+                          Complete Payment →
                         </button>
                         <div className="wa-footer-msg" style={{marginTop: 12, fontSize: '0.78rem', color: '#667781', lineHeight: 1.4}}>
                           This payment link expires on<br />
                           <b>{formattedExpiry}</b>
                         </div>
                         <div className="wa-bubble-time" style={{textAlign: 'right', fontSize: '0.68rem', color: '#667781', marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3}}>
-                          09:41 <span className="wa-receipts" style={{color: '#53bdeb'}}>✓✓</span>
+                          09:41 
+                          <span className="wa-receipts" style={{color: '#53bdeb', display: 'inline-flex', alignItems: 'center'}}>
+                            <svg width="14" height="10" viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 7 4 10 11 3"/><polyline points="5 7 8 10 15 3"/></svg>
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1478,3 +1775,4 @@ export function CaseDetail({
     </>
   );
 }
+

@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { RecoveryCase, formatINR } from "../types";
 import { extractErrorMessage } from "../App";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+import { API_BASE_URL } from "../config";
 
 export const SimulatedPayment = ({ caseId }: { caseId: string }) => {
   const [caseData, setCaseData] = useState<RecoveryCase | null>(null);
@@ -50,9 +49,29 @@ export const SimulatedPayment = ({ caseId }: { caseId: string }) => {
       });
       if (!response.ok) throw new Error("Failed to process simulated payment.");
       setResult(success ? 'success' : 'failure');
+
+      // 1. Cross-tab synchronization via BroadcastChannel
+      try {
+        const bc = new BroadcastChannel("recoverai_payment_sync");
+        bc.postMessage({ type: "PAYMENT_COMPLETED", caseId, success });
+        bc.close();
+      } catch {}
+
+      // 2. Storage synchronization fallback
+      try {
+        localStorage.setItem("recoverai_last_paid_case", JSON.stringify({ caseId, success, timestamp: Date.now() }));
+      } catch {}
+
+      // 3. Window opener message if opened in popup/tab
+      try {
+        if (window.opener) {
+          window.opener.postMessage({ type: "PAYMENT_COMPLETED", caseId, success }, "*");
+        }
+      } catch {}
+
       setTimeout(() => {
-        window.location.href = '/';
-      }, success ? 3000 : 2000);
+        window.location.href = `/?case=${caseId}`;
+      }, success ? 2500 : 2000);
     } catch (err) {
       setError(extractErrorMessage(err, "Payment processing failed."));
       setProcessing(false);
@@ -93,7 +112,9 @@ export const SimulatedPayment = ({ caseId }: { caseId: string }) => {
       <div className="simulated-payment-container">
         {result === 'success' ? (
           <div className="payment-result success">
-            <div className="success-icon">✓</div>
+            <div className="success-icon" style={{display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
             <h2>Payment Successful</h2>
             <p>Your simulated payment of {formatINR(caseData.amount)} has been confirmed.</p>
             <p className="redirect-text">Redirecting to dashboard...</p>
@@ -101,7 +122,9 @@ export const SimulatedPayment = ({ caseId }: { caseId: string }) => {
           </div>
         ) : result === 'failure' ? (
           <div className="payment-result error">
-            <div className="error-icon">✗</div>
+            <div className="error-icon" style={{display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </div>
             <h2>Payment Failed</h2>
             <p>The payment failure has been recorded successfully. The recovery workflow will continue according to the scheduled recovery rules.</p>
             <p className="redirect-text">Redirecting to dashboard...</p>
