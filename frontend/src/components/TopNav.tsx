@@ -19,7 +19,6 @@ export function TopNav({ demoMode }: TopNavProps) {
           </div>
           <div className="logo-text">
             <b>RecoverAI</b>
-            <small>Payment Recovery Intelligence</small>
           </div>
         </div>
         <nav className="topnav-links">
