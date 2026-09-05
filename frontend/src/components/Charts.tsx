@@ -19,7 +19,7 @@ const CustomTooltip = ({ active, payload }: any) => {
   return null;
 };
 
-const REVENUE_COLORS = ['#10B981', '#F59E0B'];
+const REVENUE_COLORS = ['#16A34A', '#D97706'];
 
 export function Charts({ stats, cases }: ChartsProps) {
   const revenueData = useMemo(() => {
@@ -101,19 +101,19 @@ export function Charts({ stats, cases }: ChartsProps) {
                 <PieChart>
                   <Pie data={activeRevenueSlices} cx="50%" cy="50%" innerRadius={52} outerRadius={76} paddingAngle={3} dataKey="value">
                     {activeRevenueSlices.map((item, index) => (
-                      <Cell key={`cell-${index}`} fill={item.name === 'Recovered' ? '#10B981' : '#F59E0B'} />
+                      <Cell key={`cell-${index}`} fill={item.name === 'Recovered' ? '#16A34A' : '#D97706'} />
                     ))}
                   </Pie>
                   <RechartsTooltip content={<CustomTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
               <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 4, fontSize: '11px' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#475569', fontWeight: 600 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10B981' }} />
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#667085', fontWeight: 600 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16A34A' }} />
                   Recovered ({formatINR(stats.revenue_recovered)})
                 </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#475569', fontWeight: 600 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B' }} />
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#667085', fontWeight: 600 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#D97706' }} />
                   At Risk ({formatINR(stats.revenue_at_risk)})
                 </span>
               </div>
@@ -135,15 +135,15 @@ export function Charts({ stats, cases }: ChartsProps) {
           ) : (
             <ResponsiveContainer width="100%" height={220} minWidth={0}>
               <BarChart data={unifiedStatusData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                <XAxis dataKey="name" interval={0} tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F1F5F9' }} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E7E9EE" />
+                <XAxis dataKey="name" interval={0} tick={{ fontSize: 11, fill: '#667085' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#667085' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F8FAFC' }} />
                 <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                   {unifiedStatusData.map((entry, index) => {
-                    const color = entry.name === 'Recovered' ? '#10B981' :
-                                  entry.name === 'Human Review' ? '#F59E0B' :
-                                  entry.name === 'Abandoned' ? '#64748B' : '#2563EB';
+                    const color = entry.name === 'Recovered' ? '#16A34A' :
+                                  entry.name === 'Human Review' ? '#D97706' :
+                                  entry.name === 'Abandoned' ? '#667085' : '#2563EB';
                     return <Cell key={`status-cell-${index}`} fill={color} />;
                   })}
                 </Bar>
@@ -167,11 +167,11 @@ export function Charts({ stats, cases }: ChartsProps) {
           ) : (
             <ResponsiveContainer width="100%" height={220} minWidth={0}>
               <BarChart data={failureData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
-                <XAxis type="number" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F1F5F9' }} />
-                <Bar dataKey="value" fill="#6366F1" radius={[0, 4, 4, 0]} />
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E7E9EE" />
+                <XAxis type="number" tick={{ fontSize: 11, fill: '#667085' }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: '#667085' }} axisLine={false} tickLine={false} />
+                <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#F8FAFC' }} />
+                <Bar dataKey="value" fill="#2563EB" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
