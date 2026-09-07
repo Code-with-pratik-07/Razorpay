@@ -515,7 +515,8 @@ razorpay-project/
 │   │   ├── ml/                      # Scikit-learn feature encoding & pipeline
 │   │   ├── models/                  # SQLAlchemy ORM database models
 │   │   ├── schemas/                 # Pydantic validation schemas
-│   │   ├── services/                # Policy, recovery, channel & Razorpay services
+│   │   ├── services/                # Policy,
+recovery, channel & Razorpay services
 │   │   └── workers/                 # Webhook background tasks
 │   ├── scripts/                     # Seeding & utility CLI scripts
 │   ├── tests/                       # 129 automated pytest suites
@@ -547,7 +548,6 @@ razorpay-project/
 ## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
 ---
-
 *Built with ❤️ for the Razorpay Hackathon.*
+
