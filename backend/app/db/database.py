@@ -10,12 +10,23 @@ class Base(DeclarativeBase):
     pass
 
 
-settings = get_settings()
-db_url = settings.database_url
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+def normalize_database_url(url: str) -> str:
+    """Normalize database URL for SQLAlchemy, ensuring psycopg v3 is used for PostgreSQL."""
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
 
-engine_options: dict[str, object] = {"connect_args": {"check_same_thread": False}} if db_url.startswith("sqlite") else {}
+
+settings = get_settings()
+db_url = normalize_database_url(settings.database_url)
+
+engine_options: dict[str, object] = (
+    {"connect_args": {"check_same_thread": False}}
+    if db_url.startswith("sqlite")
+    else {"pool_pre_ping": True}
+)
 engine = create_engine(db_url, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -45,7 +56,7 @@ def init_db() -> None:
                 "ALTER TABLE customers ADD COLUMN opted_out_channels VARCHAR(100)",
                 "ALTER TABLE communication_records ADD COLUMN outcome VARCHAR(50) DEFAULT 'SENT'",
                 "ALTER TABLE communication_records ADD COLUMN delivery_status VARCHAR(50) DEFAULT 'DELIVERED'",
-                "ALTER TABLE communication_records ADD COLUMN recovery_attributed BOOLEAN DEFAULT 0",
+                "ALTER TABLE communication_records ADD COLUMN recovery_attributed BOOLEAN DEFAULT FALSE",
             ]:
                 try:
                     conn.execute(text(col_stmt))

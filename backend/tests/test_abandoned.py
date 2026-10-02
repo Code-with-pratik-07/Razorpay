@@ -6,10 +6,19 @@ from app.db.database import SessionLocal, init_db
 from app.models.payment_case import PaymentCase, CaseStatus, NextActionType
 from app.services.recovery_service import execute_recovery
 
+def _ensure_demo_case(db: Session) -> PaymentCase:
+    case = db.query(PaymentCase).filter(PaymentCase.case_number.like("%DEMO%")).first()
+    if not case:
+        from app.services.demo_service import seed_demo_data
+        seed_demo_data(reset=False)
+        case = db.query(PaymentCase).filter(PaymentCase.case_number.like("%DEMO%")).first()
+    return case
+
+
 def test_attempt_limit_reached():
     init_db()
     with SessionLocal() as db:
-        case = db.query(PaymentCase).filter(PaymentCase.case_number.like("%DEMO%")).first()
+        case = _ensure_demo_case(db)
         assert case is not None
         
         # Manually force state to "Attempt Limit Reached"
@@ -27,7 +36,7 @@ def test_attempt_limit_reached():
 def test_recovery_abandoned():
     init_db()
     with SessionLocal() as db:
-        case = db.query(PaymentCase).filter(PaymentCase.case_number.like("%DEMO%")).first()
+        case = _ensure_demo_case(db)
         assert case is not None
         
         # Manually force state to "ABANDONED"
@@ -46,7 +55,7 @@ def test_recovery_abandoned():
 def test_no_automatic_recovery_after_abandonment():
     init_db()
     with SessionLocal() as db:
-        case = db.query(PaymentCase).filter(PaymentCase.case_number.like("%DEMO%")).first()
+        case = _ensure_demo_case(db)
         assert case is not None
         
         case.status = CaseStatus.ABANDONED
@@ -67,7 +76,7 @@ def test_attempt_limit_exhausted_consistency():
     """Verify strict state consistency when retry_count >= max_retries."""
     init_db()
     with SessionLocal() as db:
-        case = db.query(PaymentCase).filter(PaymentCase.case_number.like("%DEMO%")).first()
+        case = _ensure_demo_case(db)
         assert case is not None
         case.status = CaseStatus.RECOVERING
         case.retry_count = 2

@@ -31,8 +31,16 @@ def seed_demo_data(reset: bool = False):
         Base.metadata.drop_all(bind=engine)
         init_db()
         print("Database tables recreated.")
+    else:
+        init_db()
 
     with SessionLocal() as db:
+        if not reset:
+            existing = db.scalar(select(Customer).where(Customer.razorpay_customer_id == "cust_demo_auto_a"))
+            if existing:
+                print("Demo data already seeded; skipping to avoid duplicate records.")
+                return
+
         print("Seeding demo customers...")
         customers = []
         # Deterministic showcase customers
